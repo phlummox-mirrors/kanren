@@ -226,6 +226,14 @@
               [else (cons (car r*) (survive (cdr r*)))])))])))
 
 ; Replace a logical variable with the corresponding eigen-variable
+; Note: to be really right, universalize should be a scoping predicate,
+; something like exists:
+; (universalize (term) ant)
+; to prove 'ant' in the env where term is universalized.
+; In that case, the introduced eigen-variables do not escape.
+; Also, perhaps universalize should take a subst and first
+; do (subst-in term subst) and then universalize the remaining
+; logical variables -- which by that time would surely be free.
 (define universalize
   (lambda (term)
     (let ([fv (vars-of term)])
@@ -235,6 +243,27 @@
                   (commitment v (eigen-variable (logical-variable-id v))))
                 fv)])
         (subst-in term subst)))))
+
+; copy-term TERM -> TERM
+; return a TERM that is identical to the input term modulo the replacement
+; of variables in TERM with fresh logical variables. 
+; If a logical variable occurs several times in TERM, the result
+; will have the same number of occurrences of the replacement fresh
+; variable.
+; This is a sort-of dual to universalize, to be used on the other side
+; of the implication. It replaces the existential quantification
+; (implicit in free logical variables of a term) with the universal
+; quantification.
+(define copy-term
+  (lambda (t)
+    (let* ((fv (vars-of t))
+	   (subst
+	     (map (lambda (old-var)
+		    (commitment old-var
+		      (logical-variable (logical-variable-id old-var))))
+	       fv)))
+      (subst-in t subst))))
+
 
 ; Similar to universalize: makes nicer symbols for variables that look
 ; nicer when printed. The 'reverse' in (reverse (vars-of t))
