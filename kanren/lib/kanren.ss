@@ -2734,7 +2734,7 @@
 		  ((binary-extend-relation-interleave (a1 a2) fact3 R1) x y))))
 
 
-(define-syntax all
+'(define-syntax all
   (syntax-rules ()
     [(_) (lambda (sk) sk)]
     [(_ ant0) ant0]
@@ -2742,24 +2742,28 @@
      (lambda (sk)
        (ant0 ((all ant1 ...) sk)))]))
 
-(define-syntax any
+'(define-syntax any
   (syntax-rules ()
     [(_ ant ...)
      ((extend-relation () (relation _ () (to-show) ant) ...))]))
 
-(define query
+'(define query
   (let ([initial-fk (lambda () '())]
         [initial-sk (lambda@ (fk subst cutk) (cons subst fk))])
     (lambda (antecedent)
       (@ antecedent initial-sk initial-fk empty-subst initial-fk))))
 
-(define grandpa-sam
+'(define grandpa-sam
   (relation cut (child)
     (to-show child)
     (exists (x)
       (all (father 'sam x) (father x child)))))
 
 (define-syntax binary-extend-relation
+  (syntax-rules ()
+    ((_ . args) (binary-extend-relation-interleave . args))))
+
+'(define-syntax binary-extend-relation
   (syntax-rules ()
     [(_ (id ...) rel-exp1 rel-exp2)
      (let ([rel1 rel-exp1] [rel2 rel-exp2])
@@ -2772,7 +2776,7 @@
               cutk))))]))
 
 
-(define-syntax relation
+'(define-syntax relation
   (syntax-rules (to-show)
     [(_ short-cut (ex ...) (to-show x ...) ant ...)
      (relation short-cut (ex ...) () (x ...) (x ...) ant ...)]
@@ -2784,6 +2788,45 @@
              (all (all! (next) (== g x) ...) ant ...)))))]
     [(_ short-cut exs (var ...) (x0 x1 ...) xs ant ...)
      (relation short-cut exs (var ... g) (x1 ...) xs ant ...)]))
+
+
+(define towers-of-hanoi-path
+  (let ([steps '()])
+    (let ([push-step (lambda (x y) 
+		       (printf "~%step:~a" `(,x ,y))
+		       (if (> (length steps) 10) (abort))
+		       (set! steps (cons `(,x ,y) steps)))])
+      (letrec
+        ([move
+           (extend-relation (a1 a2 a3 a4)
+             (relation cut ()
+               (to-show 0 _ _ _)
+               (all cut))
+             (relation _ (n a b c)
+               (to-show n a b c)
+               (exists (m)
+                 (all
+		   (pred-call positive? n)
+                   (fun-call - m n 1)
+                   (move m a c b)
+                   (pred-call push-step a b)
+                   (move m c b a)))))])
+        (relation _ (n path)
+          (to-show n path)
+          (begin
+            (set! steps '())
+            (any
+              (fails (move n 'l 'm 'r))
+              (== path (reverse steps)))))))))
+
+(define test-towers-of-hanoi-path
+  (lambda ()
+    (equal?
+      (exists (path)
+        (solution (towers-of-hanoi-path 3 path)))
+      '(3 ((l m) (l r) (m r) (l m) (r l) (r m) (l m))))))
+
+(printf "~s ~s~%" 'test-towers-of-hanoi-path (test-towers-of-hanoi-path))
 
 
 ;;;; This verifies that the idea works.  Now, to run the book through this
