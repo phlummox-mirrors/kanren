@@ -996,7 +996,8 @@
 ; a once-var, aka linear variable. A linear variable appears only once in
 ; TERM ... and only at the top level (that is, one and only one TERM
 ; in the to-show pattern contains ONCE-VAR, and that term is ONCE-VAR
-; itself). In addition, ONCE-VAR must appear only once in the body ANT.
+; itself). In addition, ONCE-VAR must appear at most once in the body ANT.
+; (Of course, then ONCE-VAR could be _, instead.)
 ; If these conditions are satisfied, we can replace a logical variable
 ; ONCE-VAR with a regular Scheme variable.
 
@@ -1037,22 +1038,22 @@
        (relation "g" vars once-vars  (gs ... g) ((g . term) . gunis) 
 	 terms . ant))]
     [(_ "g" vars once-vars gs gunis () . ant)
-     (relation "f" vars once-vars gs gunis . ant)]
+     (relation "f" vars gs gunis . ant)]
 
     ; Final: writing the code
-    [(_ "f" vars () () () ant)	   ; no arguments (no head-tests)
+    [(_ "f" vars () () ant)	   ; no arguments (no head-tests)
       (lambda ()
 	(exists vars ant))]
-    [(_ "f" (ex-id ...) () (g ...) ((gv . term) ...) ) ; no body
+    [(_ "f" (ex-id ...) (g ...) ((gv . term) ...) ) ; no body
      (lambda (g ...)
        (exists (ex-id ...)
  	 (all!! (promise-one-answer (== gv term)) ...)))]
                                    ; no tests but pure binding
-    [(_ "f" (ex-id ...) once-vars (g ...) () ant)
+    [(_ "f" (ex-id ...) (g ...) () ant)
      (lambda (g ...)
        (exists (ex-id ...) ant))]
 				    ; the most general
-    [(_ "f" (ex-id ...) once-vars (g ...) ((gv . term) ...) ant)
+    [(_ "f" (ex-id ...) (g ...) ((gv . term) ...) ant)
      (lambda (g ...)
        (exists (ex-id ...)
  	 (if-all! ((promise-one-answer (== gv term)) ...) ant)))]))
@@ -1061,7 +1062,7 @@
 ; A macro-expand-time memv function for identifiers
 ;	id-memv?? FORM (ID ...) KT KF
 ; FORM is an arbitrary form or datum, ID is an identifier.
-; The macro expands into KT if FORM is an identifier, which occurs
+; The macro expands into KT if FORM is an identifier that occurs
 ; in the list of identifiers supplied by the second argument.
 ; Otherwise, id-memv?? expands to KF.
 ; All the identifiers in (ID ...) must be unique.
