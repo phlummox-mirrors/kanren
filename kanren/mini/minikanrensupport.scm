@@ -64,6 +64,59 @@
   (lambda (x)
     (vector? x)))
 
+
+; Process the substitutions in such a way so that the results are
+; pleasant to print.
+; for each unbound variable in a chain
+;  var1 -> var2 -> var3 ... -> varn
+; we create an association
+;  var1 -> var*
+; where var* is chosen to be canonical in a sense
+; e.g., it has the lexicographically smaller name.
+
+(define (remq x lst)
+  (let ((cell (assq x lst)))
+    (and cell
+      (let loop ((lst lst) (res '()))
+	(if (eq? cell (car lst))
+	  (cons cell (append res (cdr lst)))
+	  (loop (cdr lst) (cons (car lst) res)))))))
+
+(define beautify-subst
+  (lambda (subst)
+    (define (least lst)
+      (let loop ((e (car lst)) (lst (cdr lst)))
+	(cond 
+	  ((null? lst) e)
+	  ((string<? (var-id (car lst)) (var-id e)) (loop (car lst) (cdr lst)))
+	  (else (loop e (cdr lst))))))
+    (define (beautify free free-rev)
+      (let ((least-l (map (lambda (a) (cons (car a) (least a))) free-rev)))
+	(let loop ((free free))
+	  (if (null? free) '()
+	    (let* ((a (car free))
+		   (least-name (cdr (assq (cdr a) least-l))))
+	      (if (eq? (car a) least-name) (loop (cdr free))
+		(cons (cons (car a) least-name) (loop (cdr free)))))))))
+    ; first, we partition vars into bound and free
+    (let loop ((s subst) (bound '()) (free '()) (free-rev '()))
+      (if (null? s) (append (beautify free free-rev) bound)
+	(let ((s0 (car s)) (sr (cdr s)))
+	  (cond
+	    ((not (var? (cdr s0))) ; bound
+	      (loop sr (cons s0 bound) free free-rev))
+	    ((assq (cdr s0) bound)
+	     (loop sr (cons s0 bound) free free-rev))
+	    (else
+	      (let ((wr (walk-var (cdr s0) subst)))
+		(if (var? wr)
+		  (loop sr bound (cons (cons (car s0) wr) free)
+		    (let ((rev (remq wr free-rev)))
+		      (if rev (cons (cons wr (cons (car s0) (cdar rev)))
+				(cdr rev))
+			(cons (list wr (car s0)) free-rev))))
+		  (loop sr (cons s0 bound) free free-rev))))))))))
+
 (define ground?
   (lambda (v)
     (cond
@@ -77,11 +130,12 @@
     (cdr b)))
 
 (define reify-nonfresh 
-  (lambda (x s) 
-    (let ((v (walk-var x s)))
-      (cond
-        ((var? v) x)
-        (else (r-nf v s))))))
+  (lambda (x s)
+    (let ((s (beautify-subst s)))
+      (let ((v (walk-var x s)))
+	(cond
+	  ((var? v) x)
+	  (else (r-nf v s)))))))
 
 (define r-nf
   (lambda (v s)
@@ -229,11 +283,13 @@
         ((equal? v w) s)
         (else #f)))))
 
-(define ext-s-ordered 
+'(define ext-s-ordered 
   (lambda (v w s) 
     (cond 
       ((string>? (var-id v) (var-id w)) (ext-s v w s)) 
       (else (ext-s w v s)))))
+
+(define ext-s-ordered ext-s)
 
 (define unify-check
   (lambda (v w s)
