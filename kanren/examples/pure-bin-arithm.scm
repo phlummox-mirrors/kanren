@@ -1,5 +1,10 @@
 ;	     Pure, declarative, and constructive binary arithmetics
 ;
+; aka: Addition, Multiplication, Division as always terminating,
+; pure and declarative relations that can be used in any mode whatsoever.
+; The relations define arithmetics over binary (base-2) integral numerals
+; of arbitrary size.
+;
 ; aka: division as relation.
 ; The function divo below is a KANREN relation between four binary numerals
 ; n, m, q, and r such that the following holds
@@ -7,29 +12,33 @@
 ;
 ; See pure-arithm.scm in this directory for Peano arithmetics.
 
-; That relation is more remarkable than it may look. First, it's possible to
-; ask (divo 1 0 q _). Obviously, such q does not exist. The relation
-; thus fail -- it does not try to enumerate all natural numbers.
-; We can also invoke it like (divo 5 m 1 _), where m is a free
-; variable. The answers are (5 4 3).
-; Again, (divo 5 m 7 _) simply fails and does not loop forever.
-; We can even try (divo x y z r), which returns a stream of triples
-; among which is
-;  ((x.0 (0 *anon.0)) (y.0 (*anon.0)) (z.0 (0 1)) (r.0 ()))
-; which says that any even number is evenly divisible by two!
-; This is a consequence of our implementation of divo, we did not
-; put that rule explicitly!
-; We can derive algebraic equalities!
+; The arithmetic relations possess interesting properties.
+; For example, given the relation (divo N M Q R) which holds
+; iff N = M*Q + R and 0<=R<M, we can try:
+;   -- (divo 1 0 Q _). It fails and does not try to enumerate
+;      all natural numbers.
+;   -- (divo 5 M 1 _). It finds all such M that divide (perhaps unevenly)
+;      5 with the quotient of 1. The answer is the set (5 4 3).
+; Again, (divo 5 M 7 _) simply fails and does not loop forever.
+; We can use the (**o X Y Z) relation either to multiply two numbers
+; X and Y -- or to find all factorizations of Z. See the test below.
+; Furthermore, we can try to evaluate (++o X 1 Y) and get the stream
+; of answers, among which is ((0 *anon.0 . *anon.1) (1 *anon.0 . *anon.1))
+; which essentially says that 2*x and 2*x +1 are successors, for all x>0!
 ;
 ; Such relations are easy to implement in an impure system such as Prolog,
 ; with the help of a predicate 'var'. The latter can tell if its argument
 ; is an uninstantiated variable. However, 'var' is impure. The present
 ; file shows the implementation of arithmetic relations in a _pure_
 ; logic system.
-; 
-; Furthermore, by judicially setting sound boundaries, we make the system
-; constructive. So, our arithmetic relations are not only pure
-; and sound but also complete.
+;
+; The present approach places the correct upper bounds on the
+; generated numbers to make sure the search process will terminate.
+; Therefore, our arithmetic relations are not only sound
+; (e.g., if (**o X Y Z) holds then it is indeed X*Y=Z) but also
+; complete (if X*Y=Z is true then (**o X Y Z) holds) and
+; refutationally complete (if X*Y=Z is false then (**o X Y Z) fails,
+; in finite time).
 ;
 ; The numerals are represented in the binary little-endian
 ; (least-significant bit first) notation. The higher-order bit must be 1.
@@ -39,7 +48,10 @@
 ; (1 1) represents 3
 ; (0 0 1) represents 4
 ; etc.
-
+;
+; This code has been translated to Prolog. The Prolog version has
+; termination proofs.
+;
 ; $Id$
 
 ; Auxiliary functions to build and show binary numerals
@@ -55,7 +67,13 @@
 (define zeroo
   (fact () '()))
 
-(define a-positive-number `(,_ . ,_))
+; Not a zero
+(define pos
+  (fact () `(,_ . ,_)))
+
+; At least two
+(define gt1
+  (fact () `(,_ ,_ . ,_)))
 
 ; Half-adder: carry-in a b r carry-out
 ; The relation holds if
@@ -82,11 +100,14 @@
 (define full-adder
   (extend-relation (carry-in a b r)
     (fact (a) 0 a '() a) 		; 0 + a + 0 = a
-    (fact (b) 0 '() b b) 		; 0 + 0 + b = b
+    (relation (b)			; 0 + 0 + b = b
+      (to-show 0 '() b b)
+      (pos b))
     (relation (head-let '1 a '() r)	; 1 + a + 0 = 0 + a + 1
       (full-adder 0 a '(1) r))
     (relation (head-let '1 '() b r)	; 1 + 0 + b = 0 + 1 + b
-      (full-adder 0 '(1) b r))
+      (all (pos b)
+	(full-adder 0 '(1) b r)))
 
     ; The following three relations are needed
     ; to make all numbers well-formed by construction,
@@ -96,12 +117,11 @@
 	(all (== r `(,r1 ,r2))
 	     (half-adder carry-in 1 1 r1 r2))))
 
-    ; 1 + 1 + (2*br + bb) = (2*rr + rb) where br > 0 and so is rr > 0
+    ; cin + 1 + (2*br + bb) = (2*rr + rb) where br > 0 and so is rr > 0
     (relation (carry-in bb br rb rr)
       (to-show carry-in '(1) `(,bb . ,br) `(,rb . ,rr))
       (all
-	(== br `(,_ . ,_))		; br > 0
-	(== rr `(,_ . ,_))
+	(pos br) (pos rr)
 	(exists (carry-out)
 	  (all
 	    (half-adder carry-in 1 bb rb carry-out)
@@ -110,20 +130,18 @@
     ; symmetric case for the above
     (relation (head-let carry-in a '(1) r)
       (all
-	(== a `(,_ ,_ . ,_))
-	(== r `(,_ ,_ . ,_))
+	(gt1 a) (gt1 r)
 	(full-adder carry-in '(1) a r)))
 
     ; carry-in + (2*ar + ab) + (2*br + bb) 
     ; = (carry-in + ab + bb) (mod 2)
     ; + 2*(ar + br + (carry-in + ab + bb)/2)
-    ; Also, if ar>0 and br>0 and so rr > 0
+    ; The cases of ar= 0 or br = 0 have already been handled.
+    ; So, now we require ar >0 and br>0. That implies that rr>0.
     (relation (carry-in ab ar bb br rb rr)
       (to-show carry-in `(,ab . ,ar) `(,bb . ,br) `(,rb . ,rr))
       (all
-	(== ar `(,_ . ,_))
-	(== br `(,_ . ,_))
-	(== rr `(,_ . ,_))
+	(pos ar) (pos br) (pos rr)
 	(exists (carry-out)
 	  (all
 	    (half-adder carry-in ab bb rb carry-out)
@@ -143,44 +161,74 @@
  
 (define <o  ; n < m iff exists x >0 such that n + x = m
   (relation (head-let n m)
-    (++o a-positive-number n m)))
+    (exists (x) (all (pos x) (++o n x m)))))
 
 ; compare the length of two numerals
-; (<ol a b) holds if (floor (log2 a)) < (floor (log2 b))
+; (<ol a b) holds 
+; holds if a=0 and b>0, or if (floor (log2 a)) < (floor (log2 b))
+; That is, we compare the length (logarithms) of two numerals
+; For a positive numeral, its bitlength = (floor (log2 n)) + 1
 (define <ol
   (extend-relation (n m)
     (fact () '() `(,_ . ,_))
     (relation (x y) (to-show `(,_ . ,x) `(,_ . ,y)) (<ol x y))))
 
+; holds if both a and b are zero
+; or if (floor (log2 a)) = (floor (log2 b))
 (define =ol
   (extend-relation (n m)
     (fact () '() '())
     (relation (x y) (to-show `(,_ . ,x) `(,_ . ,y)) (=ol x y))))
 
+; (<ol3 p1 p n m) holds iff
+; p1 = 0 and p > 0 or
+; length(p1) < length(p) <= length(n) + length(m)
+(define <ol3
+  (relation (head-let p1 p n m)
+    (any
+      (all (== p1 '()) (pos p))
+      (exists (p1r pr)
+	(all
+	  (== p1 `(,_ . ,p1r))
+	  (== p  `(,_ . ,pr))
+	  (any
+	    (exists (mr)
+	      (all (== n '()) (== m  `(,_ . ,mr)) 
+		(<ol3 p1r pr n mr)))
+	    (exists (nr)
+	      (all (== n  `(,_ . ,nr)) 
+		(<ol3 p1r pr nr m)))
+	    ))))))
+
 ; n * m = p
 (define **o
   (relation (head-let n m p)
     (any
-      (all (zeroo n) (== p '()))	; 0 * m = 0
-      (all (zeroo m) (== p '()))	; n * 0 = 0
-      (all (== n '(1)) (== m p))        ; 1 * m = m
-      ; (2*n) * m = 2*(n*m)
+      (all (zeroo n) (== p '()))		; 0 * m = 0
+      (all (zeroo m) (pos n) (== p '()))	; n * 0 = 0
+      (all (== n '(1)) (pos m) (== m p))        ; 1 * m = m
+
+      ; (2*nr) * m = 2*(nr*m), m>0 (the case of m=0 is taken care of already)
+      ; nr > 0, otherwise the number is ill-formed
       (exists (nr pr)
 	(all
+	  (pos m)
 	  (== n `(0 . ,nr))
 	  (== p `(0 . ,pr))
-	  (== nr `(,_ . ,_))
-	  (== pr `(,_ . ,_))
+	  (pos nr) (pos pr)
 	  (**o nr m pr)))
-      ; (2*n+1) * m = 2*(n*m) + m
-      ; we note that m > 0 and so 2*(n*m) < 2*(n*m) + m
-      ; and (floor (log2 (n*m))) < (floor (log2 (2*(n*m) + m)))
+
+      ; (2*nr+1) * m = 2*(n*m) + m
+      ; m > 0; also nr>0 for well-formedness
+      ; the result is certainly greater than 1.
+      ; we note that m > 0 and so 2*(nr*m) < 2*(nr*m) + m
+      ; and (floor (log2 (nr*m))) < (floor (log2 (2*(nr*m) + m)))
       (exists (nr p1)
 	(all
+	  (pos m)
 	  (== n `(1 . ,nr))
-	  (== nr `(,_ . ,_))
-	  (== p `(,_ ,_ . ,_))
-	  (<ol p1 p)
+	  (pos nr) (gt1 p)
+	  (<ol3 p1 p n m)
 	  (**o nr m p1)
 	  (++o `(0 . ,p1) m p)))
 )))
@@ -204,7 +252,7 @@
 (define divo
   (relation (head-let n m q r)
     (any-interleave
-      (all (== r n) (== q '()) (<ol n m)) ; m has more digits than n: q=0,n=r
+      (all (== r n) (== q '()) (<ol n m) (<o n m)) ; m has more digits than n: q=0,n=r
       (all
 	(<ol m n)			; n has mode digits than m
 					; q is not zero, n>0, so q*m <= n,
@@ -239,7 +287,7 @@
 (test (x) (++o (build 29) (build 3) x))
 (test (x) (++o (build 3) x (build 29)))
 (test (x) (++o x (build 3) (build 29)))
-(test-check 'addition-all-1
+(test-check "all numbers that sum to 4"
   (solve 10 (w)
     (exists (y z)
       (all (++o y z (build 4))
@@ -251,6 +299,15 @@
      ((w.0 (2 2)))
      )
   )
+(test-check "print a few numbers such as X + 1 = Y"
+  (solve 5 (x y) (++o x (build 1) y))
+   '(((x.0 ()) (y.0 (1))) ; 0 + 1 = 1
+     ((x.0 (1)) (y.0 (0 1))) ; 1 + 1 = 2
+      ; 2*x and 2*x+1 are successors, for all x>0!
+     ((x.0 (0 *anon.0 . *anon.1)) (y.0 (1 *anon.0 . *anon.1)))
+     ((x.0 (1 1)) (y.0 (0 0 1)))
+     ((x.0 (1 0 *anon.0 . *anon.1)) (y.0 (0 1 *anon.0 . *anon.1))))
+  )
 
 (cout nl "subtraction" nl)
 (test (x) (--o (build 29) (build 3) x))
@@ -258,7 +315,7 @@
 (test (x) (--o x (build 3) (build 26)))
 (test (x) (--o (build 29) (build 29) x))
 (test (x) (--o (build 29) (build 30) x))
-(test-check 'subtraction-all-1
+(test-check "print a few numbers such as Y - Z = 4"
   (solve 5 (y z) (--o y z (build 4)))
 '(((y.0 (0 0 1)) (z.0 ()))  ; 4 - 0 = 4
  ((y.0 (1 0 1)) (z.0 (1)))  ; 5 - 1 = 4
@@ -268,11 +325,30 @@
   (z.0 (0 0 0 *anon.0 . *anon.1)))) ;forall a and b!!!
 )
 
+(test-check "print a few numbers such as X - Y = Z"
+  (solve 5 (x y z) (--o x y z))
+'(((x.0 y.0) (y.0 y.0) (z.0 ())) ; y - y = 0
+  ((x.0 (*anon.0 . *anon.1)) (y.0 ()) (z.0 (*anon.0 . *anon.1)))
+  ((x.0 (0 1)) (y.0 (1)) (z.0 (1)))
+  ((x.0 (1 *anon.0 . *anon.1)) (y.0 (1)) (z.0 (0 *anon.0 . *anon.1)))
+  ((x.0 (0 0 1)) (y.0 (1)) (z.0 (1 1))))
+)
+
+
 (cout nl "comparisons" nl)
 (test (x) (<o x (build 4)))
 (test (x) (all (== x (build 3)) (<o x (build 4))))
 (test (x) (all (== x (build 4)) (<o x (build 3))))
-(cout (solve 5 (x) (<o x (build 3))) nl)
+(test-check "print all numbers hat are less than 6"
+  (solve 10 (x) (<o x (build 6)))
+'(((x.0 ())) ((x.0 (1))) ((x.0 (1 0 1))) ((x.0 (0 1)))
+  ((x.0 (0 0 1))) ((x.0 (1 1))))
+)
+
+(test-check "print a few numbers that are greater than 4"
+  (solve 3 (x) (<o (build 4) x))
+'(((x.0 (1 0 1))) ((x.0 (0 1 1))) ((x.0 (0 0 0 1))))
+)
 
 
 (cout nl "multiplication" nl)
@@ -289,6 +365,52 @@
     (exists (y z) (all (**o y z (build 6))
 		    (project (y z) (== `(,(trans y) ,(trans z)) w)))))
   '(((w.0 (1 6))) ((w.0 (2 3))) ((w.0 (6 1)))  ((w.0 (3 2)))))
+
+; Only one answer
+(test-check 'multiplication-all-2
+  (solve 7 (w) 
+    (exists (x)
+      (all (**o (build 3) (build 2) x)
+	(project (x) (== (trans x) w)))))
+  '(((w.0 6))))
+
+(test-check 'multiplication-all-3
+  (solve 7 (y z) (**o (build 3) y z))
+  '(((y.0 ()) (z.0 ())) ; 3 * 0 = 0
+    ((y.0 (1)) (z.0 (1 1))) ; 3 * 1 = 3
+    ((y.0 (0 1)) (z.0 (0 1 1))) ; 3 * 2 = 6
+    ((y.0 (1 1)) (z.0 (1 0 0 1))) ; 3 * 3 = 9
+    ((y.0 (0 0 1)) (z.0 (0 0 1 1))) ; 3 * 4 = 12
+    ((y.0 (0 1 1)) (z.0 (0 1 0 0 1))) ; 3 * 6 = 18
+    ((y.0 (1 0 1)) (z.0 (1 1 1 1))))  ; 3 * 5 = 15
+)
+
+(test-check 'multiplication-all-4
+  (solve 4 (x z) (**o x (build 3) z))
+  '(((x.0 ()) (z.0 ())) ((x.0 (1)) (z.0 (1 1)))
+    ((x.0 (0 1)) (z.0 (0 1 1)))
+    ((x.0 (0 0 1)) (z.0 (0 0 1 1))))
+)
+
+(test-check 'multiplication-all-5
+  (solve 5 (x y z) (**o x y z))
+  '(((x.0 ()) (y.0 y.0) (z.0 ())) ; 0 * y = 0 for any y whatsoever
+    ((x.0 (*anon.0 . *anon.1)) (y.0 ()) (z.0 ())) ; x * 0 = 0 for x > 0
+     ; 1 * y = y for y > 0
+    ((x.0 (1)) (y.0 (*anon.0 . *anon.1)) (z.0 (*anon.0 . *anon.1)))
+     ; 2 * y = even positive number, for y > 0
+    ((x.0 (0 1)) (y.0 (*anon.0 . *anon.1)) (z.0 (0 *anon.0 . *anon.1)))
+     ; 4 * y = double-even positive number, for y > 0
+    ((x.0 (0 0 1)) (y.0 (*anon.0 . *anon.1)) (z.0 (0 0 *anon.0 . *anon.1)))
+    )
+)
+
+(test-check 'multiplication-even-1
+  (solve 5 (y z) (**o (build 2) y z))
+  '(((y.0 ()) (z.0 ()))
+     ; 2*y is an even number, for any y > 0!
+    ((y.0 (*anon.0 . *anon.1)) (z.0 (0 *anon.0 . *anon.1))))
+)
 
 (cout nl "division, general" nl)
 
@@ -310,18 +432,40 @@
 
 (test (x) (divo (build 33) (build 5) x _))
 
-(test-check 'div-all-2
+(test-check "all numbers such as 5/Z = 1"
   (solve 7 (w) 
     (exists (z) (all (divo (build 5) z (build 1) _)
 		    (project (z) (== `(,(trans z)) w)))))
   '(((w.0 (3))) ((w.0 (5))) ((w.0 (4)))))
 
+(test-check "all inexact factorizations of 12"
+  (solve 100 (w) 
+    (exists (m q r n)
+      (all 
+	(== n (build 12))
+	(<o m n)
+	(divo n m q r)
+	(project (m q r) (== `(,(trans m) ,(trans q) ,(trans r)) w)))))
+  '(((w.0 (1 12 0))) ((w.0 (11 1 1)))
+    ((w.0 (2 6 0)))  ((w.0 (10 1 2)))
+    ((w.0 (4 3 0)))  ((w.0 (8 1 4)))
+    ((w.0 (6 2 0)))  ((w.0 (3 4 0)))
+    ((w.0 (9 1 3)))  ((w.0 (7 1 5)))
+    ((w.0 (5 2 2)))))
+
+
 (test-check 'div-all-3
   (solve 3 (x y z r) (divo x y z r))
 '(((x.0 ()) (y.0 (*anon.0 . *anon.1)) (z.0 ()) (r.0 ())) ; 0 = a*0 + 0, a>0
-   ; the following says that any even number is evenly divisible by two!
+   ; There, anon.0 must be 1
   ((x.0 (0 *anon.0)) (y.0 (*anon.0)) (z.0 (0 1)) (r.0 ()))
   ; if z = 1, the two numbers must be equal -- but positive!
   ((x.0 (*anon.0)) (y.0 (*anon.0)) (z.0 (1)) (r.0 ()))
 ))
 
+(test-check 'div-even
+  (solve 3  (y z r) (divo `(0 . ,y) (build 2) z r))
+  '(((y.0 (0 1)) (z.0 (0 1)) (r.0 ()))
+    ((y.0 (1))   (z.0 (1)) (r.0 ()))
+    ((y.0 (1 1)) (z.0 (1 1)) (r.0 ())))
+)
