@@ -1,25 +1,25 @@
 '(define-syntax def-syntax
   (syntax-rules ()
-    [(_ (name . lhs) rhs)
+    ((_ (name . lhs) rhs)
      (define-syntax name
        (syntax-rules ()
-         [(_ . lhs) rhs]))]))
+         ((_ . lhs) rhs))))))
 
 (print-gensym #f)
 
 (define-syntax lambda@
   (syntax-rules ()
-    [(_ () body0 body1 ...) (lambda () body0 body1 ...)]
-    [(_ (formal) body0 body1 ...) (lambda (formal) body0 body1 ...)]
-    [(_ (formal0 formal1 formal2 ...) body0 body1 ...)
+    ((_ () body0 body1 ...) (lambda () body0 body1 ...))
+    ((_ (formal) body0 body1 ...) (lambda (formal) body0 body1 ...))
+    ((_ (formal0 formal1 formal2 ...) body0 body1 ...)
      (lambda (formal0)
-       (lambda@ (formal1 formal2 ...) body0 body1 ...))]))
+       (lambda@ (formal1 formal2 ...) body0 body1 ...)))))
 
 (define-syntax @  
   (syntax-rules ()
-    [(_ rator) (rator)]
-    [(_ rator rand) (rator rand)]
-    [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
+    ((_ rator) (rator))
+    ((_ rator rand) (rator rand))
+    ((_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...))))
 
 
 ;   (lambda (v s) (walk-strong v 
@@ -28,15 +28,15 @@
 
 (define-syntax test-check
   (syntax-rules ()
-    [(_ title tested-expression expected-result)
+    ((_ title tested-expression expected-result)
      (begin
        (cout "Testing " title nl)
-       (let* ([expected expected-result]
-              [produced tested-expression])
+       (let* ((expected expected-result)
+              (produced tested-expression))
          (or (equal? expected produced)
              (errorf 'test-check
                "Failed: ~a~%Expected: ~a~%Computed: ~a~%"
-               'tested-expression expected produced))))]))
+               'tested-expression expected produced)))))))
 
 (define nl (string #\newline))
 
@@ -107,9 +107,17 @@
 ; The notion of reduction can be extended to substitutions themselves:
 ;   { xi -> ti ...} -->w { xi -> ti' } where ti -> ti'
 ; ditto for -->s.
-; Let -->w* be a transitive closure of -->w, and let -->w! be a fixpoint
-; of -->w. Ditto for -->s* and -->s!
+; Let -->w* be a reflexive transitive closure of -->w, and 
+; let -->w! be a fixpoint of -->w. Ditto for -->s* and -->s!
 ; For acyclic substitutions, the fixpoints exist.
+;
+; The confluence of the reduction is guaranteed by the particular form
+; of the substitution produced by the unifier (the unifier always
+; deals with the weak normal forms of submitted terms).
+;
+; The similarity of the weak normalization with call-by-value and
+; the strong normalization with the applicative-order reduction should
+; be apparent.
 ;
 ; Variable x is called ultimately free if
 ; x -->w! x' and x' is free in the subtutution in question.
@@ -122,42 +130,64 @@
 ; a pretty representative is a member z of that set such that the
 ; string name of 'z' is lexicographically smaller than the string names 
 ; of the other variables in that set.
-
-
-
-; given a variable x and a subst s and the continuation k,
-; compute x', the strong normal form of x, and the list of
-; equivalence classes VEQ, and pass them to k.
-;  x -->s! x'
-;  VEQ ::= ( (u x1 x2 ...) ... )
-; where u is free, x1 -->w! u ...
-; and for each xi there is t such that x -->s* t and xi \in FV(t)
 ;
-; Note that (u x1 x2 ...) is not the whole equivalence class represented
-; by u in s, but only a part of it -- the part that is `relevant'
-; to the reduction of the variable x. That is, the class contains only
-; those variables that are encountered during the reduction of x.
-; For backwards compatibility, we impose an ordering constrint on VEQ:
-; the classes in VEQ are reversely ordered so that corresponding variables are
-; encountered during the depth-first left-to-right reduction strategy
-; for x.
+; If a variable x is ultimately free in subst and x ->w! u, 
+; then there is a binding
+; v1 -> v2 where both v1 and v2 are variables and v2 ->w! u. Furthermore,
+; the set of all such v1 union {u} is the whole equivalence class of x.
+; That property is guaranteed by the unifier. That property lets us
+; build an inverse index to find the equivalence class of x.
 
-(define reify-nonfresh*
-  (lambda (x s k)
-    (let loop ((x x) (vars-encountered '()) (veq '()) (k k))
-      (cond
-	((pair? x)			; drop vars-encountered, x is not free
-	  (loop (car x) '() veq
-	    (lambda (x1 veq1)
-	      (loop (cdr x) '() veq1
-		(lambda (x2 veq2) (k (cons x1 x2) veq2))))))
-	((not (var? x)) ; x is an atom -- normal form
-	 (k x veq))
-	((assq x s) =>			; x is bound in s, reduce
-	  (lambda (b)
-	    (loop (rhs b) (cons x vars-encountered) veq k)))
-	(else				; x is free: normal form
-	  (k x (adds x vars-encountered veq)))))))
+
+; Given a substitution { xi -> ti ...}, compute the inverse index
+; ( (ti . xi) ... ) provided ti is a variable. There may be multiple
+; bindings of ti in the index.
+; We essentially compute the set of inverse paths for each equivalence
+; class of ultimately free vars
+
+(define subst-to-inverse-index
+  (lambda (subst)
+    (if (null? subst) '()
+      (let* ((h (car subst))
+	     (v (car h))
+	     (t (rhs h))
+	     (subst (cdr subst)))
+	(if (var? t)
+	  (cons (cons t v) (subst-to-inverse-index subst))
+	  (subst-to-inverse-index subst))))))
+
+; Compute the list of (free) variables of a term t.
+; the second arg is the accumulator: should be set to '()
+(define free-vars
+  (lambda (t acc)
+    (cond
+      ((pair? t) (free-vars (cdr t) (free-vars (car t) acc)))
+      ((var? t) (if (memq t acc) acc (cons t acc)))
+      (else acc))))
+
+; Given a variable v and the inverse index idx, compute the 
+; name of the pretty representative of that variable
+; The third argument should be set to (var-id v)
+; and the forth to idx itself.
+; Such a bad decision is forced upon us by the requirement to avoid
+; letrec and named-let.
+; We essentially enumerate the whole equivalence class whose
+; natural representative is v.
+(define find-pretty-rep-name
+  (lambda (v curr-idx e idx)
+    (cond
+      ((assq v curr-idx) =>
+	(lambda (b)
+	  (let* ((next-idx (cdr (memq b curr-idx)))
+		 (v1 (cdr b))
+		 (e1 (var-id v1)))
+	    (find-pretty-rep-name v1 idx 
+	      (find-pretty-rep-name v next-idx 
+		(if (string<? e1 e) e1 e) idx)
+	      idx))))
+      (else e))))
+
+
 
 ; adds x xs l
 ;  where l is an associative list
@@ -165,7 +195,7 @@
 ; If l contains an association (x . xs1), return l with an association
 ; (cons x (merge xs xs1)), preserving the order of the associations in l
 
-(define adds
+'(define adds
   (lambda (x xs l)
     (cond
       ((assq x l) =>
@@ -174,7 +204,7 @@
       (else (cons (cons x xs) l)))))
 
 ; merge two lists
-(define merge
+'(define merge
   (lambda (l1 l2)
     (cond
       ((null? l1) l2)
@@ -182,7 +212,7 @@
       (else (cons (car l1) (merge (cdr l1) l2))))))
 
 ; replace the element b with b1 in l, preserving the order
-(define repl
+'(define repl
   (lambda (b b1 l)
     (if (eq? b (car l)) (cons b1 (cdr l))
       (cons (car l) (repl b b1 (cdr l))))))
@@ -194,41 +224,6 @@
       ((null? l) l)
       ((eq? e (car l)) (cdr l))
       (else (cons (car l) (rem e (cdr l)))))))
-
-
-; Given ((x1 x2 ...) ...) compute the substitution
-; {x1 -> pn ...}
-; where pn is the indexed name of the pretty representative of (x1 x2 ...)
-; Different (in the sense of eq?) logical variables may have the same name.
-; So, the names of their pretty-representatives might turn out the same.
-; thus we maintain a counter (started at 0) for each equivalent name 
-; and add the counter to the name of the selected pretty representatives.
-
-(define varname-beautifier
-  (let
-    ((find-pretty-rep-name
-       (lambda (lst)
-	 (let loop ((e (var-id (car lst))) (lst (cdr lst)))
-	   (if (null? lst) e
-	     (let ((e1 (var-id (car lst))))
-	       (loop (if (string<? e1 e) e1 e) (cdr lst))))))))
-  (lambda (veq)
-    (let ((pns (map (lambda (eqc)
-		      (cons (find-pretty-rep-name eqc) (car eqc))) veq)))
-      (let outer ((pns pns) (acc empty-s))
-	(if (null? pns) acc
-	  (let* ((h (car pns)) (pns (cdr pns)))
-	    (cond
-	      ((assoc (car h) pns)  => ; name of h is not unique
-		(lambda (b)
-		  (let inner ((index 1) (b b) (pns pns) 
-			      (acc (ext-s (cdr h) (reify-id (car h) 0) acc)))
-		    (if (not b) (outer pns acc)
-		      (let ((pns (rem b pns)))
-			(inner (+ 1 index) (assoc (car b) pns) pns
-			  (ext-s (cdr b) (reify-id (car b) index) acc)))))))
-	      (else
-		(outer pns (ext-s (cdr h) (reify-id (car h) 0) acc)))))))))))
 
 
 ; Given a term v and a subst s, return v', the weak normal form of v:
@@ -255,16 +250,101 @@
 
 (define reify walk-strong)
 
-; In teh future, reify-nonfresh may take the name of the user-supplied
-; beautifier
+; That should be renamed
+
 (define reify-nonfresh
   (lambda (x s)
-    (reify-nonfresh* x s
-      (lambda (r veq)
-	;(pretty-print veq)
-	(let ((bveq (varname-beautifier (reverse veq))))
-	  (walk-strong r bveq))))))
+    (let* ((t (walk-strong x s))
+	   (idx (subst-to-inverse-index s))
+	   (fv (free-vars t '()))
+	   (pns
+	     (map 
+	       (lambda (v)
+		 (cons (find-pretty-rep-name v idx (var-id v) idx) v))
+	       ; this reverse is to produce results compatible with the
+	       ; previous versions of the code
+	       (reverse fv)))
+	    )
+      ;(pretty-print pns)
+      (walk-strong t
+	(disambiguate pns empty-s)))))
 
+; Convert ((v . pretty-name) ...)
+; into a subst { v -> pretty-name-indexed }
+; where we add index .0, .1, etc. to disambiguate pretty-names,
+; some of which may be the same strings
+(define disambiguate
+  (lambda (pns acc)
+    (if (null? pns) acc
+      (let* ((h (car pns)) (pns (cdr pns)))
+	(cond
+	  ((assoc (car h) pns)  => ; name of h is not unique
+	    (lambda (b)
+	      (disambiguate-truly 1 b pns
+		(ext-s (cdr h) (reify-id (car h) 0) acc))))
+	  (else
+	    (disambiguate pns (ext-s (cdr h) (reify-id (car h) 0) acc))))))))
+
+(define disambiguate-truly
+  (lambda (index b pns acc)
+    (if (not b) (disambiguate pns acc)
+      (let ((pns (rem b pns)))
+	(disambiguate-truly (+ 1 index) (assoc (car b) pns) pns
+	  (ext-s (cdr b) (reify-id (car b) index) acc))))))
+
+
+; Tests
+; (run* (r)
+;     (fresh (w a z x b)
+;        (== w a)
+;         (== x b)
+;         (== a z)
+;          (== b z)
+;          (== `(,z) r)))
+; (run* (r)
+;     (fresh (w a z x b)
+;        (== w a)
+;         (== x b)
+;         (== z a)
+;          (== b z)
+;          (== `(,z) r)))
+; (run* (r)
+;     (fresh (w a z x b)
+;        (== w a)
+;         (== b x)
+;         (== z a)
+;          (== b z)
+;          (== `(,z) r)))
+; (run* (r)
+;     (fresh (w a z x b)
+;        (== a w)
+;         (== b x)
+;         (== z a)
+;          (== b z)
+;          (== `(,z) r)))
+; (run* (r)
+;     (fresh (w a z x b)
+;        (== a w)
+;         (== b x)
+;         (== z a)
+;          (== z b)
+;          (== `(,z) r)))
+; (run* (r)
+;     (fresh (w a z x b)
+;        (== a w)
+;         (== b x)
+;         (== z a)
+;          (== z b)
+;          (== `(,x) r)))
+; (run* (r)
+;     (fresh (w a z x b)
+;        (== a w)
+;         (== b x)
+;         (== z a)
+;          (== z b)
+;          (== `(,w) r)))
+; ; In all the cases, the result should be 
+; ((a.0))
 
 
 ;;;; reify
@@ -301,9 +381,9 @@
 '(define index
   (lambda (id p*)
     (cond
-      [(assq id p*)
+      ((assq id p*)
        => (lambda (p)
-            (+ (cdr p) 1))]
+            (+ (cdr p) 1)))
       (else 0))))
 
 (define reify-id      ;;;;; NEW
@@ -323,9 +403,9 @@
 '(define reify-test
   (lambda ()
     (reify-fresh
-      (let ([x (var 'x)]
-            [xx (var 'x)]
-            [xxx (var 'x)])
+      (let ((x (var 'x))
+            (xx (var 'x))
+            (xxx (var 'x)))
         `(,x 3 ,xx 5 ,xxx ,xxx ,xx ,x)))))
 
 (define unify-check
@@ -391,17 +471,17 @@
 (define ext-s-check
   (lambda (v w s)
     (cond
-      [(occurs? v w) #f]
-      [else (ext-s v w s)])))
+      ((occurs? v w) #f)
+      (else (ext-s v w s)))))
 
 (define occurs?
   (lambda (x v s)
     (cond
-      [(var? v) (eq? v x)]
-      [(pair? v)
+      ((var? v) (eq? v x))
+      ((pair? v)
        (or (occurs? x (walk (car v) s) s)
-           (occurs? x (walk (cdr v) s) s))]
-      [else #f])))
+           (occurs? x (walk (cdr v) s) s)))
+      (else #f))))
 
 (define count-cons 0)
 
