@@ -5,10 +5,10 @@
 ; data Ans a = Zero | Unit a | Choice a (() -> Ans a)
 ; In (Choice a f): a is the current answer; (f) will give further answers
 
-(define mzero? number?)
+(define mzero? not)
 
 ; Constructors
-(define mzero 0) ; with an eye for many cuts
+(define mzero #f)
 
 (define-syntax unit                     ; just the identity
   (syntax-rules ()
@@ -108,8 +108,9 @@
 (define-syntax fresh
   (syntax-rules ()
     ((_ (x ...) g0 g ...)
-     (let ((x (var 'x)) ...)
-       (all g0 g ...)))))
+     (lambda (s)
+       (let ((x (var 'x)) ...)
+         ((all g0 g ...) s))))))
 
 (define-syntax project
   (syntax-rules ()
