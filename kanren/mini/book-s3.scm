@@ -5,30 +5,41 @@
 ; data Ans a = Zero | Unit a | Choice a (() -> Ans a)
 ; In (Choice a f): a is the current answer; (f) will give further answers
 
-(define mzero? not)
-
 ; Constructors
-(define mzero #f)
-
-(define-syntax unit                     ; just the identity
+(define-syntax mzero
   (syntax-rules ()
-    ((unit a) a)))
+    ((_) #f)))
+
+(define-syntax unit                        ; just the identity
+  (syntax-rules ()
+    ((_ a) a)))
 
 (define-syntax choice
   (syntax-rules ()
-    ((choice a f) (cons a f))))
+    ((_ a f) (cons a f))))
 
 ; Deconstructor
 (define-syntax case-ans
   (syntax-rules ()
-    ((case-ans e on-zero ((a1) on-one) ((a f) on-choice))
+    ((_ e on-zero ((a^) on-one) ((a f) on-choice))
      (let ((r e))
        (cond
-         ((mzero? r) on-zero)
+         ((not r) on-zero)
          ((and (pair? r) (procedure? (cdr r)))
-          (let ((a (car r)) (f (cdr r))) on-choice))
-         (else (let ((a1 r)) on-one)))))))
+          (let ((a (car r)) (f (cdr r)))
+            on-choice))
+         (else (let ((a^ r)) on-one)))))))
 
+
+; constructor of a suspension: () -> Ans a
+(define-syntax lambdaf@
+  (syntax-rules ()
+    ((_ () e) (lambda () e))))
+
+; constructor of a goal: Subst -> Ans a
+(define-syntax lambdag@
+  (syntax-rules ()
+    ((_ (s) e) (lambda (s) e))))
 
 ; bind r k = case r of
 ;              Zero -> Zero
@@ -38,9 +49,9 @@
 (define bind
   (lambda (r k)
     (case-ans r
-      mzero
+      (mzero)
       ((a) (k a))
-      ((a f) (mplus (k a) (lambda () (bind (f) k)))))))
+      ((a f) (mplus (k a) (lambdaf@ () (bind (f) k)))))))
 
 ; mplus:: Ans a -> (() -> Ans a) -> Ans a
 ; mplus r f =
@@ -55,7 +66,9 @@
     (case-ans r
       (f)
       ((a) (choice a f))
-      ((a f^) (choice a (lambda () (mplus (f^) f)))))))
+      ((a f^) (choice a
+                (lambdaf@ () (mplus (f^) f)))))))
+
 
 ; interleave :: Ans a -> (() -> Ans a) -> Ans a
 ; interleave r f =
@@ -70,25 +83,48 @@
     (case-ans r
       (f)
       ((a) (choice a f))
-      ((a f^) (choice a (lambda () (interleave (f) f^)))))))
+      ((a f^) (choice a
+                (lambdaf@ () (interleave (f) f^)))))))
 
 
 ; Kanren implementation
-(define succeed (lambda (s) (unit s)))
-(define fail (lambda (s) mzero))
+(define succeed (lambdag@ (s) (unit s)))
+(define fail (lambdag@ (s) (mzero)))
 
-(define-syntax run
+(define-syntax run*
   (syntax-rules ()
     ((_ (x) g0 g ...)
      (let ((x (var 'x)))
-       (lambda () (rn x ((all g0 g ...) empty-s)))))))
+       (runner prefix* x (all g0 g ...))))))
+
+(define runner
+  (lambda (fn x g)
+    (map reify-fresh
+      (fn (lambda () (rn x (g empty-s)))))))
 
 (define rn
   (lambda (x r)
     (case-ans r
-      '()
-      ((s) (cons (reify x s) (lambda () '())))
-      ((s f) (cons (reify x s) (lambda () (rn x (f))))))))
+      (quote ())
+      ((s) (cons (still-fresh x s)
+             (lambda () (quote ()))))
+      ((s f) (cons (still-fresh x s)
+               (lambda () (rn x (f))))))))
+
+(define still-fresh
+  (lambda (x s)
+    (let ((v (reify-nonfresh x s)))
+      (cond
+        ((var? v) x)
+        (else v)))))
+
+(define-syntax run
+  (syntax-rules ()
+    ((_ n (x) g0 g ...)
+     (let ((x (var 'x)))
+       (runner (prefix n) x (all g0 g ...))))))
+
+
 
 (define-syntax all
   (syntax-rules ()
@@ -96,11 +132,11 @@
     ((_ g) g)
     ((_ g0 g ...)
      (let ((g^ g0))
-       (lambda (s) (bind (g^ s) (lambda (s) ((all g ...) s))))))))
+       (lambdag@ (s) (bind (g^ s) (lambdag@ (s) ((all g ...) s))))))))
 
 (define ==
   (lambda (v w)
-    (lambda (s)
+    (lambdag@ (s)
       (cond
         ((unify v w s) => succeed)
         (else (fail s))))))
@@ -108,7 +144,7 @@
 (define-syntax fresh
   (syntax-rules ()
     ((_ (x ...) g0 g ...)
-     (lambda (s)
+     (lambdag@ (s)
        (let ((x (var 'x)) ...)
          ((all g0 g ...) s))))))
 
@@ -133,11 +169,11 @@
     ((_ combine (else g ...)) (all g ...))
     ((_ combine (g ...) c ...)
      (let ((g^ (all g ...)))
-       (lambda (s) (combine (g^ s) (lambda () ((c@ combine c ...) s))))))))
+       (lambdag@ (s) (combine (g^ s) (lambdaf@ () ((c@ combine c ...) s))))))))
 
 (define-syntax chop1
   (syntax-rules ()
-    ((chop r s) (succeed s))))
+    ((chop1 r s) (succeed s))))
 
 (define-syntax cond1
   (syntax-rules ()
@@ -145,7 +181,7 @@
 
 (define-syntax chopo
   (syntax-rules ()
-    ((chop r s) r)))
+    ((chopo r s) r)))
 
 (define-syntax condo
   (syntax-rules ()
@@ -157,13 +193,13 @@
     ((_ chop (else g ...)) (all g ...))
     ((_ chop (g0 g ...) c ...)
      (let ((g^ g0))
-       (lambda (s)
+       (lambdag@ (s)
          (let ((r (g^ s)))
            (case-ans r
              ((c1 chop c ...) s)   ; g0 failed
              ((s) ((all g ...) s)) ; g0 is deterministic
              ((s f)                ; at least one answer from g0
-              (bind (chop r s) (lambda (s) ((all g ...) s)))))))))))
+              (bind (chop r s) (lambdag@ (s) ((all g ...) s)))))))))))
 
 (define-syntax alli
   (syntax-rules ()
@@ -171,14 +207,15 @@
     ((_ g) g)
     ((_ g0 g ...)
      (let ((g^ g0))
-       (lambda (s) (ai (g^ s) (lambda (s) ((alli g ...) s))))))))
+       (lambdag@ (s) (bindi (g^ s) (lambdag@ (s) ((alli g ...) s))))))))
 
-(define ai
+(define bindi
   (lambda (r k)
     (case-ans r
-      mzero
-      ((s) (k s))
-      ((s f) (interleave (k s) (lambda () (ai (f) k)))))))
+      (mzero)
+      ((a) (k a))
+      ((a f) (interleave (k a)
+               (lambdaf@ () (bindi (f) k)))))))
 
 (define-syntax lambda-limited
   (syntax-rules ()
@@ -188,7 +225,7 @@
 
 (define ll
   (lambda (n x g)
-    (lambda (s)
+    (lambdag@ (s)
       (let ((v (walk-var x s)))
         (cond
           ((var? v) (g (ext-s x 1 s)))
@@ -201,15 +238,16 @@
   (lambda (f)
     (let ((p (f)))
       (cond
-        ((null? p) '())
-        (else (cons (car p) (prefix* (cdr p))))))))
+    	((null? p) (quote ()))
+	    (else (cons (car p) (prefix* (cdr p))))))))
 
 (define prefix
-  (lambda (n f)
-    (cond
-      ((zero? n) '())
-      (else
-        (let ((p (f)))
-          (cond
-            ((null? p) '())
-            (else (cons (car p) (prefix (- n 1) (cdr p))))))))))
+  (lambda (n)
+    (lambda (f)
+      (cond
+        ((zero? n) (quote ()))
+        (else
+         (let ((p (f)))
+           (cond
+             ((null? p) (quote ()))
+             (else (cons (car p) ((prefix (- n 1)) (cdr p)))))))))))
