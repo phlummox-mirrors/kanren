@@ -3,43 +3,38 @@
 ;;; working version
 (define with-k
   (lambda (fun)
-    (lambda@ (k s f)
-      (@ (fun (lambda@ (k^ s^ f^) (@ k s^ f^))) k s f))))
+    (lambda@ (s k f)
+      (@ (fun (lambda@ (s^ k^ f^) (@ k s^ f^))) s k f))))
 
 (define with-f
   (lambda (fun)
-    (lambda@ (k s f)
-      (@ (fun (lambda@ (k^ s^ f^) (@ f))) k s f))))
+    (lambda@ (s k f)
+      (@ (fun (lambda@ (s^ k^ f^) (@ f))) s k f))))
 
 (define with-substitution
   (lambda (fun)
-    (lambda@ (k s f)
-      (@ (fun (lambda@ (a k^ s^ f^) (@ a k^ s f^))) k s f))))
-
-(define with-substitution
-  (lambda (fun)
-    (lambda@ (k s f)
-      (@ (fun (lambda@ (k^ s^ f^) (@ k^ s f^))) k s f))))
+    (lambda@ (s)
+      (@ fun (lambda@ (s^ k^) (@ k^ s)) s))))
 
 (define-syntax ==
   (syntax-rules ()
     [(_ t u)
-     (lambda@ (k s)
+     (lambda@ (s)
        (cond
-         [(unify t u s) => k]
-         [else absorb-and-invoke]))]))
+         [(unify t u s) => succeed]
+         [else (@ fail s)]))]))
 
 (define-syntax all
   (syntax-rules ()
     ((_) succeed)
     ((_ a) a)
     ((_ a a* ...)
-     (lambda (k) (all-aux k a a* ...)))))
+     (lambda@ (s k) (all-aux s k a a* ...)))))
 
 (define-syntax all-aux
   (syntax-rules ()
-    ((_ k a) (@ a k))
-    ((_ k a a* ...) (@ a (all-aux k a* ...)))))
+    ((_ s k a) (@ a s k))
+    ((_ s k a a* ...) (@ a s (lambda@ (s) (all-aux s k a* ...))))))
 
 ;;; all, any
 
@@ -48,28 +43,21 @@
 (define-syntax cond@
   (syntax-rules ()
    ((_ c c* ...)
-     (lambda@ (k s f) (cond@-aux k s f c c* ...)))))
+     (lambda@ (s k f) (cond@-aux s k f c c* ...)))))
 
 (define-syntax cond@-aux
   (syntax-rules (else)
-    ((_ k s f (else a* ...)) (@ (all a* ...) k s f))
-    ((_ k s f (a* ...)) (@ (all a* ...) k s f))
-    ((_ k s f (a* ...) c c* ...)
-     (@ (all a* ...) k s (lambda@ () (cond@-aux k s f c c* ...))))))
+    ((_ s k f (else a* ...)) (@ (all a* ...) s k f))
+    ((_ s k f (a* ...)) (@ (all a* ...) s k f))
+    ((_ s k f (a* ...) c c* ...)
+     (@ (all a* ...) s k (lambda@ () (cond@-aux s k f c c* ...))))))
 
 (define-syntax any ;;; okay
   (syntax-rules ()
     ((_) fail)
     ((_ a) a)
     ((_ a a* ...)
-     (lambda@ (k s f)
-       (any-aux k s f a a* ...)))))
-
-(define-syntax any-aux
-  (syntax-rules ()
-    ((_ k s f a) (@ a k s f))
-    ((_ k s f a a* ...)
-     (@ a k s (lambda () (any-aux k s f a* ...))))))
+     (cond@ (a) (a*) ...))))
 
 ;;; all, ef
 
@@ -82,14 +70,14 @@
 
 (define ef
   (lambda@ (t c a)
-     (lambda@ (k s f)
+     (lambda@ (s k f)
        (@ t
+         s
          (lambda@ (s f1)
            (lambda@ (_w)
-             (@ c k s (lambda@ () (@ (@ f1) f)))))
-         s
+             (@ c s k (lambda@ () (@ (@ f1) f)))))
          (lambda@ () absorb-and-invoke)
-         (lambda@ () (@ a k s f))))))
+         (lambda@ () (@ a s k f))))))
 
 (define absorb-and-invoke
   (lambda@ (w) (@ w)))
@@ -99,25 +87,23 @@
 (define-syntax condi
   (syntax-rules ()
    ((_ c c* ...)
-     (lambda@ (k s) (condi-aux k s c c* ...)))))
+     (lambda@ (s) (condi-aux s c c* ...)))))
 
 (define-syntax condi-aux
   (syntax-rules (else)
-    ((_ k s (else a* ...)) (@ (all a* ...) k s))
-    ((_ k s (a* ...)) (@ (all a* ...) k s))
-    ((_ k s (a* ...) c c* ...)
+    ((_ s (else a* ...)) (@ (all a* ...) s))
+    ((_ s (a* ...)) (@ (all a* ...) s))
+    ((_ s (a* ...) c c* ...)
      (@ interleave 
-        (lambda@ (k) (@ (all a* ...) k s))
-        (lambda@ (k) (condi-aux k s c c* ...))
-        k))))
+        (@ (all a* ...) s)
+        (condi-aux s c c* ...)))))
 
 (define bi-anyi
   (lambda@ (a1 a2)
-    (lambda@ (k s)
+    (lambda@ (s)
       (@ interleave
-        (lambda@ (k) (@ a1 k s))
-        (lambda@ (k) (@ a2 k s))
-        k))))
+	(@ a1 s)
+        (@ a2 s)))))
 
 '(define-syntax condi 
   (syntax-rules (else)
@@ -145,31 +131,17 @@
     [(_) (all)]
     [(_ a) a]
     [(_ a a* ...)
-     (lambda@ (k s f)
+     (lambda@ (s)
        (@ bi-alli
-         (lambda@ (k f)
-           (@ a k s f)) 
-         (alli a* ...)
-         k f))]))
-
-(define-syntax alli
-  (syntax-rules ()
-    ((_) (all))
-    ((_ a) a)
-    ((_ a a* ...)
-     (lambda@ (k s)
-       (@ bi-alli
-         (lambda@ (k)
-           (@ a k s)) 
-         (alli a* ...)
-         k)))))
+         (@ a s)
+         (alli a* ...)))]))
 
 (define bi-alli
   (lambda@ (r1 a2 k f)
     (@ r1 anyi-k anyi-f
       (lambda@ (s r)
         (@ interleave
-          (lambda@ (k) (@ a2 k s))
+          (@ a2 s)
           (@ bi-alli r a2)
           k f))
       f)))
@@ -185,7 +157,7 @@
 
 (define-syntax once
   (syntax-rules ()
-    ((_ a) (lambda@ (k s f) (@ a (lambda@ (s^ f^) (@ k s^ f)) s f)))))
+    ((_ a) (lambda@ (s k f) (@ a s (lambda@ (s^ f^) (@ k s^ f)) f)))))
        
 ;;; This does not change
 
@@ -197,21 +169,9 @@
 (define-syntax project  ;;; okay
   (syntax-rules ()
     ((_ (x* ...) a* ...)
-     (projectf (x* ...)
-       (lambda (x* ...) (all a* ...))))))
-
-(define-syntax project  ;;; okay
-  (syntax-rules ()
-    ((_ (x* ...) a* ...)
-     (lambda@ (k s)
+     (lambda@ (s)
        (let ([x* (reify-nonfresh x* s)] ...)
-         (@ (all a* ...) k s))))))
-
-(define-syntax projectf
-  (syntax-rules ()
-    [(_ (x* ...) fun)
-     (lambda@ (k)
-       (@ (fun (reify-nonfresh x* s) ...) k))]))
+         (@ (all a* ...) s))))))
 
 (define-syntax fresh   ;;; okay
   (syntax-rules ()
@@ -232,8 +192,8 @@
     ((_ (x) a* ...)
      (let ((x (var (quote x))))
        (@ (all a* ...)
-          (lambda@ (s f) (cons (reify x s) f))
           empty-s
+          (lambda@ (s f) (cons (reify x s) f))
           (lambda@ () (quote ())))))))
 
 (define-syntax run-stream ;;; okay
@@ -261,18 +221,18 @@
 ;;; a stream is either empty or a pair whose cdr is 
                 ;;; a function of no arguments that returns a stream.
 
-(define succeed (lambda@ (k) k))  
+(define succeed (lambda@ (s k) (@ k s)))
 
-(define fail (lambda@ (k s f) (@ f))) ;;; part of the interface
+(define fail (lambda@ (s k f) (@ f))) ;;; part of the interface
 
 (define-syntax trace-vars
   (syntax-rules ()
     [(_ title ())
-     (lambda@ (k s)
+     (lambda@ (s k)
        (printf "~s~n" title)
        (@ k s))]
     [(_ title (x ...))
-     (lambda@ (k s)
+     (lambda@ (s k)
        (for-each (lambda (x_ t) (printf "~s ~a ~s~n" x_ title t))
          '(x ...) (reify-fresh `(,(reify-nonfresh x s) ...)))
        (newline)
@@ -399,7 +359,7 @@
 (pretty-print `(,test-4
                 = (8 7)))
 
-(define test-5 ;;; twice
+'(define test-5 ;;; twice
   (prefix 2
     (run (q)
       (fresh (x y)
@@ -412,10 +372,10 @@
                 (all (== x 7) (== y 14))))
             (handy x y q)))))))
 
-(pretty-print `(,test-5
+'(pretty-print `(,test-5
                 = (7 16)))
           
-(define test-6 ;;; (at-most 2)
+'(define test-6 ;;; (at-most 2)
   (prefix 2
     (run (q)
       (fresh (x y)
@@ -428,7 +388,7 @@
                (all (== x 7) (== y 14))))
            (handy x y q)))))))
 
-(pretty-print `(,test-6
+'(pretty-print `(,test-6
                 = (7 16)))
 
 (define test-7  ;;; tests anyi
@@ -448,22 +408,7 @@
   `(,test-7
     = (3 13 20 14 30 15 21 31 5)))
 
-(define-syntax forget-me-not
-  (syntax-rules ()
-    [(_ (x* ...) a* ...)
-     (forget-me-not-aux () (x* ...) (x* ...) a* ...)]))
-
-(define-syntax forget-me-not-aux
-  (syntax-rules ()
-    [(_ (g* ...) () (x* ...) a* ...)
-     (with-substitution
-       (lambda (s)
-         (fresh ()
-           a* ...
-           (projectf (x* ...) (lambda (g* ...) (all s (== g* x*) ...))))))]
-    [(_ (g* ...) (y y* ...) (x* ...) a* ...)
-     (forget-me-not-aux (g* ... h) (y* ...) (x* ...) a* ...)]))
-       
+#!eof
 (define get-s
   (lambda (fun)
     (lambda@ (k s f)
