@@ -2,11 +2,7 @@
 (def-syntax (eigen (id ...) ant) (let ([id (gensym)] ...) ant))
 
 (def-syntax (run-raw (id ...) ant fk subst SE FE)
-  (exists (id ...)
-    (@ ant
-      (lambda@ (fk subst) SE)
-      (lambda () FE)
-      empty-subst)))
+  (exists (id ...) (@ ant (lambda@ (fk subst) SE) (lambda () FE) empty-subst)))
 
 (def-syntax (project-host (id ...) subst expr)
   (let ([id (subst-in id subst)] ...) expr))
