@@ -68,12 +68,8 @@
 		  (all!!
 		    (== newcarry (quotient x 10))
 		    (sum4 al bl newcarry cl)))))))))
-    (relation (bl)
-      (to-show '() bl 0 bl)
-      (all!! succeed))
-    (relation (al)
-      (to-show al '() 0 al)
-      (all!! succeed))
+    (fact (bl) '() bl 0 bl)
+    (fact (al) al '() 0 al)
     (relation (b bl carry c cl)
       (to-show '() `(,b . ,bl) carry `(,c . ,cl))
       (project (b carry)
@@ -177,6 +173,9 @@
   (lambda ()
     (solution (a b c d e f g h i j k l m n o p)
       (crypt `(,a ,b ,c ,d ,e ,f ,g ,h ,i ,j ,k ,l ,m ,n ,o ,p)))))
+
+(write (crypt-test))
+(newline)
 
 (define benchmark_count 100)
 
