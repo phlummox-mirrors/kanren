@@ -1069,7 +1069,7 @@
        gv-rest ht-rest gvs . ants)]
     [(_ "d" vars others () () gvs . ants)
      (relation-head-let "f" vars others gvs . ants)]
-
+ 
     ; final generation
     [(_ "f" vars ((gv term) ...) gvs) ; no body
      (lambda gvs                                     ; don't bother bind vars
