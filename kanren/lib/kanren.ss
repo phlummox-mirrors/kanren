@@ -2011,6 +2011,117 @@
 (printff "~s ~s~%" 'variables-4a4 (test-!-4a4))
 (printff "~s ~s~%" 'variables-4a5 (test-!-4a5))
 
+
+(define !-
+  (let ([app-rel
+          (relation (g rator rand t)
+            (g `(,rator ,rand) t)
+            (show cut (t-rand) (all cut  (!- g rator `("->" ,t-rand ,t)) cut (!- g rand t-rand))))]
+        [lambda-rel
+          (relation (g v t body type-v)
+            (g `(lambda (,v) ,body) `("->" ,type-v ,t))
+            (show cut () (all cut (!- `(non-generic ,v ,type-v ,g) body t))))]
+        [fix-rel
+          (relation (g rand t)
+            (g `(fix ,rand) t)
+            (show cut () (all cut (!- g rand `("->" ,t ,t)) cut)))]
+        [polylet-rel
+          (relation (g v rand body t)
+            (g `(let ([,v ,rand]) ,body) t)
+            (show cut (t-rand) (all cut (!- g rand t-rand) cut (!- `(generic ,v ,t-rand ,g) body t))))])
+    (extend-relations
+      fix-rel  fix-rel lambda-rel zero?-rel sub1-rel +-rel if-rel app-rel int-rel bool-rel lexvar-rel)))
+
+(printff "Testing~%")
+(pretty-print
+  (list
+    (exists (g ?)
+          (solution
+            (!- g '(lambda (f)
+                     (lambda (x)
+                       ((f x) x))) ?)))
+    (exists (g ?)
+          (solution
+            (!- g
+              '(fix (lambda (sum) sum))
+              ?)))
+
+    (exists (g ?)
+          (solution
+            (!- g
+              '((fix (lambda (sum)
+                       (lambda (n)
+                         (if (zero? n)
+                             0
+                             (+ n (sum (sub1 n)))))))
+                10)
+              ?)))
+))
+
+
+(define test-!-5
+  (lambda ()
+    (list
+      (equal?
+        (exists (g ?)
+          (solution
+            (!- g '(lambda (f)
+                     (lambda (x)
+                       ((f x) x))) ?)))
+        '(g.1 
+           (lambda (f) 
+             (lambda (x)
+               ((f x) x)))
+           ("->" ("->" t-rand.1 ("->" t-rand.1 t.1))
+            ("->" t-rand.1 t.1))))
+      (equal?
+        (exists (g ?)
+          (solution
+            (!- g
+              '((fix (lambda (sum)
+                       (lambda (n)
+                         (if (zero? n)
+                             0
+                             (+ n (sum (sub1 n)))))))
+                10)
+              ?)))
+        '(g.1
+           ((fix (lambda (sum)
+                   (lambda (n)
+                     (if (zero? n)
+                         0 
+                         (+ n (sum (sub1 n)))))))
+            10)
+           "int"))
+      (equal?
+        (exists (g ?)
+          (solution 
+            (!- g
+              '((fix (lambda (sum)
+                       (lambda (n)
+                         (+ n (sum (sub1 n))))))
+                10)
+              ?)))
+        '(g.1
+           ((fix (lambda (sum)
+                   (lambda (n) 
+                     (+ n (sum (sub1 n))))))
+            10)
+           "int"))
+      (equal?
+        (exists (g ?)
+          (solution
+            (!- g
+              '((lambda (f)
+                  (if (f (zero? 5))
+                      (+ (f 4) 8)
+                      (+ (f 3) 7)))
+                (lambda (x) x))
+              ?)))
+        #f))))
+
+(printff "~s ~s~%" 'everything-but-polymorphic-let (test-!-5))
+
 #!eof
 
 (define test-!-4b
