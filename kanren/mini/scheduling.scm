@@ -214,6 +214,19 @@
   (syntax-rules ()
     ((_ a f) (cons a f))))
 
+(define-syntax comm-choice
+  (syntax-rules ()
+    ((_ c) (cons #f c))))
+
+
+(define-syntax case-cchoice
+  (syntax-rules ()
+    ((_ e (c on-cchoice) (r on-rchoice))
+     (let ((v e))
+       (if (and (pair? v) (not (car v)))
+	 (let ((c (cdr v))) on-cchoice)
+	 (let ((r v)) on-rchoice))))))
+
 
 ; ``Operating system calls''
 (define (yield)
@@ -273,6 +286,7 @@
 		(loop new-counter high-priority-thread queue (k)))))
 	  ((choice)
 	    (let ((k (car k)) (choice (cdr k)))
+	      (display "choice req: ") (newline)
 	      (if  (> (length queue) max-queue-size)
 		; decline to fork
 		(loop tic-counter high-priority-thread queue
@@ -280,15 +294,19 @@
 		; fork a new thread for the alternative
 		(let* ((a (car choice)) (f (cdr choice))
 		       (new-thread
-			 (lambda () (k f))))
+			 (lambda () (k 
+				      (lambda ()
+					(comm-choice (f)))))))
 		(loop tic-counter high-priority-thread
 		  (append queue (list new-thread))
 		  (k (lambda () a)))))))
 	  (else
 	    (error "~s ~s~n" "unknown scheduler request" request))))
       ; We're finished and have an answer
-      (v 
-	(case-ans v
+      (v
+	(begin (display "v:") (display v) (newline)
+	(let ((v (case-cchoice v (c c) (a a))))
+	  (case-ans v
 	  ; if we have other pending threads, run them now
 	  (other-answers)
 	  ((a) (choice a other-answers))
@@ -296,11 +314,11 @@
 	    (choice a
 	      (lambdaf@ ()
 		(loop 0 high-priority-thread queue
-		  (reset (HV (f))))))))))))
+		  (reset (HV (f))))))))))))))
 
 		
 ;------------------
-(define bind
+(define bind-1
   (lambda (r k)
     (case-ans r 
       (mzero) 
@@ -308,15 +326,25 @@
       ((a f) (mplus (k a)
                (lambdaf@ () (bind (f) k)))))))
 
-(define mplus
-  (lambda (r f)
-    (case-ans r 
-      (f) 
-      ((a) (choice-fork a f))
-      ((a f0) (choice-fork a
-                (lambdaf@ () (mplus (f0) f)))))))
+(define bind
+  (lambda (r k)
+    (case-cchoice r
+      (c (comm-choice (bind-1 c k)))
+      (a (bind-1 a k)))))
 
-(define bindi
+
+(define mplus
+  (lambda (rw f)
+    (case-cchoice rw
+      (c rw)
+      (r
+	(case-ans r
+	  (f) 
+	  ((a) (choice-fork a f))
+	  ((a f0) (choice-fork a
+		    (lambdaf@ () (mplus (f0) f)))))))))
+
+(define bindi-1
   (lambda (r k)
     (case-ans r 
       (mzero) 
@@ -324,13 +352,22 @@
       ((a f) (interleave (k a)
                (lambdaf@ () (bindi (f) k)))))))
 
+(define bindi
+  (lambda (r k)
+    (case-cchoice r
+      (c (comm-choice (bindi-1 c k)))
+      (a (bindi-1 a k)))))
+
 (define interleave
-  (lambda (r f)
-    (case-ans r 
-      (f) 
-      ((a) (choice-fork a f))
-      ((a f0) (choice-fork a
-                (lambdaf@ () (interleave (f) f0)))))))
+  (lambda (rw f)
+    (case-cchoice rw
+      (c rw)
+      (r
+	(case-ans r 
+	  (f) 
+	  ((a) (choice-fork a f))
+	  ((a f0) (choice-fork a
+		    (lambdaf@ () (interleave (f) f0)))))))))
 
 (define prefix                   
   (lambda (n)
@@ -447,12 +484,15 @@
      (let ((g^ g0))
        (lambdag@ (s)
          (let ((r (g^ s)))
-           (case-ans r
-             ((cu chopper c ...) s)  
-             ((s) ((all g ...) s))
-             ((s f) (bind (chopper r s) 
-                      (lambdag@ (s)
-                        ((all g ...) s)))))))))))
+	       (case-ans r
+		 ((cu chopper c ...) s)  
+		 ((s) ((all g ...) s))
+		 ((s f) (bind (chopper r s) 
+			  (lambdag@ (s)
+			    ((all g ...) s)))))))))))
+; 	   (case-cchoice rw
+; 	     (c rw)
+; 	     (r
 
 (define-syntax conda
   (syntax-rules ()
