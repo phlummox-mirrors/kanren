@@ -4819,6 +4819,16 @@
 (time (p-test 64 128))
 (time (p-test 96 192))
 
+(printf "~nempty prune-subst~n")
+(define prune-subst  (lambda (vars in-subst subst) subst))
+
+(pretty-print (p-test 4 5))
+
+(time (p-test 32 64))
+(time (p-test 64 128))
+(time (p-test 96 192))
+
+
 (define (p-test m n)
   (letrec
     ((e (make-e n))
