@@ -580,8 +580,6 @@
     [(_ sk fk ant0 ant1 ...)
       (@ ant0 (lambda (fk-ign) (splice-in-ants/all!! sk fk ant1 ...)) fk)]))
 
-
-
 ; (if-only COND THEN)
 ; (if-only COND THEN ELSE)
 ; Here COND, THEN, ELSE are antecedents.
@@ -622,22 +620,22 @@
 
 (define-syntax if-all!
   (syntax-rules ()
-    ((_ (condition) . args)
-      (if-only condition . args))
-    ((_ (condition1 condition2 ...) then)
-      (lambda@ (sk fk)
-	(@
-	  (splice-in-ants/all
-	    (lambda@ (fk-ign) (@ then sk fk)) condition1 condition2 ...)
-	  fk)))
-    ((_ (condition1 condition2 ...) then else)
-      (lambda@ (sk fk)
-	(@
-	  (splice-in-ants/all
-	    (lambda@ (fk-ign) (@ then sk fk)) condition1 condition2 ...)
-	  (lambda () (@ else sk fk)))))
-))
-
+    [(_ (condition) then) (if-only condition then)]
+    [(_ (condition) then else) (if-only condition then else)]
+    [(_ (condition1 condition2 ...) then)
+     (lambda@ (sk fk)
+       (@ (splice-in-ants/all
+            (lambda@ (fk-ign)
+              (@ then sk fk))
+            condition1 condition2 ...)
+          fk))]
+    [(_ (condition1 condition2 ...) then else)
+     (lambda@ (sk fk)
+       (@ (splice-in-ants/all
+            (lambda@ (fk-ign)
+              (@ then sk fk)) condition1 condition2 ...)
+          (lambda ()
+            (@ else sk fk))))]))
 
 ; Disjunction of antecedents
 ; All disjunctions below satisfy properties
@@ -695,8 +693,6 @@
     (lambda@ (sk fk subst)
       (@ ant (lambda@ (fk-ign subst-ign) (@ sk fk subst))
 	fk subst))))
-
-
 
 ; partially-eval-sant: Partially evaluate a semi-antecedent
 ; An semi-antecedent is an expression that, when applied to
@@ -795,22 +791,22 @@
      (relation (ex-id ...) () (x ...) (x ...) ant ...)]
     [(_ (ex-id ...) (var ...) (x0 x1 ...) xs ant ...)
      (relation (ex-id ...) (var ... g) (x1 ...) xs ant ...)]
-    [(_ (ex-id ...) () () () ant ...)
-      (lambda ()
-	(exists (ex-id ...)
-	  (all ant ...)))]
-    [(_ (ex-id ...) (g ...) () (x ...))
-     (lambda (g ...)
-       (exists (ex-id ...)
-	 (all!! (promise-one-answer (== g x)) ...)))]
-    [(_ (ex-id ...) (g ...) () (x ...) ant)
-     (lambda (g ...)
-       (exists (ex-id ...)
-	 (if-all! ((promise-one-answer (== g x)) ...) ant)))]
+;     [(_ (ex-id ...) () () () ant ...)
+;      (lambda ()
+;        (exists (ex-id ...)
+;          (all ant ...)))]
+;     [(_ (ex-id ...) (g ...) () (x ...))
+;      (lambda (g ...)
+;        (exists (ex-id ...)
+;  	 (all!! (promise-one-answer (== g x)) ...)))]
+;     [(_ (ex-id ...) (g ...) () (x ...) ant)
+;      (lambda (g ...)
+;        (exists (ex-id ...)
+;  	 (if-all! ((promise-one-answer (== g x)) ...) ant)))]
     [(_ (ex-id ...) (g ...) () (x ...) ant ...)
-      (lambda (g ...)
-	(exists (ex-id ...)
-	  (all (all!! (promise-one-answer (== g x)) ...) ant ...)))]))
+     (lambda (g ...)
+       (exists (ex-id ...)
+         (all (all!! (promise-one-answer (== g x)) ...) ant ...)))]))
 
 ; (define-syntax relation/cut
 ;   (syntax-rules (to-show)
@@ -842,27 +838,40 @@
 ; (define father (extend-relation father ...))
 ; loop.
 
+; (define-syntax extend-relation
+;   (syntax-rules ()
+;     [(_ (id ...) rel-exp ...)
+;      (extend-relation-aux (id ...) () rel-exp ...)]))
+
+; (define-syntax extend-relation-aux
+;   (syntax-rules ()
+;     [(_ (id ...) ([g rel-exp] ...))
+;      (let ([g rel-exp] ...)
+;        (lambda (id ...)
+;          (any (g id ...) ...)))]
+;     [(_ (id ...) (let-pair ...) rel-exp0 rel-exp1 ...)
+;      (extend-relation-aux (id ...)
+;        (let-pair ... [g rel-exp0]) rel-exp1 ...)]))
+
 (define-syntax define-rel-lifted-comb
   (syntax-rules ()
     ((_ rel-syntax-name ant-proc-or-syntax)
       (define-syntax rel-syntax-name
 	(syntax-rules ()
 	  ((_ ids . rel-exps)
-	    (lift-ant-to-rel-aux ant-proc-or-syntax ids () . rel-exps))))
-      )))
+	    (lift-ant-to-rel-aux ant-proc-or-syntax ids () . rel-exps)))))))
 
 (define-syntax lift-ant-to-rel-aux
   (syntax-rules ()
-    [(_ ant-handler (id ...) (rel-var ...))
-      (lambda (id ...)
-	(ant-handler (rel-var id ...) ...))]
-    [(_ ant-handler ids (var ...) rel-exp0 rel-exp1 ...)
-      (let ((rel-var rel-exp0))
-	(lift-ant-to-rel-aux ant-handler ids 
-	  (var ... rel-var) rel-exp1 ...))]))
+    [(_ ant-handler (id ...) ([g rel-var] ...))
+     (let ([g rel-var] ...)
+       (lambda (id ...)
+         (ant-handler (g id ...) ...)))]
+    [(_ ant-handler ids (let-pair ...) rel-exp0 rel-exp1 ...)
+     (lift-ant-to-rel-aux ant-handler ids 
+       (let-pair ... [g rel-exp0]) rel-exp1 ...)]))
 
 (define-rel-lifted-comb extend-relation any)
-
 
 ; The following  antecedent-to-relations 
 ; transformers are roughly equivalent. I don't know which is better.
@@ -881,7 +890,6 @@
       (lambda (id ...)
 	(let ((ant-name (rel-exp id ...)) ...)
 	  body)))))
-
 
 ;------------------------------------------------------------------------
 ;;;;; Starts the real work of the system.
@@ -4334,12 +4342,11 @@
 
 (test-check "Zebra"
   (time (solution (h) (zebra h)))
-  '((h.0
-      ((norwegian kools water fox yellow)
-       (ukrainian chesterfields tea horse blue)
-       (englishman oldgolds milk snails red)
-       (spaniard luckystrikes oj dog ivory)
-       (japanese parliaments coffee zebra green)))))
+  '((h.0 ((norwegian kools water fox yellow)
+          (ukrainian chesterfields tea horse blue)
+          (englishman oldgolds milk snails red)
+          (spaniard luckystrikes oj dog ivory)
+          (japanese parliaments coffee zebra green)))))
 
 ; mirror with the equational theory
 
@@ -4543,4 +4550,3 @@
 
 
 (exit 0)
-
