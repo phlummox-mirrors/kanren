@@ -1886,6 +1886,13 @@
         '((non-generic b "bool" (non-generic a "int" g.1)) (zero? a) "bool")))))
 
 (printff "~s ~s~%" 'variables (test-!-3))
+(printff "~%Accidental binding ~s~%"
+  (exists (g ?)
+    (solution
+      (!- g
+	'a
+	?))))
+
 
 
 (define lambda-rel
@@ -2030,25 +2037,25 @@
             (g `(let ([,v ,rand]) ,body) t)
             (show cut (t-rand) (all cut (!- g rand t-rand) cut (!- `(generic ,v ,t-rand ,g) body t))))])
     (extend-relations
-      fix-rel  fix-rel lambda-rel zero?-rel sub1-rel +-rel if-rel app-rel int-rel bool-rel lexvar-rel)))
+      fix-rel lambda-rel zero?-rel sub1-rel +-rel if-rel app-rel int-rel bool-rel lexvar-rel)))
 
 (printff "Testing~%")
 (pretty-print
   (list
     (exists (g ?)
           (solution
-            (!- g '(lambda (f)
+            (!- '() '(lambda (f)
                      (lambda (x)
                        ((f x) x))) ?)))
     (exists (g ?)
           (solution
-            (!- g
+            (!- '()
               '(fix (lambda (sum) sum))
               ?)))
 
     (exists (g ?)
           (solution
-            (!- g
+            (!- '()
               '((fix (lambda (sum)
                        (lambda (n)
                          (if (zero? n)
@@ -2065,10 +2072,10 @@
       (equal?
         (exists (g ?)
           (solution
-            (!- g '(lambda (f)
+            (!- '() '(lambda (f)
                      (lambda (x)
                        ((f x) x))) ?)))
-        '(g.1 
+        '(() 
            (lambda (f) 
              (lambda (x)
                ((f x) x)))
@@ -2077,7 +2084,7 @@
       (equal?
         (exists (g ?)
           (solution
-            (!- g
+            (!- '()
               '((fix (lambda (sum)
                        (lambda (n)
                          (if (zero? n)
@@ -2085,7 +2092,7 @@
                              (+ n (sum (sub1 n)))))))
                 10)
               ?)))
-        '(g.1
+        '(()
            ((fix (lambda (sum)
                    (lambda (n)
                      (if (zero? n)
@@ -2096,13 +2103,13 @@
       (equal?
         (exists (g ?)
           (solution 
-            (!- g
+            (!- '()
               '((fix (lambda (sum)
                        (lambda (n)
                          (+ n (sum (sub1 n))))))
                 10)
               ?)))
-        '(g.1
+        '(()
            ((fix (lambda (sum)
                    (lambda (n) 
                      (+ n (sum (sub1 n))))))
@@ -2111,7 +2118,7 @@
       (equal?
         (exists (g ?)
           (solution
-            (!- g
+            (!- '()
               '((lambda (f)
                   (if (f (zero? 5))
                       (+ (f 4) 8)
