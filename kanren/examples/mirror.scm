@@ -80,10 +80,11 @@
       (fact (val) `(btree (leaf ,val)))
       (relation (t1 t2)
 	(to-show `(btree (root ,t1 ,t2)))
-	(all
-	  (predicate (t1 t2) (printf "btree ~s ~s ~n" t1 t2))
-	  (kb `(btree ,t1))
-	  (kb `(btree ,t2)))))))
+	(project (t1 t2)
+          (all
+	    (predicate (printf "btree ~s ~s ~n" t1 t2))
+	    (kb `(btree ,t1))
+	    (kb `(btree ,t2))))))))
 
 ;%> (declare mirror ((S) -> ((BTree S)) (BTree S)))
 
