@@ -2218,7 +2218,7 @@
             [(var? u-term)
              (cond
                [(assq u-term s) => loop]
-               [else (unify-var/value t-var u-term s)])]
+               [else (extend-subst t-var u-term s)])]
             [else (extend-subst t-var u-term s)]))))))
   
 ; ((and (pattern-var? tree2) (assq tree2 env)) => ; tree2 is a bound var
