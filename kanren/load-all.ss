@@ -7,4 +7,6 @@
 (load "examples/zebra.scm")
 (load "examples/mirror.scm")
 (load "examples/mirror-equ.scm")
+;(load "examples/deduction.scm")
+;(load "benchmarks/alg-complexity.scm") ; must be the last one
 
