@@ -241,9 +241,9 @@
 (define make-e
   (lambda (n)
     (lambda (x y)
-      (all!!
-        (predicate (x) (< x n))
-        (project (x)
+      (project (x)
+        (all!!
+          (predicate (< x n))
           (== y (+ x 1)))))))
 
 (pretty-print (p-test 4 5))
@@ -289,8 +289,8 @@
 (time (p-test 64 128))
 (time (p-test 96 192))
 
-(printf "~nempty prune-subst~n")
-(define prune-subst  (lambda (vars in-subst subst) subst))
+(printf "~nempty lv-elim~n")
+(define lv-elim  (lambda (vars in-subst subst) subst))
 
 (pretty-print (p-test 4 5))
 
@@ -339,14 +339,14 @@
 ; long-sought linearity: the difference between the third and the first
 ; tests is twice as much as the difference between the second and the first.
 
-(printf "~ndetailed prune-subst~n")
+(printf "~ndetailed lv-elim~n")
 
-'(define prune-subst
+'(define lv-elim
   (lambda (vars in-subst subst)
     (printf "vars ~a in-subst: ~a~nsubst ~a~n" vars in-subst subst)
     subst))
 
-'(define prune-subst
+'(define lv-elim
   (lambda (vars in-subst subst)
     (printf "vars ~a in-subst: ~a~nsubst ~a~n" vars in-subst subst)
     (if (eq? subst in-subst)
@@ -362,7 +362,7 @@
 	  [(null? var-bindings) subst] ; none of vars are bound
 	  [(null? (cdr var-bindings))
 	    ; only one variable to prune, use the faster version
-	   (prune-subst-1 (commitment->var (car var-bindings))
+	   (lv-elim-1 (commitment->var (car var-bindings))
 	     in-subst subst)]
 	  [(let test ([vb var-bindings]) ; check multiple dependency
 	     (and (pair? vb)
@@ -373,7 +373,7 @@
 	   (let loop ([var-bindings var-bindings] [subst subst])
 	     (if (null? var-bindings) subst
 	       (loop (cdr var-bindings)
-		 (prune-subst-1 (commitment->var (car var-bindings))
+		 (lv-elim-1 (commitment->var (car var-bindings))
 		   in-subst subst))))]
 	  [else				; do it in parallel
 	    (let loop ([current subst])
