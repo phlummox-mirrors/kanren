@@ -236,9 +236,10 @@
   (lambda ()
     (shift f (H 'yield (lambda () (f #f))))))
 
-(define choice-fork
-  (lambda (chooser c1 c2) ; both c1 and c2 are thunks
-    ((shift f (H 'choice (cons f (list chooser c1 c2)))))))
+(define fork-req
+  (lambda ()
+    (shift f (H 'fork f))))
+
 
 (define scheduling-quantum 10)
 (define max-queue-size 5)
@@ -292,23 +293,17 @@
 		(if (> new-counter scheduling-quantum)
 		  (switch k)
 		  (loop new-counter high-priority-thread queue (k)))))
-	     ((choice)
-	      (let ((k (car k)) (choice (cdr k)))
-		;(cout "req choice, queue: " (length queue) nl)
-		(if  (> (length queue) max-queue-size)
+	     ((fork)
+	       ;(cout "req choice, queue: " (length queue) nl)
+	       (if  (> (length queue) max-queue-size)
 		  ; decline to fork
-		  (loop tic-counter high-priority-thread queue
-		    (k 
-		      (lambda () (intercept-forward choice))))
+		 (loop tic-counter high-priority-thread queue
+		   (k 'denied))
 		  ; fork a new thread for the alternative
-		  (let* ((chooser (car choice))
-			 (c1 (cadr choice)) 
-			 (c2 (caddr choice))
-			 (new-thread
-			   (lambda () (k c2))))
+		  (let ((new-thread (lambda () (k 'in-thread2))))
 		    (loop tic-counter high-priority-thread
 		      (append queue (list new-thread))
-		      (k c1))))))
+		      (k 'in-thread1)))))
 	     (else
 	       (error "~s ~s~n" "unknown scheduler request" request))))
 	  ; We're finished and have an answer
@@ -324,6 +319,45 @@
 		     (reset (HV (f))))))))))))))
 
 
+
+; We ask the `OS' to fork a thread.
+; The OS eitehr obliges, by returning 'in-thread1
+; and then _again_, 'in-thread2
+; Or, OS denies the request and returns 'denied
+(define choice-fork
+  (lambda (chooser c1 c2) ; both c1 and c2 are thunks
+    (case (fork-req)
+      ((in-thread1)			; OS launched the thread
+	(c1))
+      ((in-thread2)			; OS launched the thread
+	(c2))
+      ((denied)
+	; OK, run (c1) but intecept child's requests.
+	; A child, c1, can't launch threads from under us
+	(let loop ((r (reset (HV (c1)))))
+	  (case-H r
+	    ((request k)
+	      (case request
+		((yield)		; relay the yield request
+		  (yield)
+		  (loop (k)))
+		((fork)
+		  (case (fork-req)	; Ask the OS to fork
+		    ((in-thread1)
+		      (unwrap (k 'denied))) ; deny the child and detach
+		    ((in-thread2)
+		      (c2))
+		    ((denied)		; denied again, deny the child too
+		      (loop (k 'denied)))
+		    (else
+		      (error "bad OS fork response~n"))))
+		(else
+		  (error "~s ~s~n" "unknown scheduler request" request))))
+	    (v				; c1 finished and yielded a value
+	      (chooser v c2)))))
+      (else
+	(error "bad OS fork response~n")))))
+
 ; Intercept ``operating system'' calls within a thunk
 ; that ask for launching a thread -- and deny them
 (define intercept-deny-thread-launch
@@ -332,11 +366,9 @@
       (case-H r
 	((request k)
 	 (case request
-	   ((choice)
-            ;(display "intercepted choice...") (newline)
-            (let ((k (car k)) (choice (cdr k)))
-              (loop (k (lambda () (apply (car choice) ((cadr choice))
-                                    (cddr choice)))))))
+	   ((fork)
+	     ;;(display "intercepted choice...") (newline)
+	     (loop (k 'denied)))
 	   ((yield)
             ; send upstairs
             ;(display "yield...") (newline)
@@ -345,38 +377,6 @@
 	   (else
 	     (error "~s ~s~n" "unknown scheduler request" request))))
 	(v v)))))
-
-; Given `choice', which is (list chooser-proc c1 c2)
-; where c1 and c2 are thunks, apply chooser-proc to c1 and c2. 
-(define intercept-forward
-  (lambda (choice)
-    (let* ((chooser (car choice))
-	   (c1 (cadr choice)) 
-	   (c2 (caddr choice)))
-      (let loop ((r (reset (HV (c1)))))
-	(case-H r
-	  ((request k)
-	    (case request
-	      ((choice)
-		;(cout "int-fwd: choice" nl)
-		(let ((k (car k)) (choice (cdr k)))
-		  (choice-fork 
-		    chooser
-		    (lambda () 
-		      (unwrap (k (lambda () (apply (car choice) ((cadr choice))
-					    (cddr choice))))))
-		    c2)))
-	      ((yield)
-		;; send upstairs
-		(yield)
-		(loop (k)))
-	      (else
-		(error "~s ~s~n" "unknown scheduler request" request))))
-	  ; c1 yielded the answer
-	  (v 
-	    (chooser v c2)))))))
-
-
 
 ; This is the analogue of the hr function.
 ; It essentially emulates `control' via shift
@@ -387,17 +387,13 @@
 	((yield)
 	  (yield)
 	  (unwrap (k)))
-	((choice)
-	  ;(cout "unwrap: choice" nl)
-	  (let ((k (car k)) (choice (cdr k)))
-	    (let* ((chooser (car choice))
-		   (c1 (cadr choice)) 
-		   (c2 (caddr choice)))
-	      (choice-fork chooser
-		(lambda () (unwrap (k c1)))
-		(lambda () (unwrap (k c2)))))))
-	))
+	((fork)
+	  ;(cout "unwrap: fork" nl)
+	  (unwrap (k (fork-req))))
+	(else
+	  (error "~s ~s~n" "unknown scheduler request" request))))
     (v v)))
+
 
 
 
