@@ -547,10 +547,11 @@
     [(_) (all)]
     [(_ (promise-one-answer ant)) (promise-one-answer ant)] ; keep the mark
     [(_ ant0 ant1 ...)
-     (lambda@ (sk fk)
-       (@
-	 (splice-in-ants/all (lambda@ (fk-ign) (@ sk fk)) ant0 ant1 ...)
-	 fk))]))
+     (promise-one-answer
+       (lambda@ (sk fk)
+	 (@
+	   (splice-in-ants/all (lambda@ (fk-ign) (@ sk fk)) ant0 ant1 ...)
+	   fk)))]))
 
 ; (all!! ant1 ant2 ...)
 ; Even more committed choice nondeterministic conjunction
@@ -566,11 +567,12 @@
     [(_) (all!)]
     [(_ ant) (all! ant)]
     [(_ ant0 ant1 ...)
-      (lambda@ (sk fk)
-	(splice-in-ants/all!! sk fk ant0 ant1 ...))]))
+      (promise-one-answer 
+	(lambda@ (sk fk)
+	  (splice-in-ants/all!! sk fk ant0 ant1 ...)))]))
 
 (define-syntax splice-in-ants/all!!
-  (syntax-rules ()
+  (syntax-rules (promise-one-answer)
     [(_ sk fk)
       (@ sk fk)]
     [(_ sk fk (promise-one-answer ant))
