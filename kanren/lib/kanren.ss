@@ -1831,55 +1831,69 @@
 	(list a1 a2 a3))))
   '(((p1.0 sam) (p2.0 rob)) ((p1.0 roz) (p2.0 sue)) ((p1.0 rob) (p2.0 sal))))
 
-(define-syntax if/bc
+(define-syntax project
   (syntax-rules ()
-    [(_ #t conseq alt) conseq]
-    [(_ #f conseq alt) alt]))
-
-(define-syntax let-inject/everything
-  (syntax-rules ()
-    [(_ ([t ([var0 bool] ...) scheme-expression] ...) body ...)
+    [(_ (id ...) ant)
      (lambda@ (sk fk subst)
-       (@ (exists (t ...)
-	    (all
-	      (all!! (promise-one-answer
-		       (== t (let ([var0 (let ([x (subst-in var0 subst)])
-					  (if/bc bool (nonvar! x) x))]
-				   ...)
-			       scheme-expression)))
-		...)
-	      body ...))
-	 sk fk subst))]))
+       (let ([id (nonvar! (subst-in id subst))] ...)
+	 (@ ant sk fk subst)))]))
 
-(define-syntax let*-inject/everything
+(define-syntax project/no-check
   (syntax-rules ()
-    [(_ () body0 body1 ...) (all body0 body1 ...)]
-    [(_ ([t0 ([var0 bool0] ...) scheme-expression0]
-         [t1 ([var1 bool1] ...) scheme-expression1]
-         ...) body0 body1 ...)
-     (let-inject/everything ([t0 ([var0 bool0] ...) scheme-expression0])
-       (let*-inject/everything ([t1 ([var1 bool1] ...) scheme-expression1] ...)
-         body0 body1 ...))]))
+    [(_ (id ...) ant)
+     (lambda@ (sk fk subst)
+       (let ([id (subst-in id subst)] ...)
+	 (@ ant sk fk subst)))]))
 
-(define-syntax let-inject
-  (syntax-rules ()
-    [(_ ([t (var0 ...) exp] ...) body ...)
-     (let-inject/everything ([t ([var0 #t] ...) exp] ...) body ...)]))
+; (define-syntax if/bc
+;   (syntax-rules ()
+;     [(_ #t conseq alt) conseq]
+;     [(_ #f conseq alt) alt]))
 
-(define-syntax let-inject/no-check
-  (syntax-rules ()
-    [(_ ([t (var0 ...) exp] ...) body ...)
-     (let-inject/everything ([t ([var0 #f] ...) exp] ...) body ...)]))
+; (define-syntax let-inject/everything
+;   (syntax-rules ()
+;     [(_ ([t ([var0 bool] ...) scheme-expression] ...) body ...)
+;      (lambda@ (sk fk subst)
+;        (@ (exists (t ...)
+; 	    (all
+; 	      (all!! (promise-one-answer
+; 		       (== t (let ([var0 (let ([x (subst-in var0 subst)])
+; 					  (if/bc bool (nonvar! x) x))]
+; 				   ...)
+; 			       scheme-expression)))
+; 		...)
+; 	      body ...))
+; 	 sk fk subst))]))
 
-(define-syntax let*-inject
-  (syntax-rules ()
-    [(_ ([t (var0 ...) exp] ...) body ...)
-     (let*-inject/everything ([t ([var0 #t] ...) exp] ...) body ...)]))
+; (define-syntax let*-inject/everything
+;   (syntax-rules ()
+;     [(_ () body0 body1 ...) (all body0 body1 ...)]
+;     [(_ ([t0 ([var0 bool0] ...) scheme-expression0]
+;          [t1 ([var1 bool1] ...) scheme-expression1]
+;          ...) body0 body1 ...)
+;      (let-inject/everything ([t0 ([var0 bool0] ...) scheme-expression0])
+;        (let*-inject/everything ([t1 ([var1 bool1] ...) scheme-expression1] ...)
+;          body0 body1 ...))]))
 
-(define-syntax let*-inject/no-check
-  (syntax-rules ()
-    [(_ ([t (var0 ...) exp] ...) body ...)
-     (let*-inject/everything ([t ([var0 #f] ...) exp] ...) body ...)]))
+; (define-syntax let-inject
+;   (syntax-rules ()
+;     [(_ ([t (var0 ...) exp] ...) body ...)
+;      (let-inject/everything ([t ([var0 #t] ...) exp] ...) body ...)]))
+
+; (define-syntax let-inject/no-check
+;   (syntax-rules ()
+;     [(_ ([t (var0 ...) exp] ...) body ...)
+;      (let-inject/everything ([t ([var0 #f] ...) exp] ...) body ...)]))
+
+; (define-syntax let*-inject
+;   (syntax-rules ()
+;     [(_ ([t (var0 ...) exp] ...) body ...)
+;      (let*-inject/everything ([t ([var0 #t] ...) exp] ...) body ...)]))
+
+; (define-syntax let*-inject/no-check
+;   (syntax-rules ()
+;     [(_ ([t (var0 ...) exp] ...) body ...)
+;      (let*-inject/everything ([t ([var0 #f] ...) exp] ...) body ...)]))
 
 (define-syntax predicate
   (syntax-rules ()
@@ -1958,8 +1972,7 @@
 (define test1
   (lambda (x)
     (any (predicate () (< 4 5))
-      (let-inject ([x^ () (< 6 7)])
-        (== x x^)))))
+      (== x (< 6 7)))))
 
 ;;;; Here is the definition of concretize.
 
@@ -1970,8 +1983,7 @@
 (define test2
   (lambda (x)
     (any (predicate () (< 5 4))
-      (let-inject ([x^ () (< 6 7)])
-        (== x x^)))))
+      (== x (< 6 7)))))
 
 (test-check 'test-test2
   (solution (x) (test2 x))
@@ -1980,10 +1992,8 @@
 (define test3
   (lambda (x y)
     (any
-      (let-inject ([x^ () (< 5 4)])
-        (== x x^))
-      (let-inject ([y^ () (< 6 7)])
-        (== y y^)))))
+      (== x (< 5 4))
+      (== y (< 6 7)))))
 
 (test-check 'test-test3
   (solution (x y) (test3 x y))
@@ -2156,10 +2166,11 @@
              (to-show n a b c)
              (all
                (predicate (n) (positive? n))
-               (let-inject ([m (n) (- n 1)])
-                 (move m a c b)
-                 (predicate (a b) (printf "Move a disk from ~s to ~s~n" a b))
-                 (move m c b a)))))])
+               (project/no-check (n)
+                 (all!!
+                   (move (- n 1) a c b)
+                   (predicate (a b) (printf "Move a disk from ~s to ~s~n" a b))
+                   (move (- n 1) c b a))))))])
     (relation (n)
       (to-show n)
       (move n 'left 'middle 'right))))
@@ -2319,11 +2330,9 @@
   (concretize
     (let ([j (relation (x w z)
 	       (to-show z)
-	       (let*-inject/no-check
-                 ([x () 4]
-                  [w () 3]
-                  [z^ () (cons x w)])
-                 (== z^ z)))])
+	       (let ([x 4]
+                     [w 3])
+                 (== z (cons x w))))])
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
 
@@ -2338,11 +2347,12 @@
                (relation (n a b c)
                  (to-show n a b c)
                  (all
-                   (predicate (n) (positive? n))
-                   (let-inject ([m (n) (- n 1)])
-                     (move m a c b)
-                     (predicate (a b) (push-step a b))
-                     (move m c b a)))))])
+                   (predicate (n) (positive? n)) ;;; we lookup n here
+                   (project/no-check (n)         ;;; and here!!!
+                     (all!!
+                       (move (- n 1) a c b)
+                       (predicate (a b) (push-step a b))
+                       (move (- n 1) c b a))))))])
         (relation (n path)
           (to-show n path)
           (begin
@@ -2426,11 +2436,9 @@
   (concretize
     (let ([j (relation (x w z)
 	       (to-show z)
-	       (let*-inject/no-check
-                 ([x () 4]
-                  [w () 3]
-                  [z^ () (cons x w)])
-                 (== z z^)))])
+               (let ([x 4]
+                     [w 3])
+                 (== z (cons x w))))])
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
 
@@ -2835,11 +2843,9 @@
   (concretize
     (let ([j (relation (x w z)
 	       (to-show z)
-	       (let*-inject/no-check
-                 ([x () 4]
-                  [w () 3]
-                  [z^ () (cons x w)])
-                 (== z z^)))])
+               (let ([x 4]
+                     [w 3])
+                 (== z (cons x w))))])
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
           
@@ -2929,8 +2935,7 @@
 
 (test-check 'test-fun-concat
   (solve 1 (q)
-    (let-inject ([t () (concat '(a b c) '(u v))])
-      (== q t)))
+    (== q (concat '(a b c) '(u v))))
   '(((q.0 (a b c u v)))))
 
 (define concat
