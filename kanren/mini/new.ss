@@ -1,4 +1,4 @@
-(load "minikanrensupport.ss")
+(load "minikanrensupport.scm")
 
 ; Stream implementation
 

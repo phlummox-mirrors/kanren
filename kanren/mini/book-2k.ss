@@ -15,7 +15,7 @@
 ; 	Happy Holiday!
 ; 	Oleg
 
-(load "minikanrensupport.ss")
+(load "minikanrensupport.scm")
 
 (define prefix
   (lambda (n v*)

@@ -2596,9 +2596,12 @@
 (define logo
   (lambda (n b q r)
     (condi
-      ((== '(1) n) (poso b) (== '() q) (== '() r))
-      ((== '() q)  (<o n b)  (+o r '(1) n))
-      ((== '(1) q) (=ol n b) (+o r b n))
+      ((== n '(1)) (poso b) (== q '()) (== r '())) ; 1 = b^0 + 0, b >0
+      ((== q '())  (<o n b)  (+o r '(1) n)) ; n = b^0 + (n-1)
+	; n = b + r, n and b the same sz
+      ((== q '(1)) (>1o b) (=ol n b) (+o r b n))
+      ((== b '(1)) (poso q) (+o r '(1) n))  ; n = 1^q + (n-1), q>0
+      ((== b '()) (poso q) (== r n))        ; n = 0^q + n, q>0
       ((== b '(0 1))
        (fresh (n1 _ __)
          (poso n1)
@@ -2654,7 +2657,7 @@
       (fresh (b r)
         (logo (build 33) b (build 5) r)
         (== `(,b ,r) z))))
-  '(((0 1) (1))))
+  '(((1) (0 0 0 0 0 1)) (() (1 0 0 0 0 1)) ((0 1) (1))))
 
 
 (pretty-print
@@ -2667,6 +2670,10 @@
 (define expo
   (lambda (b q n)
     (logo n b q '())))
+
+(test-check 'expo--1-6
+  (prefix 10 (run (q) (expo '(1) '(0 1) q)))
+  '((1)))
 
 ;;;; limiited-lambda
 
