@@ -2980,6 +2980,71 @@
 	 (a) Rdivby3 Reven) x))))
 
 
+(define (simplify-rel rel init-subst cutk)
+  (lambda@ (sk fk)
+    (@ rel sk fk init-subst cutk)))
+
+(define (split-srel srel)
+  (@ srel
+    (lambda@ (fk subst cutk a b)
+      (@ a subst 
+	(lambda@ (sk1 fk1)
+	  (@
+	    (fk) 
+	    ; new a
+	    (lambda@ (sub11 x) (@ sk1 (lambda () (@ x sk1 fk1)) sub11 cutk))
+	    ; new b
+	    fk1))))
+    (lambda () (lambda@ (a b) (b)))))
+
+
+(define-syntax binary-extend-relation-interleave1
+  (syntax-rules ()
+    [(_ (id ...) rel-exp1 rel-exp2)
+     (let ([rel1 rel-exp1] [rel2 rel-exp2])
+       (lambda (id ...)
+         (lambda@ (sk fk subst cutk)
+           (let ([ant1 (rel1 id ...)] [ant2 (rel2 id ...)])
+             ((interleave1 sk fk cutk)
+              (simplify-rel ant1 subst cutk)
+              (simplify-rel ant2 subst cutk))))))]))
+
+(define interleave1
+  (lambda (sk fk cutk)
+    (letrec
+      ([finish
+         (lambda (r)
+	   ;(printf "finish~%")
+	   (@ r sk fk))]
+       [interleave
+         (lambda (r1 r2)
+	   ;(printf "working~%")
+	   (@ (split-srel r1)
+	     (lambda@ (subst r1rest)
+	       (@ sk (lambda () (interleave r2 r1rest)) subst cutk))
+	     ;fk: r1 is finished
+	     (lambda () (finish r2))))])
+      interleave)))
+
+(printf "~%binary-extend-relation-interleave1~%")
+(printf "~%Reven+R2:~%")
+(pretty-print 
+  (exists (x) (solve 5
+		  ((binary-extend-relation-interleave1 (a) Reven R2) x))))
+(printf "~%R2+Reven:~%")
+(pretty-print 
+  (exists (x) (solve 5
+		  ((binary-extend-relation-interleave1 (a) R2 Reven) x))))
+(printf "~%Reven+R1:~%")
+(pretty-print 
+  (exists (x) (solve 5
+		  ((binary-extend-relation-interleave1 (a) Reven R1) x))))
+
+(printf "~%R2+R1:~%")
+(pretty-print 
+  (exists (x) (solve 7
+		  ((binary-extend-relation-interleave1 (a) R2 R1) x))))
+
 ; nrev([],[]).
 ; nrev([X|Rest],Ans) :- nrev(Rest,L), append(L,[X],Ans).
 
