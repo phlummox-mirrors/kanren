@@ -2853,11 +2853,11 @@
 
 ; R1 and R2 are overlapping
 (define R1 (extend-relation (a) 
-	     (fact () 1)
-	     (fact () 2)))
+	     (fact () '(i))
+	     (fact () '(i i))))
 (define R2 (extend-relation (a) 
-	     (fact () 1)
-	     (fact () 3)))
+	     (fact () '(i))
+	     (fact () '(i i i))))
 
 (printf "~%R1:~%")
 (pretty-print (exists (x) (solve 10 (R1 x))))
@@ -2873,23 +2873,14 @@
 		  ((extend-relation (a) R1 R1) x))))
 
 
-; Infinitary relation: even numbers
+; Infinitary relation: even numbers (Peano-Church numerals)
 
 (define Reven
   (extend-relation (a)
-    (fact () 0)
-    (relation cut (x xprev)
-      (to-show x)
-      (instantiated x)
-      cut
-      (pred-call positive? x)
-      (fun-call - xprev x 2)
-      (Reven xprev)
-      )
-    (relation _ (x xprev)
-      (to-show x)
-      (Reven xprev)
-      (fun-call + x xprev 2)
+    (fact () '())
+    (relation _ (x)
+      (to-show `(i i . ,x))
+      (Reven x)
       )
     ))
 (printf "~%Reven:~%")
@@ -2949,19 +2940,10 @@
 
 (define Rdivby3
   (extend-relation (a)
-    (fact () 0)
-    (relation cut (x xprev)
-      (to-show x)
-      (instantiated x)
-      cut
-      (pred-call positive? x)
-      (fun-call - xprev x 3)
-      (Rdivby3 xprev)
-      )
-    (relation _ (x xprev)
-      (to-show x)
-      (Rdivby3 xprev)
-      (fun-call + x xprev 3)
+    (fact () '())
+    (relation _ (x)
+      (to-show `(i i i . ,x))
+      (Rdivby3 x)
       )
     ))
 
