@@ -359,7 +359,7 @@
     [(_ (cutter ant ...) ant0 ant1 ...)
      (all! (cutter ant ... ant0 cutter) ant1 ...)]))
 
-'(define-syntax relation
+(define-syntax relation
   (syntax-rules (to-show)
     [(_ short-cut (ex ...) (to-show x ...) ant ...)
      (relation short-cut (ex ...) () (x ...) (x ...) ant ...)]
@@ -2590,6 +2590,201 @@
 (define father (extend-relation (a1 a2) father-john-sam father-sam-pete father-pete-sal))
 
 (pretty-print (exists (x y) (solve 5 (grandpa-sam 'sal))))
+
+
+; Extending relations in truly mathematical sense.
+; First, why do we need this.
+
+(define fact1 (fact () 'x1 'y1))
+(define fact2 (fact () 'x2 'y2))
+(define fact3 (fact () 'x3 'y3))
+(define fact4 (fact () 'x4 'y4))
+
+; R1 and R2 are overlapping
+(define R1 (extend-relation (a1 a2) fact1 fact2))
+(define R2 (extend-relation (a1 a2) fact1 fact3)) 
+
+(printf "~%R1:~%")
+(pretty-print (exists (x y) (solve 10 (R1 x y))))
+(printf "~%R2:~%")
+(pretty-print (exists (x y) (solve 10 (R2 x y))))
+(printf "~%R1+R2:~%")
+(pretty-print 
+  (exists (x y) (solve 10 
+		  ((extend-relation (a1 a2) R1 R2) x y))))
+
+; Infinitary relation
+; r(z,z).
+; r(s(X),s(Y)) :- r(X,Y).
+
+(define Rinf
+  (extend-relation (a1 a2)
+    (fact () 'z 'z)
+    (relation _ (x y t1 t2)
+      (to-show t1 t2)
+      (== t1 `(s ,x))
+      (== t2 `(s ,y))
+      (Rinf x y))))
+(printf "~%Rinf:~%")
+(pretty-print (exists (x y) (solve 5 (Rinf x y))))
+(printf "~%Rinf+R1: Rinf starves R1:~%")
+(pretty-print 
+  (exists (x y) (solve 5
+		  ((extend-relation (a1 a2) Rinf R1) x y))))
+
+; Solving starvation problem: extend R1 and R2 so that they
+; are interleaved
+; ((sf-extend R1 R2) sk fk)
+; (R1 sk fk)
+; If R1 fails, we try the rest of R2
+; If R1 succeeds, it executes (sk fk)
+; with fk to re-prove R1. Thus fk is the "rest" of R1
+; So we pass sk (lambda () (run-rest-of-r2 interleave-with-rest-of-r1))
+; There is a fixpoint in the following algorithm!
+
+; (define (make-R1rest r2rest) (R1 (lambda (r1rest) (sk (make-R2rest r1rest)))
+; (R1 (lambda (R1rest) (sk R2rest)) fk)
+
+(define-syntax binary-extend-relation-interleave
+  (syntax-rules ()
+    [(_ (id ...) rel-exp1 rel-exp2)
+     (let ([rel1 rel-exp1] [rel2 rel-exp2])
+       (lambda (id ...)
+         (lambda@ (sk fk subst cutk)
+	   (define r1-rest-in (lambda@ (sk fk)
+	     (@ (rel1 id ...) sk fk subst cutk)))
+	   (define r2-rest-in (lambda@ (sk fk)
+	     (@ (rel2 id ...) sk fk subst cutk)))
+	   (letrec
+	     ((r1-rest-cl 
+		(lambda ()
+		  (@ r1-rest-in
+		    (lambda@ (r1-rest-cl-new subst cutk)
+		      (set! r1-rest-cl r1-rest-cl-new)
+		      (@ sk 
+			(or r2-rest-cl r1-rest-cl)
+			subst cutk))
+		    (lambda () ; OK, r1 is finished
+		      (set! r1-rest-cl #f)
+		      (if r2-rest-cl (r2-rest-cl) (fk))))))
+	       (r2-rest-cl 
+		(lambda ()
+		  (@ r2-rest-in
+		    (lambda@ (r2-rest-cl-new subst cutk)
+		      (set! r2-rest-cl r2-rest-cl-new)
+		      (@ sk (or r1-rest-cl r2-rest-cl) subst cutk))
+		    (lambda () ; OK, r2 is finished
+		      (set! r2-rest-cl #f)
+		      (if r1-rest-cl (r1-rest-cl) (fk))))))
+	       )
+	     (r1-rest-cl)))))
+]))
+
+
+(define-syntax binary-extend-relation-interleave
+  (syntax-rules ()
+    [(_ (id ...) rel-exp1 rel-exp2)
+     (let ([rel1 rel-exp1] [rel2 rel-exp2])
+       (lambda (id ...)
+         (lambda@ (sk fk subst cutk)
+	   (define r1-rest-in (lambda@ (sk fk)
+	     (@ (rel1 id ...) sk fk subst cutk)))
+	   (define r2-rest-in (lambda@ (sk fk)
+	     (@ (rel2 id ...) sk fk subst cutk)))
+	   (define queryr
+	     (let ([initial-fk (lambda () '())]
+		   [initial-sk (lambda@ (fk subst cutk)
+				  (cons (cons subst cutk) fk))])
+	       (lambda (ant)
+		 (@ ant initial-sk initial-fk))))
+	   (define (interleave q1 q2)
+	     (cond
+	       ((pair? q1) 
+		 (@ sk (lambda () (interleave q2 ((cdr q1))))
+		   (caar q1) (cdar q1)))
+	       ((pair? q2) 
+		 (@ sk (lambda () (interleave ((cdr q2)) '()))
+		   (caar q2) (cdar q2)))
+	       (else (fk))))
+	   (interleave (queryr r1-rest-in) (queryr r2-rest-in)))))
+]))
+
+
+(printf "~%binary-extend-relation-interleave~%")
+(printf "~%Rinf+R1:~%")
+(pretty-print 
+  (exists (x y) (solve 7
+		  ((binary-extend-relation-interleave (a1 a2) Rinf R1) x y))))
+(printf "~%R1+RInf:~%")
+(pretty-print 
+  (exists (x y) (solve 7
+		  ((binary-extend-relation-interleave (a1 a2) R1 Rinf) x y))))
+
+(printf "~%R2+R1:~%")
+(pretty-print 
+  (exists (x y) (solve 7
+		  ((binary-extend-relation-interleave (a1 a2) R2 R1) x y))))
+(printf "~%R1+fact3:~%")
+(pretty-print 
+  (exists (x y) (solve 7
+		  ((binary-extend-relation-interleave (a1 a2) R1 fact3) x y))))
+(printf "~%fact3+R1:~%")
+(pretty-print 
+  (exists (x y) (solve 7
+		  ((binary-extend-relation-interleave (a1 a2) fact3 R1) x y))))
+
+
+(define-syntax all
+  (syntax-rules ()
+    [(_) (lambda (sk) sk)]
+    [(_ ant0) ant0]
+    [(_ ant0 ant1 ...)
+     (lambda (sk)
+       (ant0 ((all ant1 ...) sk)))]))
+
+(define-syntax any
+  (syntax-rules ()
+    [(_ ant ...)
+     ((extend-relation () (relation _ () (to-show) ant) ...))]))
+
+(define query
+  (let ([initial-fk (lambda () '())]
+        [initial-sk (lambda@ (fk subst cutk) (cons subst fk))])
+    (lambda (antecedent)
+      (@ antecedent initial-sk initial-fk empty-subst initial-fk))))
+
+(define grandpa-sam
+  (relation cut (child)
+    (to-show child)
+    (exists (x)
+      (all (father 'sam x) (father x child)))))
+
+(define-syntax binary-extend-relation
+  (syntax-rules ()
+    [(_ (id ...) rel-exp1 rel-exp2)
+     (let ([rel1 rel-exp1] [rel2 rel-exp2])
+       (lambda (id ...)
+         (lambda@ (sk fk subst cutk)
+           (@ (rel1 id ...)
+              sk
+              (lambda () (@ (rel2 id ...) sk fk subst cutk))
+              subst
+              cutk))))]))
+
+
+(define-syntax relation
+  (syntax-rules (to-show)
+    [(_ short-cut (ex ...) (to-show x ...) ant ...)
+     (relation short-cut (ex ...) () (x ...) (x ...) ant ...)]
+    [(_ short-cut (ex ...) (g ...) () (x ...) ant ...)
+     (lambda (g ...)
+       (reify-cutters
+         (lambda (next short-cut)
+           (exists (ex ...)
+             (all (all! (next) (== g x) ...) ant ...)))))]
+    [(_ short-cut exs (var ...) (x0 x1 ...) xs ant ...)
+     (relation short-cut exs (var ... g) (x1 ...) xs ant ...)]))
+
 
 ;;;; This verifies that the idea works.  Now, to run the book through this
 ;;;; system.  
