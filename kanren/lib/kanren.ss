@@ -3814,7 +3814,7 @@
 				      (+ counter 1) subst)])
 			     (@ ant sk fk s)))))]
 		[else
-		  (let ([s (extend-subst depth-counter-var 0 subst)])
+		  (let ([s (extend-subst depth-counter-var 1 subst)])
 		    (@ ant sk fk s))]))))))
     ))
 
