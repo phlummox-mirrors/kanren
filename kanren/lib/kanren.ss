@@ -4622,5 +4622,220 @@
 		  (@ sk fk ps))))
             fk in-subst)))]))
 
+(printf "~nTesting the algorithmic complexity of top-down inference~n")
+; 	p(X,Z) :- e(X,Y), p(Y,Z).
+; 	p(n,X) :- t(X).
+; 	e(1, 2),...,e(n-1, n).
+; 	t(1),....,t(m).
+; 	Query: ?-p(1,X).
+
+; make the disjunction of facts (e 1 2) (e 2 3) ... (e n-1 n) where n>1
+(define (make-e n)
+  (let loop ((i 2))
+    (if (>= i n) (fact () (- i 1) i)
+      (extend-relation (a b)
+	(fact () (- i 1) i)
+	(loop (+ 1 i))))))
+
+; make the disjunction of facts (t 1) ... (t m) where m>=1
+(define (make-t m)
+  (let loop ((i 1))
+    (if (>= i m) (fact () i)
+      (extend-relation (a)
+	(fact () i)
+	(loop (+ 1 i))))))
+
+(define (p-test m n)
+  (letrec
+    ((e (make-e n))
+      (t (make-t m))
+      (p
+	(extend-relation (x z)
+	  (relation (x z)
+	    (to-show x z)
+	    (exists (y)
+	      (all (e x y) (p y z))))
+	  (relation (x)
+	    (to-show n x)
+	    (t x)))))
+    (solve (+ m  1) (x) (p 1 x))))
+
+(pretty-print (p-test 4 5))
+
+(time (p-test 32 64))
+(time (p-test 64 128))
+(time (p-test 96 192))
+
+; make the disjunction of facts (e 1 2) (e 2 3) ... (e n-1 n) where n>1
+(define (make-e n)
+  (lambda (x y)
+    (let loop ((i 2))
+      (if (>= i n) ((fact () (- i 1) i) x y)
+      (any
+	((fact () (- i 1) i) x y)
+	(loop (+ 1 i)))))))
+
+; make the disjunction of facts (t 1) ... (t m) where m>=1
+(define (make-t m)
+  (lambda (x)
+    (let loop ((i 1))
+      (if (>= i m) ((fact () i) x)
+	(any
+	  ((fact () i) x)
+	  (loop (+ 1 i)))))))
+
+(pretty-print (p-test 4 5))
+
+(time (p-test 32 64))
+(time (p-test 64 128))
+(time (p-test 96 192))
+
+; make the disjunction of facts (e 1 2) (e 2 3) ... (e n-1 n) where n>1
+(define (make-e n)
+  (let ((meta
+	  `(extend-relation (x y)
+	     ,@(let loop ((i 2))
+		 (if (> i n) '()
+		   (cons `(fact () ,(- i 1) ,i)
+		     (loop (+ 1 i))))))))
+    (eval meta (interaction-environment))))
+
+'(pretty-print 
+  (expand '(extend-relation (x) (fact () 1) (fact () 2) (fact () 3))))
+
+; make the disjunction of facts (t 1) ... (t m) where m>=1
+(define (make-t m)
+  (let ((meta
+	  `(extend-relation (x)
+	     ,@(let loop ((i 1))
+		 (if (> i m) '()
+		   (cons `(fact () ,i)
+		     (loop (+ 1 i))))))))
+    (eval meta (interaction-environment))))
+
+(define (p-test m n)
+  (letrec
+    ((e (make-e n))
+      (t (make-t m))
+      (p
+	(extend-relation (x z)
+	  (relation (x z)
+	    (to-show x z)
+	    (exists (y)
+	      (all (e x y) (p y z))))
+	  (relation (x)
+	    (to-show n x)
+	    (t x)))))
+    (solve (+ m  1) (x) (p 1 x))))
+
+(pretty-print (p-test 4 5))
+
+(time (p-test 32 64))
+(time (p-test 64 128))
+(time (p-test 96 192))
+
+; make the disjunction of facts (e 1 2) (e 2 3) ... (e n-1 n) where n>1
+(define (make-e n)
+  (lambda (x y)
+    (let loop ((i 2))
+      (if (>= i n) ((fact () (- i 1) i) x y)
+      (any
+	((fact () (- i 1) i) x y)
+	(loop (+ 1 i)))))))
+
+; make the disjunction of facts (t 1) ... (t m) where m>=1
+(define (make-t m)
+  (lambda (x)
+    (let loop ((i 1))
+      (if (>= i m) ((fact () i) x)
+	(any
+	  ((fact () i) x)
+	  (loop (+ 1 i)))))))
+
+(define (p-test m n)
+  (letrec
+    ((e (make-e n))
+      (t (make-t m))
+      (p
+	(extend-relation (x z)
+	  (relation (x z)
+	    (to-show x z)
+	    (exists (y)
+	      (if-only (e x y) (p y z))))
+	  (relation (x)
+	    (to-show n x)
+	    (t x)))))
+    (solve (+ m  1) (x) (p 1 x))))
+
+(pretty-print (p-test 4 5))
+
+(time (p-test 32 64))
+(time (p-test 64 128))
+(time (p-test 96 192))
+
+(define (p-test m n)
+  (letrec
+    ((e (make-e n))
+      (t (make-t m))
+      (p
+	(lambda (x z)
+	  (any
+	    (exists (y)
+	      (if-only (e x y) (p y z)))
+	    (if-only (promise-one-answer (== x n))
+	      (t z))))))
+    (solve (+ m  1) (x) (p 1 x))))
+
+(pretty-print (p-test 4 5))
+
+(time (p-test 32 64))
+(time (p-test 64 128))
+(time (p-test 96 192))
+
+(define (make-e n)
+  (lambda (x y)
+    (all!!
+      (predicate (x) (< x n))
+      (let-inject ((t (x) (+ x 1)))
+	(== t y)))))
+
+(pretty-print (p-test 4 5))
+
+(time (p-test 32 64))
+(time (p-test 64 128))
+(time (p-test 96 192))
+
+(define (make-e n)
+  (lambda (x y)
+    (lambda@ (sk fk subst)
+      (let ((x (subst-in x subst)))
+	(nonvar! x)
+	(if (< x n) (@ (== y (+ x 1)) sk fk subst)
+	  (fk))))))
+
+(pretty-print (p-test 4 5))
+
+(time (p-test 32 64))
+(time (p-test 64 128))
+(time (p-test 96 192))
+
+(define (p-test m n)
+  (letrec
+    ((e (make-e n))
+      (t (make-t m))
+      (p
+	(lambda (x z)
+	  (any
+	    (let-lv (y)
+	      (if-only (e x y) (p y z)))
+	    (if-only (promise-one-answer (== x n))
+	      (t z))))))
+    (solve (+ m  1) (x) (p 1 x))))
+(pretty-print (p-test 4 5))
+
+(time (p-test 32 64))
+(time (p-test 64 128))
+(time (p-test 96 192))
 
 (exit 0)
+
