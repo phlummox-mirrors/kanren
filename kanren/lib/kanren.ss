@@ -367,6 +367,8 @@
              (unify-incrementally subst (c1 ...) (t-lexvar1 ...)))]
        [else failer])]))
 
+
+
 (define !!
   (lambda (exiting-fk)
     (lambda@ (sk fk subst cutk)
@@ -445,7 +447,7 @@
 
 (define test-unify-incrementally
   (lambda () 
-    (equal?
+    (list ;equal?
       (concretize
         (exists (x y z)
           (let ([s (compose-subst
@@ -686,13 +688,13 @@
     (syntax-case w ()
       [(_ ant ...)
        (with-syntax ([cut (datum->syntax-object (syntax _) 'cut)])
-         (syntax (deterministic-all-aux (all cut) ant ...)))])))
+         (syntax (deterministic-all-aux cut (all cut) ant ...)))])))
 
 (define-syntax deterministic-all-aux
   (syntax-rules ()
-    [(_ acc) acc]
-    [(_ (acc ... cut) ant0 ant1 ...)
-     (deterministic-all-aux (acc ... cut ant0 cut) ant1 ...)]))
+    [(_ cut acc) acc]
+    [(_ cut (acc ...) ant0 ant1 ...)
+     (deterministic-all-aux cut (acc ... ant0 cut) ant1 ...)]))
 
 (define-syntax any
   (syntax-rules ()
@@ -1741,6 +1743,17 @@
           
 (printff "~s ~s~%" 'test-unify/pairs-lazy (test-unify/pairs))
 (printff "~s ~s~%" 'test-fun-resubstitute-lazy (test-fun-resubstitute))
+
+(define-syntax unify-incrementally
+  (syntax-rules ()
+    [(_ subst () ())
+     (lambda (succk fk) (succk subst))]
+    [(_ subst (c0 c1 ...) (t-lexvar0 t-lexvar1 ...)) ;;; c0 is anything
+     (begin (and #f (printf "~%unify: ~a~%~a~%~a~%~a~%" (list t-lexvar0 t-lexvar1 ...) (list c0 c1 ...) subst (unify (list t-lexvar0) (list c0) '())))
+     (cond
+       [(unify (list t-lexvar0 t-lexvar1 ...) (list c0 c1 ...) subst)
+        => (lambda (subst) (lambda (succk fk) (succk subst)))]
+       [else failer]))]))
 
 (define concat
   (lambda (xs ys)
