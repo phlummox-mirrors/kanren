@@ -17,19 +17,19 @@
       (father dad child)
       (father2 dad child)
       (all!! (== dad 'pete) (== child 'sol)))))
-(query (fk sub x y)
+(run (fk sub x y)
   (all (father4 x y) (project (x y) (trace-vars "=0=" (x y))))
   (fk))
-(query (fk sub x y)
+(run (fk sub x y)
   (all!! (father4 x y) (project (x y) (trace-vars "=1=" (x y))) (any))
   (void))
-(query (fk sub x y)
+(run (fk sub x y)
   (all! (father4 x y) (project (x y) (trace-vars "=2=" (x y))) (any))
   (void))
-(query (fk sub x y)
+(run (fk sub x y)
   (all! (father4 x y) (project (x y) (trace-vars "=3=" (x y))))
   (fk))
-(query (fk sub x y)
+(run (fk sub x y)
   (all
     (any (fails (father4 x y)) (all))
     (project (x y)
@@ -80,7 +80,7 @@
 	(memb `(,_ ,_ ,_ zebra ,_) h)))))
 
 (test-check "Zebra"
-  (time (query (fk subst h) (zebra h) (subst-in h subst)))
+  (time (run (fk subst h) (zebra h) h))
   '((norwegian kools water fox yellow)
     (ukrainian chesterfields tea horse blue)
     (englishman oldgolds milk snails red)
@@ -138,7 +138,7 @@
 
 (define data '(1 2 3 4 5 6 7 8))
 
-(printf "~s~n" (query (fk subst out) (benchmark data out) (subst-in out subst)))
+(printf "~s~n" (run (fk subst out) (benchmark data out) out))
 
 
 
@@ -155,8 +155,8 @@
       (all!! (== dad 'sam) (== child 'jay)))))
 
 (pretty-print
-  (query (fk subst x y) (father x y)
-    (cons (list (subst-in x subst) (subst-in y subst)) (fk))))
+  (run (fk subst x y) (father x y)
+    (cons (list x y) (fk))))
 
 (define ancestor
   (lambda (old young)
@@ -166,8 +166,8 @@
         (all (father old not-so-old) (ancestor not-so-old young))))))
 
 (pretty-print
-  (query (fk subst x) (ancestor 'jon x)
-    (cons (subst-in x subst) (fk))))
+  (run (fk subst x) (ancestor 'jon x)
+    (cons x (fk))))
 
 (define common-ancestor
   (lambda (young-a young-b old)
@@ -176,8 +176,8 @@
       (ancestor old young-b))))
 
 (pretty-print
-  (query (fk subst x) (common-ancestor 'pat 'jay x)
-    (cons (subst-in x subst) (fk))))
+  (run (fk subst x) (common-ancestor 'pat 'jay x)
+    (cons x (fk))))
 
 (define younger-common-ancestor
   (lambda (young-a young-b old not-so-old)
@@ -187,8 +187,8 @@
       (ancestor old not-so-old))))
 
 (pretty-print
-  (query (fk subst x y) (younger-common-ancestor 'pat 'jay x y)
-    (list (subst-in x subst) (subst-in y subst))))
+  (run (fk subst x y) (younger-common-ancestor 'pat 'jay x y)
+    (list x y)))
 
 (define youngest-common-ancestor
   (lambda (young-a young-b not-so-old)
@@ -198,21 +198,21 @@
         (fails (younger-common-ancestor young-a young-b not-so-old y))))))
 
 (pretty-print
-  (query (fk subst x) (youngest-common-ancestor 'pat 'jay x) (subst-in x subst)))
+  (run (fk subst x) (youngest-common-ancestor 'pat 'jay x) x))
 
 ;;; Test eigen
 
 (pretty-print
-  (query (fk subst x) (eigen (a b) (== x (cons a b))) (subst-in x subst)))
+  (run (fk subst x) (eigen (a b) (== x (cons a b))) x))
 
 (pretty-print
-  (query (fk subst z) 
+  (run (fk subst z) 
   ((lambda (x) (ef/only (== x 5) (all) (== x 4))) z)
-  (subst-in z subst)))
+  z))
 
 (define test
   (lambda ()
-    (query (fk subst x)
+    (run (fk subst x)
       (all (any (begin (write 4) (all)) (begin (write 11) (all)))
 	(only/forget ;;; this has a different meaning if once is replaced by forget
 	  (any
@@ -248,10 +248,10 @@
 
 (define test2
   (lambda ()
-    (query (fk subst c) (all (busy-children c) (trace-vars "::" (c)) (any)) #t)
+    (run (fk subst c) (all (busy-children c) (trace-vars "::" (c)) (any)) #t)
     (display "------------------------------------")
     (newline)
-    (query (fk subst c) (all (social-children c) (trace-vars "::" (c)) (any)) #t)))
+    (run (fk subst c) (all (social-children c) (trace-vars "::" (c)) (any)) #t)))
 
 (test2)
     
@@ -285,15 +285,9 @@
 
 (test-check 'test-instantiated-1
   (and
-    (equal?
-      (solution (x) (++ x 16.0 8))
-      '((x.0 -8.0)))
-    (equal?
-      (solution (x) (++ 10 16.0 x))
-      '((x.0 26.0)))
-    (equal?
-      (solution (x) (-- 10 x 3))
-      '((x.0 13))))
+    (run (fk subst x) (++ x 16.0 8) (= -8.0 x))
+    (run (fk subst x) (++ 10 16.0 x) (= 26.0 x))
+    (run (fk subst x) (-- 10 x 3) (= 13 x)))
   #t)
 
 (define symbol->lnum
@@ -329,10 +323,6 @@
 
 (test-check 'test-instantiated-2
   (and
-    (equal?
-      (solution (x) (name 'sleep x))
-      '((x.0 (115 108 101 101 112))))
-    (equal?
-      (solution (x) (name x '(115 108 101 101 112)))
-      '((x.0 sleep))))
+    (run (subst fk x) (name 'sleep x) (equal? '(115 108 101 101 112) x))
+    (run (subst fk x) (name x '(115 108 101 101 112)) (equal? x 'sleep)))
   #t)
