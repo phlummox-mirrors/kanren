@@ -2247,7 +2247,7 @@
       (else ; unify bound and a value
 	(unify (commitment->term ct) u subst)))))
 
-; On entrance; t-var is not free.
+; On entrance: t-var is free.
 ; we are trying to unify it with a bound variable (commitment->var cu)
 ; Chase the binding chain, see below for comments
 ; This also works somewhat like union-find...
@@ -2297,40 +2297,79 @@
       [(pair? t) (and (ground? (car t)) (ground? (cdr t)))]
       [else #t])))
 
+; t-var is a free variable, u-value is a proper or improper
+; list, which may be either fully or partially grounded (or not at all).
+; We replace all non-grounded components of the list with fresh variables,
+; bind t-var to the resulting list, and proceed unifying the introduced
+; variables with the corresponding components of the original list.
+; NB: in the general case, if more than one component of u-value
+; is replaced by fresh variables, we must use the full unify rather
+; than unify-free/any because some component of u-value may
+; mention t-var (and so, after the first unification, fresh variables
+; may become ground).
+
+; (append (reverse lst) last-cell) where last-cell is not necessarily '()
+(define (im-reverse last-cell lst)
+  (if (null? last-cell) (reverse lst)	; fast path
+    (let loop ((last-cell last-cell) (lst lst))
+      (if (null? lst) last-cell
+	(loop (cons (car lst) last-cell) (cdr lst))))))
+
+(test-check 'im-reverse-1
+  (im-reverse '() '(1 2 3))
+  '(3 2 1))
+(test-check 'im-reverse-2
+  (im-reverse 'x '(1 2 3))
+  '(3 2 1 . x))
+
+(define unify-free/list
+ (lambda (t-var u-value subst)
+  (letrec
+    ((analyze-list
+       (lambda (to-unify lst-src lst-analyzed)
+	 (if (pair? lst-src)
+	   (if (ground? (car lst-src))
+	     (analyze-list to-unify (cdr lst-src) 
+	       (cons (car lst-src) lst-analyzed))
+	     (let ((fresh-var (var 'a*)))
+	       (analyze-list (cons (cons fresh-var (car lst-src)) to-unify)
+		 (cdr lst-src) (cons fresh-var lst-analyzed))))
+	   ; lst-src is either null? or the end of an improper list
+	   (if (ground? lst-src)
+	     (unify-result to-unify lst-src lst-analyzed)
+	     (let ((fresh-var (var 'd*)))
+	       (unify-result (cons (cons fresh-var lst-src) to-unify)
+		 fresh-var lst-analyzed))))))
+      (unify-result
+	(lambda (to-unify last-cell new-cells-rev)
+	  (cond 
+	    ((null? to-unify)		; u-value was totally ground
+	      (extend-subst t-var u-value subst))
+	    ((null? (cdr to-unify))	; only one non-ground component
+	      (unify-free/any (caar to-unify) (cdar to-unify)
+		(extend-subst t-var (im-reverse last-cell new-cells-rev)
+		  subst)))
+	    (else			; general case
+	      (let loop ((subst
+			   (unify-free/any (caar to-unify) (cdar to-unify)
+			     (extend-subst t-var 
+			       (im-reverse last-cell new-cells-rev) subst)))
+			  (to-unify (cdr to-unify)))
+		(and subst
+		  (if (null? to-unify) subst
+		    (loop (unify (caar to-unify) (cdar to-unify) subst)
+		      (cdr to-unify)))))))))
+      )
+    (analyze-list '() u-value '()))))
+
+		  
+	    
+
 ; t-var is a free variable, u-value is not a variable
-; Later on, instead of just checking if u-value is a pair,
-; check if (cdr u-value) is a pair etc. So, if u-value is a list,
-; we should replace all non-ground components with fresh variables,
-; extend subst of t-var to the replaced list and then unify
-; the fresh variables with the corresponding components.
 (define unify-free/value
   (lambda (t-var u-value subst)
     (if (pair? u-value)
-      (let ([car-val (car u-value)]
-            [cdr-val (cdr u-value)])
-	(cond
-	  [(ground? car-val)
-            (cond
-              [(ground? cdr-val)	; it means u-value is totally ground...
-               (extend-subst t-var u-value subst)]
-              [else (let ([d-var (var 'd*)])
-                      (unify-free/any d-var cdr-val
-                        (extend-subst t-var
-                          (cons car-val d-var) subst)))])]
-           [else
-             (let ([a-var (var 'a*)])
-               (cond
-                 [(ground? cdr-val)
-                  (unify-free/any a-var car-val
-                    (extend-subst t-var (cons a-var cdr-val) subst))]
-                 [else (let ([d-var (var 'd*)])
-                         (cond
-                           [(unify-free/any a-var car-val
-                              (extend-subst t-var (cons a-var d-var) subst))
-                            => (lambda (subst)
-				 ; d-var might become bound! Do full checks!
-                                 (unify d-var cdr-val subst))]
-                           [else #f]))]))]))
+      (unify-free/list t-var u-value subst)
       ; u-value is not a var and is not a pair: it's atomic
       (extend-subst t-var u-value subst))))
 
