@@ -128,11 +128,11 @@
   (lambda (t)
     (exists (ind)
       (all! (== t ind)
-	(lambda@ (sk fk subst)
+	(lambda@ (subst)
 	  (let* ((indc (subst-in ind subst))
 		 (indc1 (universalize indc)))
 	  (pretty-print indc1)
-	  (@ sk fk (unify indc1 t subst))
+	  (@ succeed (unify indc1 t subst))
 	  ;(@ sk fk subst)
 	  )
       )))))
@@ -528,7 +528,7 @@
     (define-syntax ==
       (syntax-rules ()
 	((_ t u)
-	  (lambda@ (sk fk subst)
+	  (lambda@ (subst)
 	    (cond
 	      ((unify t u subst)
 		=> (lambda (subst)
@@ -536,8 +536,8 @@
 		     (pretty-print (concretize t))
 		     (pretty-print (concretize u))
 		     (pretty-print (concretize-subst* subst))
-		     (@ sk fk subst)))
-	      (else (fk)))))))
+		     (@ succeed subst)))
+	      (else (fail subst)))))))
     ))
 
  (cout nl "Check the inductive  case: MP, using goal-fwd: "
@@ -588,7 +588,7 @@
   (define-syntax ==
     (syntax-rules ()
       ((_ t u)
-	(lambda@ (sk fk subst)
+	(lambda@ (subst)
 	  (let ((subst (unify t u subst)))
-	    (if subst (@ sk fk subst) (fk)))))))
+	    (if subst (succeed subst) (fail subst)))))))
 )

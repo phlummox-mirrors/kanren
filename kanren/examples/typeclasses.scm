@@ -15,7 +15,8 @@
 
 (define typeclass-C-instance-2
   (relation (a b c)
-    (to-show a `(,a ,c ,b) c)))
+    (to-show a `(,a ,c ,b) c)
+    succeed))
 
 (define typeclass-C
   (extend-relation (a b c) 
@@ -69,8 +70,7 @@
     (relation (a b)
       (to-show `(list ,a) `(list ,b))
       (typeclass-F a b))
-    (relation (a)
-      (to-show `(list ,a) a))))
+    (fact (a) `(list ,a) a)))
 
 
 ; Run the checker for the dependency a -> b

@@ -111,3 +111,8 @@
 ;     8 ms elapsed cpu time
 ;     9 ms elapsed real time
 ;     448920 bytes allocated
+; For version of kanren 4.50 (subst sk fk order)
+;     no collections
+;     8 ms elapsed cpu time
+;     8 ms elapsed real time
+;     416864 bytes allocated

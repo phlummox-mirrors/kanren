@@ -310,18 +310,18 @@
 ; and do regular unification tests. It is clear that yield-var is
 ; `fresh' and unbound.
 (define (yield val) 
-  (lambda@ (sk fk subst)
-    (@ sk fk (extend-subst yield-var val subst))))
+  (lambda@ (subst)
+    (@ succeed (extend-subst yield-var val subst))))
 
 (define-syntax let-fr
   (syntax-rules ()
     ((let-fr ((var exp)) body)
       (all exp
-	(lambda@ (sk fk subst)
+	(lambda@ (subst)
 	  (if (not (eq? (commitment->var (car subst)) yield-var))
 	    (error "bummer"))
 	  (let ((var (commitment->term (car subst))))
-	    (@ body sk fk (cdr subst))))))))
+	    (@ body (cdr subst))))))))
 
 (define benchmark
   (letrec
@@ -363,6 +363,10 @@
     (lambda (data out)
       (queen data out))))
 
+(test-check 'queens-benchmark
+  (solve 2 (out) (benchmark data out))
+  '(((out.0 (1 3 6 8 2 4 9 7 5))) ((out.0 (1 3 7 2 8 5 9 4 6)))))
+
 ; kanren.ss version 4.15 (similar to 4.11)
 ; (time (solve 1000 ...))
 ;     1333 collections
@@ -376,3 +380,11 @@
 ;     13586 ms elapsed cpu time, including 248 ms collecting
 ;     13762 ms elapsed real time, including 258 ms collecting
 ;     1443382216 bytes allocated, including 1443524336 bytes reclaimed
+
+; kanren.ss version 4.50 (the order subst sk fk)
+; (time (solve 1000 ...))
+;     1002 collections
+;     12127 ms elapsed cpu time, including 171 ms collecting
+;     12213 ms elapsed real time, including 182 ms collecting
+;     1085058752 bytes allocated, including 1084908328 bytes reclaimed
+

@@ -38,4 +38,5 @@
 (load "examples/mirror-equ.scm")
 (load "examples/deduction.scm")
 (load "examples/pure-bin-arithm.scm")
-;(load "benchmarks/alg-complexity.scm") ; must be last
+(load "benchmarks/nrev.scm")
+(load "benchmarks/queens.scm")

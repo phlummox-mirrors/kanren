@@ -40,24 +40,31 @@
 ;      (@-simple rator rand0 rand1 ...))))
 
 
-;  Fk  = () -> Ans
-;  Ans =  Nil + [Subst,Fk]
-;  Sk = Fk -> Subst -> Ans  
-;  Goal = Sk -> Sk
-;  Rule = Goal -> [Goal-fn,Int] -> Goal
+;  Fk    = () -> Ans
+;  Ans   = Nil + [Subst,Fk] or just a conceptual stream of substitutions
+;  Sk    = Subst -> Fk -> Ans  
+;  Goal  = Subst -> SGoal
+;  SGoal = Sk -> Fk -> Ans
 
-;  relation: Term -> Goal
-;  to-show: Term -> Goal -> Rule
 ;  initial-sk : Sk
 ;  initial-fk : Fk
 
-(define initial-fk (lambda () '()))
-(define initial-sk (lambda@ (fk subst)
+(define initial-sk (lambda@ (subst fk)
 		     (cons subst fk)))
+(define initial-fk (lambda () '()))
+
+
+; Trivial goals
+(define succeed (lambda@ (s k) (@ k s)))  ; eta-reduced
+(define fail (lambda@ (s k f) (f)))
+(define sfail (lambda@ (k f) (f)))	; Failed SGoal
+
 
 ;------------------------------------------------------------------------
 ; Making logical variables "scoped" and garbage-collected
-
+;  -----> it was used, but no longer
+;  -----> The code is still here, as we plan to come back to this...
+;
 ; A framework to remove introduced variables when they leave their scope.
 ; To make removing variables easier, we consider the list of subst as a
 ; "stack". Before we add a new variable, we retain a pointer to the
@@ -216,7 +223,7 @@
 ;-----------------------------------------------------------
 ; Sequencing of relations
 ; Goal is a multi-valued function (which takes
-;   sk, fk, subst and exits to either sk or fk).
+;   subst, sk, fk, and exits to either sk or fk).
 ; A relation is a parameterized goal.
 ;
 ; All sequencing operations are defined on goals.
@@ -224,7 +231,7 @@
 ; 
 
 ; TRACE-GOAL-RAW TITLE GL -> GL
-; Traces all invocations and re-invocations of an goal
+; Traces all invocations and re-invocations of a goal
 ; printing subst before and after, in their raw form
 (define trace-goal-raw
   (lambda (title gl)
@@ -232,20 +239,20 @@
 	    (lambda (event subst)
 	      (display title) (display " ")
 	      (display event) (pretty-print subst) (newline))))
-      (lambda@ (sk fk subst)
+      (lambda@ (subst sk fk)
 	(print-it "CALL:" subst)
-	(@ gl 
-	  (lambda@ (fk subst)
+	(@ gl subst
+	  (lambda@ (subst fk)
 	    (print-it "RETURN:" subst)
-	    (@ sk
+	    (@ sk subst
 	      (lambda ()
 		(display title) (display " REDO") (newline)
 		(fk))
-	      subst))
+	      ))
 	  (lambda ()
 	    (display title) (display " FAIL") (newline)
 	    (fk))
-	  subst)))))
+	  )))))
 
 ; Conjunctions
 ; All conjunctions below satisfy properties
@@ -264,19 +271,17 @@
 
 (define-syntax all
   (syntax-rules ()
-    ((_) (lambda@ (sk) sk))
+    ((_) succeed)
     ((_ gl) gl)
     ((_ gl0 gl1 ...)
-     (lambda@ (sk)
-       (splice-in-gls/all sk gl0 gl1 ...)))))
+     (lambda@ (subst sk) (splice-in-gls/all subst sk gl0 gl1 ...)))))
 
 (define-syntax splice-in-gls/all
   (syntax-rules ()
-    ((_ sk gl) (@ gl sk))
-    ((_ sk gl0 gl1 ...)
-     (@ gl0 (splice-in-gls/all sk gl1 ...)))))
+    ((_ subst sk gl) (@ gl subst sk))
+    ((_ subst sk gl0 gl1 ...)
+     (@ gl0 subst (lambda (subst) (splice-in-gls/all subst sk gl1 ...))))))
 
-(define succeed (all))
 
 ; (promise-one-answer gl)
 ; Operationally, it is the identity.
@@ -316,9 +321,10 @@
     ((_ (promise-one-answer gl)) (promise-one-answer gl)) ; keep the mark
     ((_ gl0 gl1 ...)
      (promise-one-answer
-       (lambda@ (sk fk)
+       (lambda@ (subst sk fk)
 	 (@
-	   (splice-in-gls/all (lambda@ (fk-ign) (@ sk fk)) gl0 gl1 ...)
+	   (splice-in-gls/all subst
+	     (lambda@ (subst fk-ign) (@ sk subst fk)) gl0 gl1 ...)
 	   fk))))))
 
 ; (all!! gl1 gl2 ...)
@@ -336,17 +342,19 @@
     ((_ gl) (all! gl))
     ((_ gl0 gl1 ...)
      (promise-one-answer 
-       (lambda@ (sk fk)
-         (splice-in-gls/all!! sk fk gl0 gl1 ...))))))
+       (lambda@ (subst sk fk)
+         (splice-in-gls/all!! subst sk fk gl0 gl1 ...))))))
 
 (define-syntax splice-in-gls/all!!
   (syntax-rules (promise-one-answer)
-    ((_ sk fk)
-      (@ sk fk))
-    ((_ sk fk (promise-one-answer gl))
-      (@ gl sk fk))
-    ((_ sk fk gl0 gl1 ...)
-      (@ gl0 (lambda (fk-ign) (splice-in-gls/all!! sk fk gl1 ...)) fk))))
+    ((_ subst sk fk)
+      (@ sk subst fk))
+    ((_ subst sk fk (promise-one-answer gl))
+      (@ gl subst sk fk))
+    ((_ subst sk fk gl0 gl1 ...)
+      (@ gl0 subst
+	(lambda@ (subst fk-ign) (splice-in-gls/all!! subst sk fk gl1 ...))
+	fk))))
 
 ; (if-only COND THEN)
 ; (if-only COND THEN ELSE)
@@ -375,18 +383,18 @@
 (define-syntax if-only
   (syntax-rules ()
     ((_ condition then)
-     (lambda@ (sk fk)
-       (@ condition
+     (lambda@ (subst sk fk)
+       (@ condition subst
          ; sk from cond
-         (lambda@ (fk-ign) (@ then sk fk))
+         (lambda@ (subst fk-ign) (@ then subst sk fk))
          ; failure from cond
          fk)))
     ((_ condition then else)
-     (lambda@ (sk fk subst)
-       (@ condition
-         (lambda@ (fk-ign) (@ then sk fk))
-         (lambda () (@ else sk fk subst))
-         subst)))))
+     (lambda@ (subst sk fk)
+       (@ condition subst
+         (lambda@ (subst fk-ign) (@ then subst sk fk))
+         (lambda () (@ else subst sk fk))
+         )))))
 
 ; (if-all! (COND1 ... CONDN) THEN)
 ; (if-all! (COND1 ... CONDN) THEN ELSE)
@@ -434,21 +442,18 @@
 
 (define-syntax any
   (syntax-rules ()
-    ((_) (lambda@ (sk fk subst) (fk)))
+    ((_) fail)
     ((_ gl) gl)
     ((_ gl ...)
-      (lambda@ (sk fk subst)
-	(splice-in-gls/any sk fk subst gl ...)))))
+      (lambda@ (subst sk fk)
+	(splice-in-gls/any subst sk fk gl ...)))))
 
 (define-syntax splice-in-gls/any
   (syntax-rules ()
-    ((_ sk fk subst gl1) (@ gl1 sk fk subst))
-    ((_ sk fk subst gl1 gl2 ...)
-     (@ gl1 sk (lambda ()
-                  (splice-in-gls/any sk fk subst gl2 ...))
-       subst))))
+    ((_ subst sk fk gl1) (@ gl1 subst sk fk))
+    ((_ subst sk fk gl1 gl2 ...)
+     (@ gl1 subst sk (lambda () (splice-in-gls/any subst sk fk gl2 ...))))))
 
-(define fail (any))
 
 ; Negation
 ; (fails gl) succeeds iff gl has no solutions
@@ -459,26 +464,28 @@
 ; (fails (fails gl)) <===> (succeeds gl)
 ; but (succeeds gl) =/=> gl
 ; Cf. (equal? (not (not x)) x) is #f in Scheme in general.
+; Note, negation is only sound if some rules (Grounding Rules) are satisfied.
 
 (define fails
   (lambda (gl)
-    (lambda@ (sk fk subst)
-      (@ gl
-        (lambda@ (current-fk subst) (fk))
-        (lambda () (@ sk fk subst))
-        subst))))
+    (lambda@ (subst sk fk)
+      (@ gl subst
+        (lambda@ (subst current-fk) (fk))
+        (lambda () (@ sk subst fk))
+        ))))
 
+; Again, G-Rule must hold for this predicate to be logically sound
 (define succeeds
   (lambda (gl)
-    (lambda@ (sk fk subst)
-      (@ gl (lambda@ (fk-ign subst-ign) (@ sk fk subst))
-	fk subst))))
+    (lambda@ (subst sk fk)
+      (@ gl subst (lambda@ (subst-ign fk-ign) (@ sk subst fk))
+	fk))))
 
 ; partially-eval-sgl: Partially evaluate a semi-goal. A
 ; semi-goal is an expression that, when applied to two
 ; arguments, sk and fk, can produce zero, one, or more answers.  Any
 ; goal can be turned into a semi-goal if partially applied
-; to subst.  The following higher-order semi-goal takes an
+; to subst.  The following higher-order semi-goal takes a
 ; goal and yields the first answer and another, residual
 ; goal. The latter, when evaluated, will give the rest of the
 ; answers of the original semi-goal.  partially-eval-sgl could
@@ -490,31 +497,27 @@
 ;   (a s residial-sgl) if sgl has a answer. That answer is delivered
 ;                       in s. 
 ; The residial semi-goal can be passed to partially-eval-sgl
-; again, and so on, to obtain all answers from an goal one by one.
+; again, and so on, to obtain all answers from a goal one by one.
 
 ; The following definition is eta-reduced.
 
 (define (partially-eval-sgl sgl)
   (@ sgl
-    (lambda@ (fk subst a b)
+    (lambda@ (subst fk a b)
       (@ a subst 
 	(lambda@ (sk1 fk1)
 	  (@
 	    (fk) 
 	    ; new a
-	    (lambda@ (sub11 x) (@ sk1 (lambda () (@ x sk1 fk1)) sub11))
+	    (lambda@ (sub11 x) (@ sk1 sub11 (lambda () (@ x sk1 fk1))))
 	    ; new b
 	    fk1))))
     (lambda () (lambda@ (a b) (b)))))
 
-(define (gl->sgl gl subst)
-  (lambda@ (sk fk)
-    (@ gl sk fk subst)))
-
 ; An interleaving disjunction.
 ; Declaratively, any-interleave is the same as any.
 ; Operationally, any-interleave schedules each component goal
-; in round-robin. So, any-interleave is fair: it won't let an goal
+; in round-robin. So, any-interleave is fair: it won't let a goal
 ; that produces infinitely many answers (such as repeat) starve the others.
 ; any-interleave introduces a breadth-first-like traversal of the
 ; decision tree.
@@ -527,9 +530,8 @@
     ((_) fail)
     ((_ gl) gl)
     ((_ gl ...)
-     (lambda@ (sk fk subst)
-       (interleave sk fk
-         (list (gl->sgl gl subst) ...))))))
+     (lambda@ (subst sk fk)
+       (interleave sk fk (list (gl subst) ...))))))
 
 ; we treat sgls as a sort of a circular list
 (define interleave
@@ -537,7 +539,7 @@
     (cond
       ((null? sgls) (fk))		; all of the sgls are finished
       ((null? (cdr sgls))
-      ; only one sgls left -- run it through the end
+       ; only one of sgls left -- run it through the end
        (@ (car sgls) sk fk))
       (else
         (let loop ((curr sgls) (residuals '()))
@@ -547,10 +549,9 @@
 	      partially-eval-sgl (car curr)
 	      ; (car curr) had an answer
 	      (lambda@ (subst residual)
-	        (@ sk
+	        (@ sk subst
 	          ; re-entrance cont
-		  (lambda () (loop (cdr curr) (cons residual residuals)))
-		  subst))
+		  (lambda () (loop (cdr curr) (cons residual residuals)))))
 	    ; (car curr) is finished - drop it, and try next
 	    (lambda () (loop (cdr curr) residuals)))))))))
 
@@ -572,10 +573,10 @@
 ;  ===> exists i. ans is an answer of gl_i
 ;       && forall j>i. ans is not an answer of gl_j
 ; The latter property guarantees the true union.
-; Note the code below does not check if answers of each individual
+; Note the code below does not check if the answers of each individual
 ; goal are unique. It is trivial to modify the code so that
 ; any-union removes the duplicates not only among the goals but
-; also within an goal. That change entails a run-time cost. More
+; also within a goal. That change entails a run-time cost. More
 ; importantly, it breaks the property
 ; (any-union gl gl) ===> gl
 ; Only a weaker version, (any-union' gl gl) ===> (any-union' gl)
@@ -586,9 +587,8 @@
     ((_) fail)
     ((_ gl) gl)
     ((_ gl ...)
-     (lambda@ (sk fk subst)
-       (interleave-non-overlap sk fk
-         (list (cons (gl->sgl gl subst) gl) ...))))))
+     (lambda@ (subst sk fk)
+       (interleave-non-overlap sk fk (list (cons (gl subst) gl) ...))))))
 
 ; we treat sagls as a sort of a circular list
 ; Each element of sagls is a pair (sgl . gl)
@@ -614,21 +614,20 @@
                   ; let us see now if the answer, subst, satisfies any of the
                   ; gls down the curr.
                    (let check ((to-check (cdr curr)))
-                     (if (null? to-check) ; OK, subst is unique, give it to user
-                         (@ sk
+                     (if (null? to-check) ; OK, subst is unique,give it to user
+                         (@ sk subst
                            ; re-entrance cont
                            (lambda ()
                              (loop (cdr curr) 
-                               (cons (cons residual (cdar curr)) residuals)))
-                           subst)
-                         (@ (cdar to-check)
-                            ; subst was the answer to some other gl: check failed
-                            (lambda@ (fk1 subst1) 
+                               (cons (cons residual (cdar curr)) residuals))))
+                         (@ (cdar to-check) subst
+                            ; subst was the answer to some other gl:
+			    ; check failed
+                            (lambda@ (subst1 fk1)
                               (loop (cdr curr) 
                                 (cons (cons residual (cdar curr)) residuals)))
                             ; subst was not the answer: continue check
-                            (lambda () (check (cdr to-check)))
-                            subst))))
+                            (lambda () (check (cdr to-check)))))))
                  ; (car curr) is finished - drop it, and try next
                  (lambda () (loop (cdr curr) residuals))))))))))
 
@@ -671,15 +670,14 @@
   (syntax-rules ()
     ((_ condition then) (all condition then))
     ((_ condition then else)
-     (lambda@ (sk fk subst)
-       (@ partially-eval-sgl (gl->sgl condition subst)
+     (lambda@ (subst sk fk)
+       (@ partially-eval-sgl (condition subst)
          (lambda@ (ans residual)
-           (@ then sk
+           (@ then ans sk
              ; then failed. Check to see if condition has another answer
-             (lambda () (@ residual (@ then sk) fk))
-             ans))
+             (lambda () (@ residual (lambda@ (subst) (@ then subst sk)) fk))))
              ; condition failed
-         (lambda () (@ else sk fk subst)))))))
+         (lambda () (@ else subst sk fk)))))))
 
 
 ; An interleaving conjunction: all-interleave
@@ -766,22 +764,22 @@
     ((_) (all))
     ((_ gl) gl)
     ((_ gl0 gl1 ...)
-      (lambda@ (sk fk subst)
+      (lambda@ (subst)
 	(all-interleave-bin
-	  sk fk
-	  (gl->sgl gl0 subst) (all-interleave gl1 ...))))))
+	  (gl0 subst) (all-interleave gl1 ...))))))
 
 (define all-interleave-bin
-  (lambda (sk fk sgl1 gl2)
-    (@ partially-eval-sgl sgl1
-      (lambda@ (ans residual)
-	(interleave sk fk
-	  (list 
-	    (lambda@ (sk fk) (@ gl2 sk fk ans))
-	    (lambda@ (sk fk) (all-interleave-bin sk fk residual gl2))
+  (lambda (sgl1 gl2)
+    (lambda@ (sk fk)
+      (@ partially-eval-sgl sgl1
+	(lambda@ (ans residual)
+	  (interleave sk fk
+	    (list 
+	      (@ gl2 ans)
+	      (all-interleave-bin residual gl2)
 	    )))
 	  ;gl1 failed
-	  fk)))
+	  fk))))
 
 
 ; Relations...........................
@@ -824,20 +822,20 @@
 ; compile the relation like that into the following
 ;    (lambda (g1 g2)
 ;      (exists (x y)
-;        (lambda@ (sk fk subst)
-; 	 (let*-and (fk) ((subst (unify g1 `(,x . ,y)  subst))
-; 			 (subst (unify g2 x subst)))
-; 	     (@ body sk fk subst)))))
+;        (lambda@ (subst)
+; 	 (let*-and (fail subst) ((subst (unify g1 `(,x . ,y)  subst))
+; 			         (subst (unify g2 x subst)))
+; 	     (@ body subst)))))
 ;
 ; However, that we may permute the order of 'unify g...' clauses
 ; to read
 ;    (lambda (g1 g2)
 ;      (exists (x y)
-;        (lambda@ (sk fk subst)
-; 	 (let*-and (fk) ((subst (unify x g2 subst))
-; 			 (subst (unify g1 `(,x . ,y)  subst))
-; 			 )
-; 	     (@ body sk fk subst)))))
+;        (lambda@ (subst)
+; 	 (let*-and (fail subst) ((subst (unify x g2 subst))
+; 			         (subst (unify g1 `(,x . ,y)  subst))
+; 			         )
+; 	     (@ body subst)))))
 ;
 ; We may further note that according to the properties of the unifier
 ; (see below), (unify x g2 subst) must always succeed, 
@@ -850,15 +848,15 @@
 ;
 ;    (lambda (g1 g2)
 ;      (exists (x y)
-;        (lambda@ (sk fk subst)
+;        (lambda@ (subst)
 ; 	 (let* ((subst (unify-free/any x g2 subst))
 ; 	        (fast-path? (and (pair? subst)
 ; 			         (eq? x (commitment->var (car subst)))))
 ; 	        (x (if fast-path? (commitment->term (car subst)) x))
 ; 	        (subst (if fast-path? (cdr subst) subst)))
-; 	 (let*-and (fk) ((subst (unify g1 `(,x . ,y)  subst))
+; 	 (let*-and sfail ((subst (unify g1 `(,x . ,y)  subst))
 ; 			 )
-; 	     (@ body sk fk subst))))))
+; 	     (@ body subst))))))
 ;
 ; The benefit of that approach is that we limit the growth of subst and avoid
 ; keeping commitments that had to be garbage-collected later.
@@ -935,13 +933,13 @@
        (exists (ex-id ...) gl)))
 				    ; the most general
     ((_ "f" (ex-id ...) once-vars (g ...) ((gv . term) ...) 
-       (subst let*-clause ...) gl ...)
+       (subst let*-clause ...) gl) 
      (lambda (g ...)
        (exists (ex-id ...)
-	 (lambda@ (sk fk subst)
+	 (lambda (subst)
 	   (let* (let*-clause ...)
-	     (let*-and (fk) ((subst (unify gv term subst)) ...)
-	       (@ gl ... sk fk subst)))))))))
+	     (let*-and sfail ((subst (unify gv term subst)) ...)
+	       (@ gl subst)))))))))
 
 ; A macro-expand-time memv function for identifiers
 ;	id-memv?? FORM (ID ...) KT KF
@@ -1044,16 +1042,16 @@
     ; final generation
     ((_ "f" vars ((gv term) ...) gvs) ; no body
      (lambda gvs                                     ; don't bother bind vars
-       (lambda@ (sk fk subst)
-	 (let*-and (fk) ((subst (unify gv term subst)) ...)
-	   (@ sk fk subst)))))
+       (lambda@ (subst)
+	 (let*-and sfail ((subst (unify gv term subst)) ...)
+	   (@ succeed subst)))))
 
     ((_ "f" (var0 ...) ((gvo term) ...) gvs gl)
      (lambda gvs
-       (lambda@ (sk fk subst)			; first unify the constants
-	 (let*-and (fk) ((subst (unify gvo term subst)) ...)
+       (lambda@ (subst)			; first unify the constants
+	 (let*-and sfail ((subst (unify gvo term subst)) ...)
            (let ((var0 (if (eq? var0 _) (logical-variable '?) var0)) ...)
-             (@ gl sk fk subst))))))))
+             (@ gl subst))))))))
 
 ; (define-syntax relation/cut
 ;   (syntax-rules (to-show)
@@ -1072,7 +1070,7 @@
 (define-syntax fact
   (syntax-rules ()
     ((_ (ex-id ...) term ...)
-     (relation (ex-id ...) (to-show term ...)))))
+     (relation (ex-id ...) (to-show term ...) succeed))))
 
 ; Lifting from goals to relations
 ; (define-rel-lifted-comb rel-syntax gl-proc-or-syntax)
@@ -1142,14 +1140,12 @@
 ; Unify lifted to be a binary relation
 (define-syntax ==
   (syntax-rules (_)
-    ((_ _ u)
-     (lambda@ (sk) sk))
-    ((_ t _)
-     (lambda@ (sk) sk))
+    ((_ _ u) (lambda@ (subst sk) (@ sk subst)))
+    ((_ t _) (lambda@ (subst sk) (@ sk subst)))
     ((_ t u)
-     (lambda@ (sk fk subst)
-       (let*-and (fk) ((subst (unify t u subst)))
-         (@ sk fk subst))))))
+     (lambda@ (subst)
+       (let*-and sfail ((subst (unify t u subst)))
+         (succeed subst))))))
 
 
 ;	query (redo-k subst id ...) A SE ... -> result or '()
@@ -1171,10 +1167,9 @@
   (syntax-rules ()
     ((_ (redo-k subst id ...) A SE ...)
       (let-lv (id ...)
-	(@ A
-	  (lambda@ (redo-k subst) SE ...)
-	  (lambda () '())
-	  empty-subst)))))
+	(@ A empty-subst
+	  (lambda@ (subst redo-k) SE ...)
+	  (lambda () '()))))))
 
 (define stream-prefix
   (lambda (n strm)
@@ -1203,22 +1198,22 @@
 (define-syntax project
   (syntax-rules ()
     ((_ (var ...) gl)
-     (lambda@ (sk fk subst)
+     (lambda@ (subst)
        (let ((var (nonvar! (subst-in var subst))) ...)
-	 (@ gl sk fk subst))))))
+	 (@ gl subst))))))
 
 (define-syntax project/no-check
   (syntax-rules ()
     ((_ (var ...) gl)
-     (lambda@ (sk fk subst)
+     (lambda@ (subst)
        (let ((var (subst-in var subst)) ...)
-	 (@ gl sk fk subst))))))
+	 (@ gl subst))))))
 
 (define-syntax predicate
   (syntax-rules ()
     ((_ scheme-expression)
-     (lambda@ (sk fk subst)
-       (if scheme-expression (@ sk fk subst) (fk))))))
+     (lambda@ (subst)
+       (if scheme-expression (succeed subst) (fail subst))))))
 
 (define nonvar!
   (lambda (t)
@@ -1279,19 +1274,19 @@
       (let ((depth-counter-var (logical-variable '*depth-counter*)))
 	(lambda ids
 	  (let ((gl (any (rel . ids) ...)))
-	    (lambda@ (sk fk subst)
+	    (lambda@ (subst)
 	      (cond
 		((assq depth-counter-var subst)
 		  => (lambda (cmt)
 		       (let ((counter (commitment->term cmt)))
 			 (if (>= counter limit)
-			   (fk)
+			   sfail
 			   (let ((s (extend-subst depth-counter-var
 				      (+ counter 1) subst)))
-			     (@ gl sk fk s))))))
+			     (@ gl s))))))
 		(else
 		  (let ((s (extend-subst depth-counter-var 1 subst)))
-		    (@ gl sk fk s)))))))))
+		    (@ gl s)))))))))
     ))
 
 ; ?- help(call_with_depth_limit/3).
@@ -1339,8 +1334,8 @@
        )
   (test-check 'test-father0
     (let ((result
-	    (@ (father 'jon 'sam)
-	      initial-sk initial-fk empty-subst)))
+	    (@ (father 'jon 'sam) empty-subst
+	      initial-sk initial-fk)))
       (and
 	(equal? (car result) '())
 	(equal? ((cdr result)) '())))
@@ -1348,8 +1343,8 @@
 
   (test-check 'test-child-of-male-0
     (reify-subst '()
-      (car (@ (child-of-male 'sam 'jon)
-	     initial-sk initial-fk empty-subst)))
+      (car (@ (child-of-male 'sam 'jon) empty-subst
+	     initial-sk initial-fk)))
   ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))
   '())  ; variables shouldn't leak
 
@@ -1357,8 +1352,8 @@
   ; The mark should be found here...
   (test-check 'test-child-of-male-1
   (reify-subst '()
-    (car (@ (child-of-male 'sam 'jon)
-	    initial-sk initial-fk empty-subst)))
+    (car (@ (child-of-male 'sam 'jon) empty-subst
+	    initial-sk initial-fk)))
   ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))
   '())
 )
@@ -1380,8 +1375,8 @@
 	)
   (test-check 'test-father-1
     (let ((result
-	    (@ (new-father 'rob 'sal)
-	      initial-sk initial-fk empty-subst)))
+	    (@ (new-father 'rob 'sal) empty-subst
+	      initial-sk initial-fk)))
       (and
 	(equal? (car result) '())
 	(equal? ((cdr result)) '())))
@@ -1684,7 +1679,7 @@
     (let
       ((grandpa
 	 (let-gls (a1 a2) ((grandpa/father grandpa/father)
-			    (grandpa/mother grandpa/mother))
+			   (grandpa/mother grandpa/mother))
 	   (if-only (succeeds grandpa/father) grandpa/father grandpa/mother)))
 	)
       (test-check 'test-grandpa-10
@@ -1769,7 +1764,7 @@
   (test-check 'test-partially-eval-sgl
    (let-lv (p1 p2)
     (let* ((parents-of-scouts-sgl
-	     (gl->sgl (parents-of-scouts p1 p2) empty-subst))
+	     ((parents-of-scouts p1 p2) empty-subst))
            (cons@ (lambda@ (x y) (cons x y)))
            (split1 (@ 
                     partially-eval-sgl parents-of-scouts-sgl
@@ -2426,7 +2421,8 @@
 (letrec
   ((extend-clause-1
      (relation (l)
-       (to-show '() l l)))
+       (to-show '() l l)
+       succeed))
    (extend-clause-2
      (relation (x l1 l2 l3)
        (to-show `(,x . ,l1) l2 `(,x . ,l3))
@@ -2446,7 +2442,8 @@
 (letrec
   ((extend-clause-1
      (relation (l)
-       (to-show '() l l)))
+       (to-show '() l l)
+       succeed))
    (extend-clause-2
      (relation (x l1 l2 l3)
        (to-show `(,x . ,l1) l2 `(,x . ,l3))
