@@ -1,31 +1,31 @@
-(module aaa)
-(define (printf . args) (apply print args))
-(define-record-type *var* (make-var name) var? (name var-name))
-(define (print-gensym flag) #f)
-(define (remv el lst)
-  (let loop ((lst lst))
-    (cond
-      ((null? lst) lst)
-      ((eqv? el (car lst)) (loop (cdr lst)))
-      (else (cons (car lst) (loop (cdr lst)))))))
-(define pretty-print pp)
-(define (time . args) #f)
+; (module aaa)
+; (define (printf . args) (apply print args))
+; (define-record-type *var* (make-var name) var? (name var-name))
+; (define (print-gensym flag) #f)
+; (define (remv el lst)
+;   (let loop ((lst lst))
+;     (cond
+;       ((null? lst) lst)
+;       ((eqv? el (car lst)) (loop (cdr lst)))
+;       (else (cons (car lst) (loop (cdr lst)))))))
+; (define pretty-print pp)
+; (define (time . args) #f)
 
-(define-syntax trace-lambda
-  (syntax-rules ()
-    [(_ name (formal0 formal1 ...) body0 body1 ...)
-      (lambda (formal0 formal1 ...)
-	(print "\nTrace-lambda: " 'name)
-	(begin  body0 body1 ...))]))
+; (define-syntax trace-lambda
+;   (syntax-rules ()
+;     [(_ name (formal0 formal1 ...) body0 body1 ...)
+;       (lambda (formal0 formal1 ...)
+; 	(print "\nTrace-lambda: " 'name)
+; 	(begin  body0 body1 ...))]))
 
-(define (OS:time::double)
-  (pragma::double "time(0)"))
+; (define (OS:time::double)
+;   (pragma::double "time(0)"))
 
-(define (statistics)
-  (vector
-    #f
-    (OS:time) ; CPU-time
-    ))
+; (define (statistics)
+;   (vector
+;     #f
+;     (OS:time) ; CPU-time
+;     ))
 
 ;(load "plshared.ss")
 
@@ -54,7 +54,7 @@
 
 (printf "~s ~s~%" 'test-@-lambda@ (test-@-lambda@))
 
-;(define-record var (name) ())
+(define-record var (name) ())
 (define var make-var)
 
 (print-gensym #f)
@@ -2847,6 +2847,140 @@
 	 (a1 a2) Rinf2 Rinf) x y))))
 
 
+
+; Better examples.
+; Extending relations in truly mathematical sense.
+
+; R1 and R2 are overlapping
+(define R1 (extend-relation (a) 
+	     (fact () 1)
+	     (fact () 2)))
+(define R2 (extend-relation (a) 
+	     (fact () 1)
+	     (fact () 3)))
+
+(printf "~%R1:~%")
+(pretty-print (exists (x) (solve 10 (R1 x))))
+(printf "~%R2:~%")
+(pretty-print (exists (x) (solve 10 (R2 x))))
+(printf "~%R1+R2:~%")
+(pretty-print 
+  (exists (x) (solve 10 
+		  ((extend-relation (a) R1 R2) x))))
+(printf "~%R1+R1:~%")
+(pretty-print 
+  (exists (x) (solve 10 
+		  ((extend-relation (a) R1 R1) x))))
+
+
+; Infinitary relation: even numbers
+
+(define Reven
+  (extend-relation (a)
+    (fact () 0)
+    (relation cut (x xprev)
+      (to-show x)
+      (instantiated x)
+      cut
+      (pred-call positive? x)
+      (fun-call - xprev x 2)
+      (Reven xprev)
+      )
+    (relation _ (x xprev)
+      (to-show x)
+      (Reven xprev)
+      (fun-call + x xprev 2)
+      )
+    ))
+(printf "~%Reven:~%")
+(pretty-print (exists (x) (solve 5 (Reven x))))
+(printf "~%Reven+R2: Reven starves R2:~%")
+(pretty-print 
+  (exists (x) (solve 5
+		  ((extend-relation (a) Reven R2) x))))
+
+; Solving the starvation problem: extend R1 and R2 so that they
+; are interleaved
+
+(printf "~%binary-extend-relation-interleave~%")
+(printf "~%Reven+R2:~%")
+(pretty-print 
+  (exists (x) (solve 5
+		  ((binary-extend-relation-interleave (a) Reven R2) x))))
+(printf "~%R2+Reven:~%")
+(pretty-print 
+  (exists (x) (solve 5
+		  ((binary-extend-relation-interleave (a) R2 Reven) x))))
+(printf "~%Reven+R1:~%")
+(pretty-print 
+  (exists (x) (solve 5
+		  ((binary-extend-relation-interleave (a) Reven R1) x))))
+
+(printf "~%R2+R1:~%")
+(pretty-print 
+  (exists (x) (solve 7
+		  ((binary-extend-relation-interleave (a) R2 R1) x))))
+
+;;; Test for nonoverlapping.
+
+(printf "~%binary-extend-relation-interleave-non-overlap~%")
+(printf "~%R1+R2:~%")
+(pretty-print 
+  (exists (x) (solve 10 
+	 ((binary-extend-relation-interleave-non-overlap (a) R1 R2) x))))
+(printf "~%R1+R1:~%")
+(pretty-print 
+  (exists (x) (solve 10 
+	 ((binary-extend-relation-interleave-non-overlap (a) R1 R1) x))))
+
+(printf "~%Reven+R1:~%")
+(pretty-print 
+  (exists (x)
+    (solve 7
+      ((binary-extend-relation-interleave-non-overlap (a) Reven R1) x))))
+(printf "~%R1+Reven:~%")
+(pretty-print 
+  (exists (x) 
+    (solve 7
+      ((binary-extend-relation-interleave-non-overlap (a) R1 Reven) x))))
+
+; Infinitary relation Rdivby3
+; Reven overlaps with Rdivby3 in the infinite number of points
+
+(define Rdivby3
+  (extend-relation (a)
+    (fact () 0)
+    (relation cut (x xprev)
+      (to-show x)
+      (instantiated x)
+      cut
+      (pred-call positive? x)
+      (fun-call - xprev x 3)
+      (Rdivby3 xprev)
+      )
+    (relation _ (x xprev)
+      (to-show x)
+      (Rdivby3 xprev)
+      (fun-call + x xprev 3)
+      )
+    ))
+
+(printf "~%Rdivby3:~%")
+(pretty-print (exists (x) (solve 7 (Rdivby3 x))))
+(printf "~%Reven+Rdivby3~%")
+(pretty-print 
+  (exists (x)
+    (solve 9
+      ((binary-extend-relation-interleave-non-overlap 
+	 (a) Reven Rdivby3) x))))
+(printf "~%Rdivby3+Reven~%")
+(pretty-print 
+  (exists (x)
+    (solve 9
+      ((binary-extend-relation-interleave-non-overlap 
+	 (a) Rdivby3 Reven) x))))
+
+
 ; nrev([],[]).
 ; nrev([X|Rest],Ans) :- nrev(Rest,L), append(L,[X],Ans).
 
@@ -2856,6 +2990,7 @@
 
 ; data([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,
 ;                            21,22,23,24,25,26,27,28,29,30]).
+
 
 
 (define nrev
