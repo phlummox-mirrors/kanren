@@ -334,6 +334,9 @@
 
 (printf "~s ~s~%" 'test-compose-subst-4 (test-compose-subst-4))
 
+(define initial-fk (lambda () '()))
+(define initial-sk (lambda@ (fk subst cutk) (cons (cons subst cutk) fk)))
+
 (define-syntax binary-extend-relation
   (syntax-rules ()
     [(_ (id ...) rel-exp1 rel-exp2)
@@ -345,6 +348,39 @@
               (lambda () (@ (rel2 id ...) sk fk subst cutk))
               subst
               cutk))))]))
+
+;;; one thing suspicious about this code is that it needs both
+;;; relations to return before it ever enters interleave, so
+;;; if the first one goes into an infinite loop before the other
+;;; then we have a problem.  I don't know if that is related
+;;; to the problem, or not.
+
+(define-syntax binary-extend-relation-interleave
+  (syntax-rules ()
+    [(_ (id ...) rel-exp1 rel-exp2)
+     (let ([rel1 rel-exp1] [rel2 rel-exp2])
+       (lambda (id ...)
+         (lambda@ (sk fk subst cutk)
+           ((interleave sk fk)
+            (@ (rel1 id ...) initial-sk initial-fk subst cutk)
+            (@ (rel2 id ...) initial-sk initial-fk subst cutk)))))]))
+
+(define interleave
+  (lambda (sk fk)
+    (letrec
+      ([finish
+         (lambda (q)
+           (cond
+             [(null? q) (fk)]
+             [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
+                     (@ sk (lambda () (finish (fk))) subst cutk))]))]
+       [interleave
+         (lambda (q1 q2)
+           (cond
+             [(null? q1) (if (null? q2) (fk) (finish q2))]
+             [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
+                     (@ sk (lambda () (interleave q2 (fk))) subst cutk))]))])
+      interleave)))
 
 (define-syntax extend-relation
   (syntax-rules ()
@@ -413,8 +449,8 @@
 
 (define initial-fk (lambda () '()))
 (define initial-sk
-  (lambda@ (fk subst cut)
-    (cons subst fk)))
+  (lambda@ (fk subst cutk)
+    (cons (cons subst cutk) fk)))
 
 ;;;;; Starts the real work of the system.
 
@@ -428,7 +464,7 @@
           (@ (father 'john 'sam)
              initial-sk initial-fk empty-subst initial-fk)])
     (and
-      (equal? (car result) '())
+      (equal? (caar result) '())
       (equal? ((cdr result)) '()))))
 
 ;;; Now we need concretize-subst about here.
@@ -442,7 +478,7 @@
   (lambda ()
     (equal?
       (concretize-subst
-        (car (@ (child-of-male 'sam 'john)
+        (caar (@ (child-of-male 'sam 'john)
                 initial-sk initial-fk empty-subst initial-fk)))
       `(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'john)))))
 
@@ -462,14 +498,14 @@
             (@ (new-father 'pete 'sal)
                initial-sk initial-fk empty-subst initial-fk)])
       (and
-        (equal? (car result) '())
+        (equal? (caar result) '())
         (equal? ((cdr result)) '())))))
 
 (printf "~s ~s~%" 'test-father-1 (test-father-1))
 
 (define query
   (let ([initial-fk (lambda () '())]
-        [initial-sk (lambda@ (fk subst cutk) (cons subst fk))])
+        [initial-sk (lambda@ (fk subst cutk) (cons (cons subst cutk) fk))])
     (lambda (antecedent)
       (@ antecedent initial-sk initial-fk empty-subst initial-fk))))
 
@@ -478,7 +514,7 @@
     (exists (x)
       (let ([result (query (new-father 'pete x))])
         (and
-          (equal? (car result) `(,(commitment x 'sal)))
+          (equal? (caar result) `(,(commitment x 'sal)))
           (equal? ((cdr result)) '()))))))
 
 (printf "~s ~s~%" 'test-father-2 (test-father-2))
@@ -488,7 +524,7 @@
     (exists (x)
       (equal?
         (let ([answer (query (new-father 'pete x))])
-          (let ([subst (car answer)])
+          (let ([subst (caar answer)])
             (concretize-sequence (subst-in 'pete subst) (subst-in x subst))))
         '(pete sal)))))
 
@@ -499,7 +535,7 @@
     (exists (x y)
       (equal?
         (let ([answer (query (new-father x y))])
-          (let ([subst (car answer)])
+          (let ([subst (caar answer)])
             (concretize-sequence (subst-in x subst) (subst-in y subst))))
         '(john sam)))))
 
@@ -520,24 +556,24 @@
         (equal?
           (let ([answer1 (query (newer-father 'pete x))])
             (pretty-print answer1)
-            (let ([subst (car answer1)])
+            (let ([subst (caar answer1)])
               (list
                 (concretize-sequence
                   (subst-in 'pete subst) (subst-in x subst))
                 (let ([answer2 ((cdr answer1))])
                   (pretty-print answer2)
-                  (let ([subst (car answer2)])
+                  (let ([subst (caar answer2)])
                     (concretize-sequence
                       (subst-in 'pete subst) (subst-in x subst)))))))
           '((pete sal) (pete pat)))
         (equal?
           (let ([answer1 (query (newer-father 'pete x))])
-            (let ([subst (car answer1)])
+            (let ([subst (caar answer1)])
               (cons
                 (concretize-sequence
                   (subst-in 'pete subst) (subst-in x subst))
                 (let ([answer2 ((cdr answer1))])
-                  (let ([subst (car answer2)])
+                  (let ([subst (caar answer2)])
                     (cons
                       (concretize-sequence
                         (subst-in 'pete subst) (subst-in x subst))
@@ -563,8 +599,8 @@
 (define-syntax solve
   (syntax-rules ()
     [(_ n (rel t0 ...))
-     (map (lambda (subst)
-            (concretize-sequence (subst-in t0 subst) ...))
+     (map (lambda (subst/cutk)
+            (concretize-sequence (subst-in t0 (car subst/cutk)) ...))
        (stream-prefix (- n 1) (query (rel t0 ...))))]))
 
 (define sam/pete
@@ -887,6 +923,12 @@
          (@ sk fk subst cutk)
          (fk)))]))
 
+(define-syntax pred->relation
+  (syntax-rules ()
+    [(_ (id ...) p)
+     (lambda (id ...)
+       (pred-call p id ...))]))
+
 (define-syntax fun-call
   (syntax-rules ()
     [(_ f t u ...)
@@ -903,8 +945,17 @@
     [(_ p t ...)
      (lambda@ (sk fk subst cutk)
        (if ((subst-in p subst) (subst-in t subst) ...)
+         (@ sk fk subst cutk)
+         (fk)))]))
+
+(define-syntax pred/no-check->relation
+  (syntax-rules ()
+    [(_ (id ...) p)
+     (lambda (id ...)
+       (lambda@ (sk fk subst cutk)
+         (if ((subst-in p subst) (subst-in id subst) ...)
            (@ sk fk subst cutk)
-           (fk)))]))
+           (fk))))]))
 
 (define-syntax fun-call/no-check
   (syntax-rules ()
@@ -919,7 +970,8 @@
 (define nonvar!
   (lambda (t)
     (if (var? t)
-      (error 'nonvar! "Variable found in call: ~s" (concretize-var t))
+      (error 'nonvar! "Variable found in call: ~s"
+        (let-values (cvar env) (concretize-var t '()) cvar))
       t)))
 
 (define grandpa
@@ -1238,7 +1290,7 @@
       (to-show n)
       (move n 'left 'middle 'right))))
 
-(begin
+'(begin
   (printf "~s with 3 disks~n~n" 'test-towers-of-hanoi)
   (solution (towers-of-hanoi 3))
   (void))
@@ -2591,6 +2643,8 @@
 
 (pretty-print (exists (x y) (solve 5 (grandpa-sam 'sal))))
 
+;;;; This verifies that the idea works.  Now, to run the book through this
+;;;; system.
 
 ; Extending relations in truly mathematical sense.
 ; First, why do we need this.
@@ -2641,74 +2695,7 @@
 ; with fk to re-prove R1. Thus fk is the "rest" of R1
 ; So we pass sk (lambda () (run-rest-of-r2 interleave-with-rest-of-r1))
 ; There is a fixpoint in the following algorithm!
-
-; (define (make-R1rest r2rest) (R1 (lambda (r1rest) (sk (make-R2rest r1rest)))
-; (R1 (lambda (R1rest) (sk R2rest)) fk)
-
-(define-syntax binary-extend-relation-interleave
-  (syntax-rules ()
-    [(_ (id ...) rel-exp1 rel-exp2)
-     (let ([rel1 rel-exp1] [rel2 rel-exp2])
-       (lambda (id ...)
-         (lambda@ (sk fk subst cutk)
-	   (define r1-rest-in (lambda@ (sk fk)
-	     (@ (rel1 id ...) sk fk subst cutk)))
-	   (define r2-rest-in (lambda@ (sk fk)
-	     (@ (rel2 id ...) sk fk subst cutk)))
-	   (letrec
-	     ((r1-rest-cl 
-		(lambda ()
-		  (@ r1-rest-in
-		    (lambda@ (r1-rest-cl-new subst cutk)
-		      (set! r1-rest-cl r1-rest-cl-new)
-		      (@ sk 
-			(or r2-rest-cl r1-rest-cl)
-			subst cutk))
-		    (lambda () ; OK, r1 is finished
-		      (set! r1-rest-cl #f)
-		      (if r2-rest-cl (r2-rest-cl) (fk))))))
-	       (r2-rest-cl 
-		(lambda ()
-		  (@ r2-rest-in
-		    (lambda@ (r2-rest-cl-new subst cutk)
-		      (set! r2-rest-cl r2-rest-cl-new)
-		      (@ sk (or r1-rest-cl r2-rest-cl) subst cutk))
-		    (lambda () ; OK, r2 is finished
-		      (set! r2-rest-cl #f)
-		      (if r1-rest-cl (r1-rest-cl) (fk))))))
-	       )
-	     (r1-rest-cl)))))
-]))
-
-
-(define-syntax binary-extend-relation-interleave
-  (syntax-rules ()
-    [(_ (id ...) rel-exp1 rel-exp2)
-     (let ([rel1 rel-exp1] [rel2 rel-exp2])
-       (lambda (id ...)
-         (lambda@ (sk fk subst cutk)
-	   (define r1-rest-in (lambda@ (sk fk)
-	     (@ (rel1 id ...) sk fk subst cutk)))
-	   (define r2-rest-in (lambda@ (sk fk)
-	     (@ (rel2 id ...) sk fk subst cutk)))
-	   (define queryr
-	     (let ([initial-fk (lambda () '())]
-		   [initial-sk (lambda@ (fk subst cutk)
-				  (cons (cons subst cutk) fk))])
-	       (lambda (ant)
-		 (@ ant initial-sk initial-fk))))
-	   (define (interleave q1 q2)
-	     (cond
-	       ((pair? q1) 
-		 (@ sk (lambda () (interleave q2 ((cdr q1))))
-		   (caar q1) (cdar q1)))
-	       ((pair? q2) 
-		 (@ sk (lambda () (interleave ((cdr q2)) '()))
-		   (caar q2) (cdar q2)))
-	       (else (fk))))
-	   (interleave (queryr r1-rest-in) (queryr r2-rest-in)))))
-]))
-
+; Or a second-level shift/reset!
 
 (printf "~%binary-extend-relation-interleave~%")
 (printf "~%Rinf+R1:~%")
@@ -2732,105 +2719,6 @@
 (pretty-print 
   (exists (x y) (solve 7
 		  ((binary-extend-relation-interleave (a1 a2) fact3 R1) x y))))
-
-
-'(define-syntax all
-  (syntax-rules ()
-    [(_) (lambda (sk) sk)]
-    [(_ ant0) ant0]
-    [(_ ant0 ant1 ...)
-     (lambda (sk)
-       (ant0 ((all ant1 ...) sk)))]))
-
-'(define-syntax any
-  (syntax-rules ()
-    [(_ ant ...)
-     ((extend-relation () (relation _ () (to-show) ant) ...))]))
-
-'(define query
-  (let ([initial-fk (lambda () '())]
-        [initial-sk (lambda@ (fk subst cutk) (cons subst fk))])
-    (lambda (antecedent)
-      (@ antecedent initial-sk initial-fk empty-subst initial-fk))))
-
-'(define grandpa-sam
-  (relation cut (child)
-    (to-show child)
-    (exists (x)
-      (all (father 'sam x) (father x child)))))
-
-(define-syntax binary-extend-relation
-  (syntax-rules ()
-    ((_ . args) (binary-extend-relation-interleave . args))))
-
-'(define-syntax binary-extend-relation
-  (syntax-rules ()
-    [(_ (id ...) rel-exp1 rel-exp2)
-     (let ([rel1 rel-exp1] [rel2 rel-exp2])
-       (lambda (id ...)
-         (lambda@ (sk fk subst cutk)
-           (@ (rel1 id ...)
-              sk
-              (lambda () (@ (rel2 id ...) sk fk subst cutk))
-              subst
-              cutk))))]))
-
-
-'(define-syntax relation
-  (syntax-rules (to-show)
-    [(_ short-cut (ex ...) (to-show x ...) ant ...)
-     (relation short-cut (ex ...) () (x ...) (x ...) ant ...)]
-    [(_ short-cut (ex ...) (g ...) () (x ...) ant ...)
-     (lambda (g ...)
-       (reify-cutters
-         (lambda (next short-cut)
-           (exists (ex ...)
-             (all (all! (next) (== g x) ...) ant ...)))))]
-    [(_ short-cut exs (var ...) (x0 x1 ...) xs ant ...)
-     (relation short-cut exs (var ... g) (x1 ...) xs ant ...)]))
-
-
-(define towers-of-hanoi-path
-  (let ([steps '()])
-    (let ([push-step (lambda (x y) 
-		       (printf "~%step:~a" `(,x ,y))
-		       (if (> (length steps) 10) (abort))
-		       (set! steps (cons `(,x ,y) steps)))])
-      (letrec
-        ([move
-           (extend-relation (a1 a2 a3 a4)
-             (relation cut ()
-               (to-show 0 _ _ _)
-               (all cut))
-             (relation _ (n a b c)
-               (to-show n a b c)
-               (exists (m)
-                 (all
-		   (pred-call positive? n)
-                   (fun-call - m n 1)
-                   (move m a c b)
-                   (pred-call push-step a b)
-                   (move m c b a)))))])
-        (relation _ (n path)
-          (to-show n path)
-          (begin
-            (set! steps '())
-            (any
-              (fails (move n 'l 'm 'r))
-              (== path (reverse steps)))))))))
-
-(define test-towers-of-hanoi-path
-  (lambda ()
-    (equal?
-      (exists (path)
-        (solution (towers-of-hanoi-path 3 path)))
-      '(3 ((l m) (l r) (m r) (l m) (r l) (r m) (l m))))))
-
-(printf "~s ~s~%" 'test-towers-of-hanoi-path (test-towers-of-hanoi-path))
-
-
-;;;; This verifies that the idea works.  Now, to run the book through this
-;;;; system.  
 
 #!eof
 
