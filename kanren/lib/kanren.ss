@@ -698,6 +698,34 @@
             (concretize-sequence (subst-in t0 (car subst/cutk)) ...))
        (stream-prefix (- n 1) (query (rel t0 ...))))]))
 
+(define (split-srel srel)
+  (@ srel
+    (lambda@ (fk subst cutk a b)
+      (@ a subst 
+	(lambda@ (sk1 fk1)
+	  (@
+	    (fk) 
+	    ; new a
+	    (lambda@ (sub11 x) (@ sk1 (lambda () (@ x sk1 fk1)) sub11 cutk))
+	    ; new b
+	    fk1))))
+    (lambda () (lambda@ (a b) (b)))))
+
+(define-syntax solve
+  (syntax-rules ()
+    [(_ _n (rel t0 ...))
+     (let ((srel
+	     (lambda@ (sk fk)
+	       (@ (rel t0 ...) sk fk '() fk))))
+       (let loop ((n _n) (srel srel))
+	 (if (zero? n) '()
+	   (@ (split-srel srel)
+	     (lambda@ (subst srel)
+	       (cons
+		 (concretize-sequence (subst-in t0 subst) ...)
+		 (loop (- n 1) srel)))
+	     (lambda () '())))))]))
+
 (define sam/pete
   (relation _ ()
     (to-show 'sam 'pete)
@@ -718,11 +746,23 @@
             
 (printf "~s ~s~%" 'test-father-6/solve (test-father-6/solve))
 
-(define-syntax solution
+'(define-syntax solution
   (syntax-rules ()
     [(_ x)
      (let ([ls (solve 1 x)])
        (if (null? ls) #f (car ls)))]))
+
+(define-syntax solution
+  (syntax-rules ()
+    [(_ (rel t0 ...))
+      (@
+       (rel t0 ...)
+       (lambda@ (fk subst cutk)
+	 (concretize-sequence (subst-in t0 subst) ...))
+       (lambda () #f)
+       '()
+       (lambda () #f)
+	)]))
 
 (define test-father-7/solution
   (lambda ()
