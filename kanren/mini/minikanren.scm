@@ -1,6 +1,8 @@
 (def-syntax (query (fk subst id ...) ant expr expr* ...)
   (exists (id ...)
-    (@ ant (lambda@ (fk subst) expr expr* ...) (lambda () '()) empty-subst)))
+    (@ ant (lambda@ (fk subst)
+             (let ([id (concretize (subst-in id subst))] ...) expr expr* ...))
+      (lambda () '()) empty-subst)))
 
 (def-syntax (project (id ...) ant)
   (lambda@ (sk fk subst)
