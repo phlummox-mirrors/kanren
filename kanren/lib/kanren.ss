@@ -3598,8 +3598,7 @@
         [(pair? term) (loop (cdr term) (loop (car term) fv))]
         [else fv]))))
 
-
-(define concretize
+(define concretize*
   (lambda (term)
     (let ([fv (free-vars term)])
       (let ([subst
@@ -3612,7 +3611,7 @@
 
 ; extend the kb with the list of assumptions
 ; this is just like 'any' only it's a procedure rather than a syntax
-; Why we need concretize?
+; Why we need concretize*?
 ; Suppose, the list of facts includes
 ;	(fact (x) (foo x)) and (fact (x) (bar x))
 ; definitely, we do not want to imply that facts foo and bar _share_
@@ -3629,7 +3628,7 @@
 
 (define extend-kb
   (lambda (facts kb)
-    (let ([facts (concretize facts)])
+    (let ([facts (concretize* facts)])
       (printf "Extending KB with ~s~%" facts)
       (let loop ([facts facts])
         (if (null? facts) kb
@@ -3804,28 +3803,13 @@
 
 (newline)
 
-(test-check "Addition" 
-  (map (lambda (ans)
-         (list (cadr (car ans)) (cadr (cadr ans))
-           '(succ (succ (succ (succ (succ zero)))))))
-    (solve 20 (x y)
-      (+-as-relation x y '(succ (succ (succ (succ (succ zero))))))))
-  '((zero
-      (succ (succ (succ (succ (succ zero)))))
-      (succ (succ (succ (succ (succ zero))))))
-    ((succ zero)
-     (succ (succ (succ (succ zero))))
-     (succ (succ (succ (succ (succ zero))))))
-    ((succ (succ zero))
-     (succ (succ (succ zero)))
-     (succ (succ (succ (succ (succ zero))))))
-    ((succ (succ (succ zero)))
-     (succ (succ zero))
-     (succ (succ (succ (succ (succ zero))))))
-    ((succ (succ (succ (succ zero))))
-     (succ zero)
-     (succ (succ (succ (succ (succ zero))))))
-    ((succ (succ (succ (succ (succ zero)))))
-     zero
-     (succ (succ (succ (succ (succ zero))))))))
+(test-check "Addition"
+  (solve 20 (x y)
+    (+-as-relation x y '(succ (succ (succ (succ (succ zero)))))))
+  '(((x.0 zero) (y.0 (succ (succ (succ (succ (succ zero)))))))
+    ((x.0 (succ zero)) (y.0 (succ (succ (succ (succ zero))))))
+    ((x.0 (succ (succ zero))) (y.0 (succ (succ (succ zero)))))
+    ((x.0 (succ (succ (succ zero)))) (y.0 (succ (succ zero))))
+    ((x.0 (succ (succ (succ (succ zero))))) (y.0 (succ zero)))
+    ((x.0 (succ (succ (succ (succ (succ zero)))))) (y.0 zero))))
 
