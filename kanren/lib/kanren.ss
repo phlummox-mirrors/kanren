@@ -364,13 +364,6 @@
               (@ ant1 initial-sk initial-fk subst cutk)
               (@ ant2 initial-sk initial-fk subst cutk))))))]))
 
-; 	c(A,tuple(A,C,B),C,dict2).
-; 	c(A,tuple(X,Y,B),C,dict1) :- c(A,B,C,_).
-; Had I switched the order,
-; 	c(A,tuple(X,Y,B),C,dict1) :- c(A,B,C,_).
-; 	c(A,tuple(A,C,B),C,dict2).
-; the queries would have never terminated. That's where our
-; extend-relation-interleave would be quite handy.
 
 (define finish-interleave
   (lambda (sk fk)
@@ -393,6 +386,7 @@
              [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
                      (@ sk (lambda () (interleave q2 (fk))) subst cutk))]))])
       interleave)))
+
 
 (define-syntax binary-extend-relation-interleave-non-overlap
   (syntax-rules ()
@@ -2811,6 +2805,104 @@
       ((binary-extend-relation-interleave-non-overlap 
 	 (a1 a2) Rinf2 Rinf) x y))))
 
+
+(printf "~%Test: checking dependency satisfaction in Haskell typeclasses~%")
+; Suppose we have the following Haskell class and instance declarations
+;      class C a b c | a b -> c 
+;      instance C a b c => C a (x,y,b) c
+;      instance C a (a,c,b) c
+;
+; They will be compiled into the following database of instances,
+; which define the class membership.
+(define typeclass-C-instance-1
+  (relation _ (a b c x y)
+    (to-show a `(,x ,y ,b) c)
+    (typeclass-C a b c)))
+
+(define typeclass-C-instance-2
+  (relation _ (a b c)
+    (to-show a `(,a ,c ,b) c)))
+
+(define typeclass-C
+  (binary-extend-relation (a b c) 
+    typeclass-C-instance-2
+    typeclass-C-instance-1))
+
+
+
+; Run the checker for the dependency a b -> c
+; Try to find the counter-example, that is, two members of (C a b c)
+; such that a and b are the same but c are different.
+(define typeclass-counter-example-query
+  (lambda (a b c1 c2)
+    (all 
+      (typeclass-C a b c1)
+      (typeclass-C a b c2)
+      (fails
+	; equality predicate: X == Y in Prolog
+	; if X is a var, then X == Y holds only if Y
+	; is the same var
+	(pred-call/no-check 
+	  (lambda (x y)
+	    (cond
+	      ((and (var? x) (var? y)) (equal? x y))
+	      ((var? x) #f)  ; y is not a var
+	      ((var? y) #f)  ; x is not a var
+	      (else (equal? x y))))
+	  c1 c2))
+)))
+
+(printf "~%Counter-example: ~s~%" 
+  (exists (a b c1 c2) (solution 
+			(typeclass-counter-example-query a b c1 c2))))
+
+(define depth-counter-var (make-var '*depth-counter-var*))
+
+; Run the antecedent no more than n times, recursively
+(define (with-depth limit ant)
+  (lambda@ (sk fk subst cutk)
+    (cond
+      ((assv depth-counter-var subst) =>
+	(lambda (cmt)
+	  (let ((counter (+ 1 (commitment->term cmt))))
+	    (printf "~%counter ~d" counter)
+	    (if (> counter limit) (fk)
+	      (@ ant sk fk
+		(extend-subst 
+		  depth-counter-var counter
+		  subst)
+		cutk)))))
+      (else (@ (reset-depth-counter ant) sk fk subst cutk)))))
+
+(define (reset-depth-counter ant)
+  (lambda@ (sk fk subst cutk)
+    (@ ant sk fk 
+      (extend-subst depth-counter-var 0 subst) cutk)))
+
+; This should loop
+; (define typeclass-C
+;   (binary-extend-relation (a b c) 
+;     typeclass-C-instance-1
+;     typeclass-C-instance-2))
+
+(define typeclass-C
+  (lambda (a b c)
+    (any
+      (with-depth 5 (typeclass-C-instance-1 a b c))
+      (reset-depth-counter
+	(with-depth 5 (typeclass-C-instance-2 a b c))))))
+
+(printf "~%Counter-example: ~s~%" 
+  (exists (a b c1 c2) (solution 
+			(typeclass-counter-example-query a b c1 c2))))
+
+(exit 0)
+
+; Had I switched the order,
+; 	c(A,tuple(X,Y,B),C,dict1) :- c(A,B,C,_).
+; 	c(A,tuple(A,C,B),C,dict2).
+; the queries would have never terminated. That's where our
+; extend-relation-interleave would be quite handy.
 
 ; nrev([],[]).
 ; nrev([X|Rest],Ans) :- nrev(Rest,L), append(L,[X],Ans).
