@@ -1,0 +1,4060 @@
+\documentstyle{jfp}
+\RequirePackage{alltt}
+
+% added for proper hyphenation:
+\righthyphenmin=2 
+\lefthyphenmin=3 
+
+\newcommand{\comment}[1]{}
+
+%% For verbatim displays use the {eopltt} environment, which is like
+%% {alltt}, except that it uses the \codefontsize font. 
+%% {alltt} is like verbatim
+%% except that \ { and } work normally.  This allows the most normal use of
+%% tex macros inside code segments.  Be glad we're not using Java or C.
+%% Or if macros aren't used in the next and there are literal backslashes,
+%% use {eoplverbatim}
+\def\myrule{\raisebox{3.4ex}[1.5ex][.75ex]{\rule{126mm}{.01mm}}{\vspace{-3ex}}\\}
+%\def\myrule{\raisebox{6ex}{\rule{126mm}{.01mm}}\\}
+\def\codefontsize{\fontsize{9}{10}\selectfont\tt} 
+\def\inlinecode#1{\hbox{\codefontsize #1\/}}
+\long\def\inlinecodebreak#1{{\codefontsize #1\/}}
+\newenvironment{verbatimcode}%
+  {\endgraf\codefontsize\verbatim}%
+  {\endverbatim}
+\newenvironment{ttcode}
+  {\codefontsize\begin{alltt}}
+  {\end{alltt}}
+\def\Di{$D_i$}
+\def\Ds{$D_s$}
+% From Steve
+%\Rule{name}{antecedents}{conclusions}{sideconditions?}
+\newcommand{\Rule}[4]{
+\makebox{{\rm #1}
+$\displaystyle
+\frac{\begin{array}{l}#2\\\end{array}}
+{\begin{array}{l}#3\\\end{array}}$
+ #4}}
+
+
+%--------------------------------------------------------
+\begin{document}
+\bibliographystyle{jfp}
+
+\title{A ``Poor Man's'' Logic System with First-Class Relations
+(Draft: July 1, 2003)} \author[Friedman]{Daniel
+P. Friedman \thanks{...}
+%\thanks{...}
+\\ Computer Science Department, Indiana University 
+\\ Bloomington, IN 47405, USA
+}
+\maketitle[t]
+
+\section{Introduction}
+We present an implementation of an embedding in R$^5$
+Scheme of a logic system with first-class relations
+that we believe interacts smoothly with its host.  How can we have
+logic programming and first-class relations and lose nothing of
+Scheme?  We make the control structure of logic programming explicit,
+so that Scheme programs work with it.  This requires just a small
+handful of operations that comprises its interface.
+
+In this introduction we skim over the topics that we cover.  We ask
+for the reader's patience when some term or idea is mentioned without
+a full explanation.  Keep in mind that we are not only explaining how
+to write logic programs, but also how to embed them in Scheme.  All
+aspects of logic programming mentioned in this introduction are
+described later in the paper.  We do assume, however, a reading
+knowledge of Scheme and some familiarity with macros.
+
+Logic systems such as Prolog have been around for quite a while and much is
+understood about them.  By the way that we have implemented our logic
+system, we have been able to include first-class relations.  Furthermore,
+we make them extensible, which means that we give ourselves the power
+of sharing subrelations, much as object-oriented programming shares
+behavior.  
+
+In order to make this approach work, four properties that are not
+normally associated with the discussion of logic programming had to
+become apparent.  
+
+The first property is that most of the time we needn't think about
+the relations as a monolithic global relation.  In fact, in
+most circumstances, the programmer knows exactly which relation to
+home in on and we are going to require that knowledge of the
+programmer.\footnote{This restriction also appears in Silvija Seres
+and Michael Spivey, ``Embedding Prolog in Haskell''. In \emph{Haskell
+Workshop}, Paris, France, September, 1999.}  For example, the relation
+that infers a type for a programming language differs significantly
+from the relation that determines how to concatenate two
+lists, and both of these differ considerably from the relation
+that determines whether two people are related by the fact that one of
+them is the father of someone and the other is the child of that same
+someone.  Being able to separate these three relations makes possible
+a smooth integration with Scheme.
+
+The second property is that there should be no distinction between a
+Scheme function and a logic relation.  This has allowed for the
+removal of a dispatch, leading to an implementation with \emph{substitution
+composition} being the only place where recursion appears.  This is not
+quite accurate for three reasons.  First, if only one answer is
+produced, then no recursion is needed, but some mechanism must be in
+place to ask for more answers (We use streams.).  Second, in order to
+display answers that contain the same logic variable more than once,
+we need a recursive copier that keeps track of the logic variables.
+But, this is for passing results out to arbitrary Scheme functions.
+Finally, in the last section we introduce pairs (lists) as valid
+terms, requiring the revision of three functions, each of which
+becomes recursive.
+
+The third property is that gratuitous lists should never be built.
+This matters because we treat relations as finite-arity functions and
+thus we can consider the actual arguments separately instead of joined
+together as a list.  The implications of this decision are far
+reaching, since it allows us to avoid many applications of
+substitutions.  Where there would be two lists to unify, we now have
+two sequences of arguments, which means that we can avoid substituting
+in each \texttt{cdr} in each list. (See the redefinition of
+\texttt{unify*} in the last section.)  Also, if our raw data does not
+contain lists, then our unifier does not need to know about them.
+
+The fifth property is that since relations are first-class, they
+should support a relation extension operation.  This operation takes
+an arbitrary number of relations, all with the same signature.
+We start the development in a more conventional way treating
+a relation as a single rule.  Then we present relation extension.
+With it, we get the ability to share relations in the fashion
+of object-oriented programming.  We use relation extension throughout,
+but we show some of the real power of relation extension later when we
+interactively build a type inference system with it.
+
+This tutorial has been written so that most definitions come before
+their usage.  This has the disadvantage that occasionally the code for
+the implementation appears before it is explained.  It has the
+advantage, however, that most lines of code can be accounted for while
+sitting at a terminal.  This does not necessarily make learning the
+material easier, but it does allow the reader to know what parts
+belong in what order.  Skimming the tutorial, however, is mostly
+discouraged, since some functions and relations are defined multiple
+times and their order of definition matters!
+
+There are six additional sections.  First, we include preliminaries, much
+of which should be familiar to most readers.  We introduce some useful
+syntactic abstractions as well as some standard functions for dealing with
+\emph{logic} variables, substitutions, and unification.  In section 3 we
+implement and demonstrate the unsullied logic system.  In section 4 we
+explore sullied operators, such as the cut operator, and their
+implementation. Next, we utilize some recursive relations and include a
+comparison with an embedding in Haskell.  We follow that by a section
+discussing three famous logic programming problems: \texttt{append}, type
+inference, and a generalizaton of Prolog's \texttt{name}.  We conclude with
+some perspective on why this approach works.
+
+\section{Preliminaries}
+
+There are three categories of operations we need.  The first category
+contains operators for creating lexically-scoped logic variables
+(\texttt{exists}), currying (\texttt{lambda@} and \texttt{@}), and a
+lexical binder for multiple values (\texttt{let-values}).  The second
+category concerns itself with building (\texttt{empty-subst},
+\texttt{compose-subst}, and \texttt{extend-subst}), and applying
+(\texttt{subst-in}) substitutions.  The final category has an
+operations for unifying two terms: \texttt{unify} and \texttt{unify*}.
+
+\subsection{Creating variables, Currying, a variable-capturing macro}
+
+A data structure that may be a \emph{logic} variable or contain such
+variables is called a \emph{term}.  We create a logic variable using
+the procedure \texttt{lv}, which takes a symbol as its argument. Here
+is an example of its use.
+
+\begin{alltt}
+> (let ([x (lv 'x)] [xx (lv 'x)])
+    (list (lv-name x) (lv-name xx) (lv? x) (eqv? x xx)))
+
+(x x #t #f)
+\end{alltt}
+
+\noindent
+There is a procedure \texttt{lv-name} that retrieves the name that a
+variable has been built from, there is a predicate \texttt{lv?} that
+distinguishes variables from other data structures, and each
+invocation of \texttt{lv} makes a new one.  (We leave the details of
+defining these three procedures as an exercise.  Certainly, a uniquely
+tagged \texttt{cons} pair with its name in the \texttt{cdr} could be
+used, but most Scheme systems have their own record facility.  For
+purists, instead of relying on the ability to distinguish two
+\texttt{cons} cells with \texttt{eqv?}, one could associate a unique
+timestamp with each logic variable.)
+
+We introduce a macro, \texttt{exists}, which allows us to both create
+logic variables and have them known within a lexical scope.  Since
+we are generating a \texttt{let} expression, it is necessary to
+include different names in the first argument to \texttt{exists}.
+
+\begin{alltt}
+(define-syntax exists
+  (syntax-rules ()
+    [(_ (name ...) body0 body1 ...)
+     (let ([name (lv 'name)] ...) body0 body1 ...)]))
+\end{alltt}
+
+\noindent
+For example,
+\begin{alltt}
+(exists (x y z)
+  (list x 1 y 2 z 3))
+  
+\end{alltt}
+
+\noindent
+expands to (is the same as writing)
+
+\begin{alltt}
+(let ([x (lv 'x)] [y (lv 'y)] [z (lv 'z)])
+  (list x 1 y 2 z 3))
+\end{alltt}
+
+Here is how we can verify these ideas using \texttt{expand} and
+\texttt{expand-only}.
+
+\begin{alltt}
+> (expand 
+    '(exists (x y z)
+       (list x 1 y 2 z 3)))
+
+((lambda (x y z) (list x 1 y 2 z 3))
+ (lv 'x)
+ (lv 'y)
+ (lv 'z))
+
+> (expand-only '(exists)
+    '(exists (x y z)
+       (list x 1 y 2 z 3)))
+
+(let ([x (lv 'x)] [y (lv 'y)] [z (lv 'z)])
+  (list x 1 y 2 z 3))
+\end{alltt}
+
+There will be other uses of \texttt{expand-only} as we get further
+into the paper.  The main thing to observe, however, is that
+we do not have to expand \texttt{let}-expressions, if we don't want
+to.  The deeper the nesting levels of macro calls, the fewer items
+we might want to place in the first argument to \texttt{expand-only}.
+This one only has two levels, \texttt{exists} expands to \texttt{let}
+and \texttt{let} expands to an application of a \texttt{lambda}-expression.
+
+One other item that we should get familiar with is that using \texttt{list}
+works, but misses the structural relationship that we get back using
+\texttt{quasiquote} and \texttt{unquote}.  The last example, can also be
+written like this,
+
+\begin{alltt}
+> (expand-only '(exists)
+    '(exists (x y z)
+       `(,x 1 ,y 2 ,z 3)))
+
+(let ([x (lv 'x)] [y (lv 'y)] [z (lv 'z)])
+  `(,x 1 ,y 2 ,z 3))
+\end{alltt}
+
+This way, we get Scheme's quasiquote ``\texttt{`}'' and unquote
+``\texttt{,}'' to indicate where the logic variables can be found in a
+list structure.  But, as we discover there is still much we can do
+with logic programming that does not involve lists.  In fact, they
+don't appear until the last section.
+
+\subsubsection{Currying macros}
+
+We can also define a curried \texttt{lambda}, \texttt{lambda@},
+
+\begin{alltt}
+(define-syntax lambda@
+  (syntax-rules ()
+    [(_ () body0 body1 ...) (begin body0 body1 ...)]
+    [(_ (formal0 formal1 ...) body0 body1 ...)
+     (lambda (formal0)
+       (lambda@ (formal1 ...) body0 body1 ...))]))
+\end{alltt}
+
+To go along with \texttt{lambda@}, we have \texttt{@}, a curried
+application macro.
+
+\begin{alltt}
+(define-syntax @    
+  (syntax-rules ()
+    [(_ arg0) arg0]
+    [(_ arg0 arg1 arg2 ...) (@ (arg0 arg1) arg2 ...)]))
+\end{alltt}
+
+\begin{alltt}
+> (@ (lambda@ (x y z) (+ x (+ y z))) 1 2 3)
+
+6
+
+> (expand '(@ (lambda@ (x y z) (+ x (+ y z))) 1 2 3))
+
+((((lambda (x)
+     (lambda (y)
+       (lambda (z)
+         (+ x (+ y z)))))
+   1) 2) 3)
+\end{alltt}
+
+Curried application \texttt{@} and curried \texttt{lambda@} give us
+the ability to build and invoke our functions so that the arguments
+arrive one at a time.
+
+\subsubsection{A macro for binding multiple return values}
+
+There are times when it is better to be explicit about returning
+multiples values.  Here is a simple macro that should encourage
+such behavior.
+
+\begin{alltt}
+(define-syntax let-values
+  (syntax-rules ()
+    [(_ (x ...) vs body0 body1 ...)
+     (call-with-values 
+       (lambda () vs)
+       (lambda (x ...) body0 body1 ...))]))
+
+> (let-values (x y z) (values 1 2 3) 
+    (+ x (* y z)))
+
+7
+\end{alltt}
+
+Since values is a global function it can be called from anywhere, so
+
+\begin{alltt}
+> (let ([f (lambda () values)])
+    (let-values (x y z) ((f) 1 2 3)
+      (+ x (* y z))))
+
+7
+
+> (let ([f (lambda (w) (values w (+ w 1) (+ w 2)))])
+    (let-values (x y z) (f 1)
+      (+ x (* y z))))
+
+7
+\end{alltt}
+
+\subsection{Substitutions}
+
+A substitution, \texttt{s}, is a list of real commitments, represented
+using an association list. A \emph{commitment} is a pairing
+(\texttt{commitment}) of a variable (\texttt{commitment->var}) to a
+term (\texttt{commitment->term}) and it is \emph{real} if its variable
+is not the same as its term.  We will have occasion to naively add a
+commitment to a substitution, so we must be certain that the
+commitment is real.
+
+\begin{alltt}
+(define cons-if-real-commitment
+  (lambda (lv term subst)
+    (cond
+      [(eqv? term lv) subst]
+      [else (cons (commitment lv term) subst)])))
+\end{alltt}
+
+\noindent
+The variables (i.e., \texttt{(map commitment->var s)}) of a
+substitution must form a set.  We introduce two kinds of
+substitutions.  The first is the empty substitution:
+\texttt{empty-subst}, which we represent with the empty list.  The
+second, built with \texttt{compose-subst}, is formed by refining one
+substitution with another to form a new substitution.
+\footnote{This material on substitutions is derived from
+definitions and examples on pages 18 and 19 of J.\ W.\ Lloyd's
+\emph{Foundations of Logic Programming}.}
+
+\begin{alltt}
+(define empty-subst '())
+\end{alltt}
+\newpage
+\begin{alltt}
+(define compose-subst
+  (lambda (base refining)
+    (let refine ([base base] [survivors refining])
+      (cond
+        [(null? base) survivors]
+        [else (cons-if-real-commitment
+                (commitment->var (car base))
+                (subst-in (commitment->term (car base)) refining)
+                (refine (cdr base)
+                  (cond
+                    [(assv (commitment->var (car base)) survivors)
+                     => (lambda (c) (remv c survivors))]
+                    [else survivors])))]))))
+\end{alltt}
+When does \texttt{compose-subst} behave like \texttt{append}?  There
+are two aspects of the code to consider.  First, the \texttt{assv}
+test must always fail.  For if it doesn't, \texttt{survivors}, which
+starts out as \texttt{refining} shrinks just a bit. Second, the
+\texttt{subst-in} expression must not yield a new term.  Because the
+term is the same, we know that the variable and the term cannot be
+identical, so \texttt{cons-if-real-commitment} does a \texttt{cons}.
+
+But, of course, \texttt{compose-subst} rarely behaves exactly like
+\texttt{append}.  A commitment in the original \texttt{refining}
+substitution may not show up in the resultant substitution.  This
+happens when a variable bound in \texttt{base} is also bound in
+\texttt{refining}.  This should be obvious, since no variable is bound
+more than once in the resultant substitution.  The one bound in
+\texttt{base} is the one that matters.  So composing two substitutions
+is like taking the union of the commitments relative to the bound
+variables and utilizing the content of the refining substitution to
+affect the binding in \texttt{base}'s substitution.  Any resultant
+unreal commitments are excluded from the resultant substitution.
+
+Suppose we have a variable and a term that we would like to naively
+include in a substitution.  If the variable and all the variables of
+the term are unbound, and if the term is not the same as the variable,
+then we can use this simple definition.
+
+\begin{alltt}
+(define extend-subst
+  (lambda (unbound-lv contains-no-bound-lvs subst)
+    (cons (commitment unbound-lv contains-no-bound-lvs) subst)))
+\end{alltt}
+
+This special case arises often enough that we feel obligated to use
+it later.  But, we must convince ourselves that it is the right
+definition.  Clearly, we must be certain that its first two arguments
+are not the same, for if they were, the result would be the original
+substitution.  Also, if the first argument is bound, then we know that
+the associated binding would be removed from the original
+substitution.  Finally, if the second argument contains any bound
+variables, their bindings would affect the term that would be bound in
+the extended substitution.  Obviously, all constants qualify, but later
+we see that when we include pairs, some of them may qualify, too.
+
+The procedure \texttt{subst-in}, below, translates everything to
+itself except variables.  If the variable is in the variables of the
+substitution, its associated term is returned, otherwise the variable
+itself is returned, since it is virtually associated with
+itself. Initially, we restrict terms to be variables or values that
+can be compared with \texttt{eqv?}.  In the last section we
+\emph{enlarge the set of terms to include pairs (lists), which may
+contain variables.}
+
+\begin{alltt}
+(define subst-in
+  (lambda (t subst)
+    (cond
+      [(lv? t)
+       (cond
+         [(assv t subst) => commitment->term]
+         [else t])]
+      [else t])))
+\end{alltt}
+
+\texttt{Exercise 0:} Rewrite \texttt{compose-subst} and
+\texttt{subst-in} to check in advance to see if any of
+its substitution arguments are empty.
+
+In the definition of \texttt{unify*}, below, we create a
+substitution of exactly one real commitment. We make this explicit
+with the definition of \texttt{unit-subst}, below. The outer
+\texttt{list} in the definition is there because every substitution is a
+\emph{list} of commitments.  
+
+\begin{alltt}
+(define unit-subst 
+  (lambda (var t)
+    (list (commitment var t))))
+\end{alltt}
+
+Consider the use of substitutions in everyday experiences.  Before you
+buy your first motorized vehicle, you have made no commitments to
+yourself about its purchase.  You have the empty substitution.  Then
+you decide to buy a four-wheeled motorized vehicle.  Now you have
+enlarged your empty substitution to include a single commitment that
+whatever you buy should have four wheels and an engine.  Then, you
+decide to purchase a car.  You have refined your earlier commitment to
+buy a truck, a car, or some other four-wheeled vehicle to buying a
+car.  You still have only one commitment in your substitution, though
+you have composed two nonempty substitutions: the one that stated that
+you would buy a four-wheeled motorized vehicle and the one that stated
+that you would buy a car.  You can refine your current substitution by
+stating that the car would not be over three years old.  You still
+have only one commitment.  At some point, you can \emph{also} commit
+to purchasing a television.  Now, you have two commitments.  Each time
+you refine these two commitments you get a substitution with two
+commitments.  For example, you might choose to get a sedan and a color
+television.  You still don't know what you are going to get, but as
+your current substitution is refined, you are getting closer and
+closer to making your decision.
+\newpage
+Let's consider some examples:
+
+\begin{alltt}
+> (exists (x y)
+    (equal?
+      (compose-subst (unit-subst x y) (unit-subst y 52))
+      `(,(commitment x 52) ,(commitment y 52))))
+
+#t
+\end{alltt}
+
+\begin{alltt}
+> (exists (w x y)
+    (equal?
+      (let ([s (compose-subst (unit-subst y w) (unit-subst w 52))])
+        (compose-subst (unit-subst x y) s))
+      `(,(commitment x 52) ,(commitment y 52) ,(commitment w 52))))
+
+#t
+\end{alltt}
+
+\begin{alltt}
+> (exists (w x y)
+    (equal?
+      (let ([s (compose-subst (unit-subst w 52) (unit-subst y w))])
+        (compose-subst (unit-subst x y) s))
+      `(,(commitment x w) ,(commitment w 52) ,(commitment y w))))
+
+#t
+\end{alltt}
+
+\begin{alltt}
+> (exists (w x y)
+    (equal?
+      (let ([s (compose-subst (unit-subst y w) (unit-subst x y))]
+            [r (compose-subst
+                 (compose-subst (unit-subst x 'a) (unit-subst y 'b))
+                 (unit-subst w y))])
+        (compose-subst s r))
+      `(,(commitment x 'b) ,(commitment w y))))
+
+#t
+\end{alltt}
+
+In the first example, the base substitution commits \texttt{x} to
+\texttt{y}.  Then, the refining substitution commits \texttt{y} to
+\texttt{52}, refining \texttt{x} to \texttt{52}.  In the second
+example, the base substitution of \texttt{s} commits \texttt{y} to
+\texttt{w}, refining \texttt{y} to \texttt{52}.  Then \texttt{s} is
+used as the refining substitution, so the resultant substitution
+commits \texttt{x} to \texttt{52}.  In the third example, the refining
+substitution of \texttt{s} does not influence its base.  Thus
+\texttt{s} contains the two commitments.  Then the base substitution
+of the resultant substitution is refined by the \texttt{y}-commitment committing
+\texttt{x} to \texttt{w}.  In the fourth example, we construct two
+substitutions manually.  The first contains two commitments and the
+second contains three commitments.  The second refines the first to
+yield a substitution with only two commitments, since we attempt to
+create a commitment of \texttt{y} to \texttt{y}.
+\newpage
+\texttt{Exercise 2:} What is the value of this expression?
+\begin{alltt}
+(exists (w x y)
+  (let ([s (compose-subst (unit-subst w 52) (unit-subst y w))])
+    (let ([r (compose-subst (unit-subst x y) s)])
+      (eq? (subst-in x r) (subst-in y r)))))
+\end{alltt}
+
+\texttt{Exercise 3:} Hand trace the fourth example, above, and
+thus prove that composing a substitution with two commitments and
+a substitution with three commitments can yield a substitution
+with just two commitments.
+
+\subsection{Unification}
+
+Next, we introduce the unification interfaces, \texttt{unify},
+\texttt{unify*}.  The interface \texttt{unify}, below, tries to find a
+substitution that will treat the two substituted for terms as equal if
+the resultant substitution were applied to them.  If successful, it
+returns a composed substitution.  If it cannot unify the two terms,
+then false is returned.  Since we have a very limited definition of
+term at this time, we can easily write the auxiliary procedure
+\texttt{unify*}, below.  Two terms unify if they are the same
+variable, the same constant term, or one of them is the
+\emph{anonymous} variable.  Then, \texttt{unify*} returns the empty
+substitution.  That is why we do not choose false to represent the
+empty substitution.  Returning the empty substitution means that the
+two terms unified.  Of course, that would mean that the two terms
+contained no variables or virtually contained no variables.
+Otherwise, if either term is a variable, it treats the other as a term
+and returns a substitution of a singleton commitment. In all other
+cases, the unifier returns false.  (We again stress that these
+definitions work until we get to the last section, where we add pairs,
+which can contain variables.  When we make this change, we also must
+change \texttt{subst-in} to support pairs.
+
+\begin{alltt}
+(define _ (exists (_) _))
+
+(define unify
+  (lambda (t u subst)
+    (cond
+      [(unify* (subst-in t subst) (subst-in u subst))
+       => (lambda (refining-subst)
+            (compose-subst subst refining-subst))]
+      [else #f])))
+\end{alltt}
+\newpage
+\begin{alltt}
+(define unify*
+  (lambda (t u)
+    (cond
+      [(trivially-equal? t u) empty-subst]
+      [(lv? t) (unit-subst t u)]
+      [(lv? u) (unit-subst u t)]
+      [else #f])))
+\end{alltt}
+
+\begin{alltt}
+(define trivially-equal?
+  (lambda (t u)
+    (or (eqv? t u)
+        (and (string? t) (string? u) (string=? t u))
+        (eqv? t _)
+        (eqv? u _))))
+\end{alltt}
+
+Here are a few examples.
+
+\begin{alltt}
+> (exists (x y)
+    (and
+      (equal? (unify x 3 empty-subst) `(,(commitment x 3)))
+      (equal? (unify 4 y empty-subst) `(,(commitment y 4)))
+      (equal? (unify x y empty-subst) `(,(commitment x y)))
+      (equal? (unify 'x 'x empty-subst) empty-subst)
+      (equal? (unify x x empty-subst) empty-subst)
+      (not (unify 4 'y empty-subst))
+      (not (unify 'x 3 empty-subst))
+      (not (unify 3 4 empty-subst))))
+
+#t
+\end{alltt}
+
+Only the fifth example is interesting.  It returns the empty
+substitution, since the two terms are the same variable.  The sixth
+and seventh don't unify because a symbol (not a variable) can never be
+equal to a number.
+\newpage
+
+\section{The unsullied logic system}
+
+The logic system has just two primary operators: \texttt{relation},
+which expands into a \texttt{lambda} expression with a derived form
+\texttt{fact}, and \texttt{extend-relation}, which gives us the
+ability to form a new relation from other relations.  In addition, we
+have two derived macros for handling sequences of antecedents:
+\texttt{all} (and \texttt{deterministic-all}) and its dual
+\texttt{any}.  To enter the system, we have a procedure
+\texttt{query}, and two interfacing operations: \texttt{solve} and
+\texttt{solution}, which is just \texttt{solve} limited to one
+solution.
+
+Here are the types we use in this system:
+
+\begin{alltt}
+                  Fk = () -> Ans
+                Cutk = Fk
+                 Ans = Nil + [Subst,Fk]
+                  Sk = Fk -> Subst -> Cutk -> Ans
+          Antecedent = Sk -> Sk
+                Rule = Goal-fn -> Antecedent  ;;; this is wrong, now.
+\end{alltt}
+
+\texttt{Ans} is a stream of substitutions, since \texttt{Fk} is a
+function of zero arguments. An \texttt{Antecedent} is an \texttt{Sk}
+transformer.
+
+\subsection{It's a small world}
+
+Let's define a single fact. (Warning: This is not the best time to try
+to figure out these definitions, but if you want to, the whole point
+of passing \texttt{()} from \texttt{relation} to \texttt{relation-aux}
+is to act as an accumulator.  We are trying to get a list of variables
+the same length as the number of arguments following the keyword
+\texttt{to-show}. Once we have that, which happens in the first rule
+of \texttt{relation-aux} when one of the arguments is \texttt{()},
+then we generate the big \texttt{lambda} expression.  The first
+operand to \texttt{all} installs \texttt{next} before and after
+each \texttt{(== x g)} antecedent.  Because it always succeeds,
+when going left to right, it can be ignored.  But, if one of the
+\texttt{(== x g)} does not unify, then the system backs into the
+\texttt{fk}, which is the argument fed to \texttt{!!}. This guarantees
+that while it is unifying several terms, one mismatch will abort
+the whole relation.  If it succeeds, it processes the remaining
+antecedents under the substitution returned from the completed
+unification..  We ignore \texttt{cut} for now.
+
+\newpage
+\begin{alltt}
+(define-syntax all
+  (syntax-rules ()
+    [(_) (lambda (sk) sk)]
+    [(_ ant) ant]
+    [(_ ant0 ant1 ...)
+     (lambda (sk)
+       (ant0 ((all ant1 ...) sk)))]))
+
+(define-syntax deterministic-all
+  (syntax-rules ()
+    [(_ cut ant ...)
+     (deterministic-all-aux cut (all cut) ant ...)]))
+
+(define-syntax deterministic-all-aux
+  (syntax-rules ()
+    [(_ cut acc) acc]
+    [(_ cut (acc ...) ant0 ant1 ...)
+     (deterministic-all-aux cut (acc ... ant0 cut) ant1 ...)]))
+
+(define-syntax relation
+  (syntax-rules (to-show)
+    [(_ cut (ex ...) (to-show x ...) ant ...)
+     (relation-aux cut (ex ...) () (x ...) (x ...) ant ...)]))
+
+(define-syntax relation-aux
+  (syntax-rules ()
+    [(_ cut (ex ...) (g ...) () (x ...) ant ...)
+     (lambda (g ...)
+       (lambda@ (sk fk subst cutk)
+         (let ([next (!! fk)]
+               [cut (!! cutk)])
+           (exists (ex ...)
+             (@ (all (deterministic-all next (== g x) ...) ant ...)
+                sk fk subst cutk)))))]
+    [(_ cut exs (var ...) (x0 x1 ...) xs ant ...)
+     (relation-aux cut exs (var ... g) (x1 ...) xs ant ...)]))
+\end{alltt}
+
+\begin{alltt}
+(define !!
+  (lambda (exiting-fk)
+    (lambda@ (sk fk subst cutk)
+      (@ sk exiting-fk subst cutk))))
+
+(define ==
+  (lambda (x y)
+    (lambda@ (sk fk subst cutk)
+      (cond
+        [(unify (subst-in x subst) (subst-in y subst) subst)
+         => (lambda (subst)
+              (@ sk fk subst cutk))]
+        [else (fk)])))))
+\end{alltt}
+
+We now have enough tools to define a relation with a single fact.
+Our relation says that ``Pete is the father of Sal.''
+
+\begin{alltt}
+(define father  
+  (relation _ ()
+    (to-show 'pete 'sal)))
+\end{alltt}
+
+Let's focus on the single fact that says that ``Pete is the father of
+Sal.''  But, what it really says is that there is a relation, that
+joins ``Pete to Sal,'' which we are calling ``The father relation.''
+And when do we know that Pete is the father of Sal?  When we have
+shown that all the arguments to \texttt{all} hold.  But, since there
+are no arguments, it holds vacuously.  Therefore, Pete is always the
+father of Sal.  But, if we have another relation, \emph{older than},
+we can have the fact that ``Pete is older than Sal.''  The only thing
+that would change is that we would replace the variable
+\texttt{father} by \texttt{older-than}.  This is a lot deeper than it
+may first appear.  Our relations are first class.  If we wanted to do
+the same thing, we could also just \texttt{(define older-than
+father)}, which would say that ``Pete is older than Sal.''  Of course,
+that should not come as a surprise, since Pete is Sal's father, but
+these two relations are completely disjoint!  For example, we may be
+referring to four different people: two Petes and two Sals.
+
+Sometimes the list of variable names that follows \texttt{relation} is
+nonempty, but don't be confused: \emph{This list does not tell how
+many arguments the relation takes. That is determined by the number of
+terms following the keyword} \texttt{to-show}.
+
+Consider the partial expansion of \texttt{father}
+\begin{alltt}
+> (expand-only '(relation relation-aux deterministic-all deterministic-all-aux)
+    '(define father  
+       (relation _ ()
+         (to-show 'pete 'sal))))
+\end{alltt}
+
+\begin{alltt}
+(define father
+  (lambda (g g)
+    (lambda@ (sk fk subst cutk)
+      (let ([next (!! fk)] [_ (!! cutk)])
+        (exists ()
+          (@ (all (deterministic-all next (== 'pete g) (== 'sal g)))
+             sk fk subst cutk))))))
+\end{alltt}
+
+The relation \texttt{father} is represented as a procedure of two
+arguments, \texttt{g1} and \texttt{g2}.\footnote{The actual expansion
+produces \texttt{g} and \texttt{g}.  But, they are different
+variables.  They only look the same.  This has to do with the
+idiosyncratic model of printing uninterned symbols.} It can figure
+that out from the number of operands in the \texttt{to-show} keyword
+expression.  It then consumes four more arguments.  The \texttt{let}
+clause binds two variables.  The first variable to be bound in the
+\texttt{let} is \texttt{next}.  Its value is an antecedent that always
+succeeds in the forward direction, but invokes \texttt{fk} as it
+backtracks into \texttt{next}.  The second one, can be any variable we
+pass as the first operand to \texttt{relation}, and since we are not
+concerned about \emph{cut} yet, we pass the innocuous underscore
+variable.  Later we pass \texttt{cut} and those who are enamored of
+Prolog's notation might pass \texttt{!}.  Also, the \texttt{exists ()}
+is useless.  If we can unify the value of the variable \texttt{g1}
+with the value of \texttt{'pete} and the value of the variable
+\texttt{g2} with the value of \texttt{'sal}, then the resultant
+substitution is passed to a procedure that addresses any remaining
+antecedents.  In our simple example, there are none.
+\newpage
+
+To make things a little clearer, we also expand it with 
+\texttt{deterministic-all}
+
+\begin{alltt}
+(define father
+  (lambda (g g)
+    (lambda@ (sk fk subst cutk)
+      (let ([next (!! fk)] [_ (!! cutk)])
+        (exists ()
+          (@ (all (all next (== 'pete g) next (== 'sal g) next))
+             sk fk subst cutk))))))
+\end{alltt}
+
+Whenever \texttt{father} is invoked, a dad (\texttt{g1}) and a child
+(\texttt{g2}) get bound to a goal term, which is then transformed into
+a goal function.  A failure continuation is invoked if the arguments
+fail to unify.  This effects a return from the call to
+\texttt{father}.  Therefore, when it fails to find a match, it returns
+from the call.
+
+Next, we define a relation \texttt{child-of-male} and compare its expansion
+to the previous relation.
+
+\begin{alltt}
+(define child-of-male
+  (relation _ (child dad)
+    (to-show child dad)
+    (father dad child)))
+\end{alltt}
+
+\begin{alltt}
+(expand-only '(relation relation-aux)
+  '(define child-of-male
+     (relation _ (child dad)
+       (to-show child dad)
+       (father dad child))))
+
+(define child-of-male
+  (lambda (g g)
+    (lambda@ (sk fk subst cutk)
+      (let ([next (!! fk)] [_ (!! cutk)])
+        (exists (child dad)
+          (@ (all (deterministic-all next (== child g) (== dad g))
+               (father dad child))
+             sk fk subst cutk))))))
+\end{alltt}
+%Such a relation is often written using a horizontal line,
+%\Rule{}{\texttt{(father dad child)}} {\texttt{(child-of-male child dad)}}{}
+
+We can see that to show that some person (\texttt{child}) is the child
+of a male (\texttt{dad}), we have to show that \texttt{dad} is the
+father of \texttt{child}.  This is a very naive form of logical reasoning.
+
+\subsection{Testing \texttt{father} and \texttt{child-of-male}}
+
+We are now ready to test \texttt{father}.  For example, we might wish
+to determine ``If Pete is the father of Sal.''
+
+\begin{alltt}
+> (let ([initial-sk (lambda@ (fk subst cutk) (cons subst fk))]
+        [initial-fk (lambda () '())])
+    (@ (father 'pete 'sal) initial-sk initial-fk empty-subst initial-fk))
+(() . #<procedure initial-fk>)
+\end{alltt}
+
+If the goal succeeds by invoking \texttt{initial-sk} on a substitution
+and two failure continuations, then once it gets the second failure
+continuation, it returns a pair of the substitution and the
+first continuation. If the goal fails, the empty list, the result of
+invoking \texttt{initial-fk}, is returned.
+
+Since our test has no variables, we know that we do not refine the
+original substitution, but unify when the raw values in each term are
+the same.  What is the purpose of the empty substitution, \texttt{()}?
+At this point, we could apply (using \texttt{subst-in} the empty
+substitution to each term in the original term and produce what we
+started with: \texttt{(pete sal)}, but with the assurance that
+\texttt{pete} has been shown to be the father of \texttt{sal}.
+
+All the arguments (i.e., \texttt{initial-sk}, \texttt{initial-fk}, and
+\texttt{empty-subst}) to \texttt{(father 'pete 'sal)} are
+constants. Therefore, we abstract this with the function
+\texttt{query}, which packages these initial values with the
+antecedent, the result of the \texttt{father} call.
+
+\begin{alltt}
+(define query
+  (let ([initial-fk (lambda () '())]
+        [initial-sk (lambda@ (fk subst cutk) (cons subst fk))]
+        [empty-subst '()])
+    (lambda (antecedent)
+      (@ antecedent initial-sk initial-fk empty-subst initial-fk))))
+\end{alltt}
+
+We next consider the role of nonempty substitutions.  Instead of
+asking a specific question about Pete's relationship to Sal, let's
+determine a child of Pete.  To do this, we introduce a logic variable.
+
+\begin{alltt}
+> (exists (x)
+    (let ([result (query (father 'pete x))])
+      (and
+        (equal? (car result) `(,(commitment x 'sal)))
+        (null? ((cdr result))))))
+
+#t
+\end{alltt}
+
+\begin{alltt}
+> (exists (x)
+    (let ([result (query (father 'pete x))])
+      (let ([subst (car result)])
+        (list (subst-in 'pete subst) (subst-in x subst)))))
+
+(pete sal)
+\end{alltt}
+
+\noindent
+We see that the resultant substitution binds \texttt{x} to \texttt{sal}.
+When we use this substitution, \texttt{pete} becomes \texttt{pete},
+but \texttt{x} becomes \texttt{sal}.
+
+We can test \texttt{child-of-male} the same way, but this time we give
+it no information, just variables, and hope that a nonempty
+substitution, the \texttt{car} of the query, is returned.
+\newpage
+\begin{alltt}
+> (exists (x y)
+    (let ([result (query (child-of-male x y))])
+      (let ([subst (car result)])
+         (list (subst-in x subst) (subst-in y subst)))))
+
+(sal pete)
+\end{alltt}
+
+And, we discover that Sal is the child of Pete.
+
+\subsection{Generating more than one answer}
+
+The difference between a relation and a function is that with a
+function, only one answer is associated with an input, but with a
+relation the same input can lead to many answers.  Now, we demonstrate
+in what ways functions such as the definition of \texttt{father},
+below, can be treated as relations.
+
+Suppose that Pete is also the father of Pat, what changes could be
+made to get both answers?  First, we introduce
+\texttt{binary-extend-relation} to allow for more than one fact.
+
+\begin{alltt}
+(define binary-extend-relation
+  (lambda (relation1 relation2)
+    (lambda args
+      (lambda@ (sk fk subst cutk)
+        (@ (apply relation1 args)
+           sk
+           (lambda () (@ (apply relation2 args) sk fk subst cutk))
+           subst
+           cutk)))))
+
+\begin{alltt}
+(define pete-pat
+  (relation _ ()
+    (to-show 'pete 'pat)
+    (all)))
+\end{alltt}
+
+Now, we have two relations.  What we want to do is combine the two
+relations into a single one.  
+
+(define father
+  (binary-extend-relation father pete-pat))
+\end{alltt}
+
+The procedure \texttt{binary-extend-relation} tries to find a result
+in \texttt{relation1}.  If it succeeds, it returns a substitution
+along with a failure continuation, which is to try to find a result in
+\texttt{relation2}.  If it fails, then it invokes the just described
+failure continuation.
+
+A convenient abbreviation of a relation where there is no antecedent
+is decribed by the macro \texttt{fact}.
+
+\begin{alltt}
+(define-syntax fact
+  (syntax-rules ()
+    [(_ (var ...) x ...) (relation _ (var ...) (to-show x ...))]))
+\end{alltt}
+
+Then we could write the \texttt{father} relation like this.
+
+\begin{alltt}
+(define father
+  (binary-extend-relation
+    (fact () 'pete 'sal)
+    (fact () 'pete 'pat)))
+\end{alltt}
+
+\begin{alltt}
+> (exists (x)
+    (let ([result (query (father 'pete x))])
+      (let ([subst (car result)]
+            [fk (cdr result)])
+      (cons
+        (list (subst-in 'pete subst) (subst-in x subst))
+        (let ([result (fk)])
+          (let ([subst (car result)]
+                [fk (cdr result)])
+            (cons
+              (list (subst-in 'pete subst) (subst-in x subst))
+              (let ([result (fk)])
+                (if (null? result)
+                  '()
+                  (error 'father "Pete only has two children"))))))))))
+
+((pete sal) (pete pat))
+\end{alltt}
+\noindent
+First, we add that Pete is also the father of Pat.  Then, we when we
+invoke \texttt{fk} the first time, we get another result.  When we
+invoke it a third time, we are out of results, so we get back the
+empty list, the result of invoking the initial continuation.
+
+\subsection{Streams (infinite lists) provide a natural interface}
+
+We would like to abstract the previous program in a more coherent way.
+Later, we see an example where there is no limit on the number of
+answers, but if we want to process the answers as a list, we must
+place some bound on the size of the list.
+
+The \texttt{(car result)} is a substitution, and the \texttt{(cdr
+result)} is a thunk that if invoked returns a value whose \texttt{car}
+is a substitution, and whose \texttt{cdr} is a thunk, etc.  This is a
+stream (possibly infinite list) of substitutions.  We write the
+function, \texttt{stream-prefix}, which given a bound \texttt{n}, and
+a stream, \texttt{strm}, yields a list with at most one element, if
+\texttt{n} is 0; at most two elements, if \texttt{n} is 1; etc.  But,
+we must be careful that going for the \texttt{n+1}st element of a
+stream does not lead to an infinite loop, even though we only want the
+first \texttt{n} elements! This causes \texttt{stream-prefix} to be
+written in a slightly awkward fashion.
+
+\begin{alltt}
+(define stream-prefix
+  (lambda (n strm)
+    (if (null? strm) '()
+      (cons (car strm)
+        (if (zero? n) '()
+          (stream-prefix (- n 1) ((cdr strm))))))))
+\end{alltt}
+
+Before we go any further, we have some details about displaying
+answers that needs addressing.  This will seem a bit bizarre at
+first reading, but there is only one reason for all this code:
+\emph{Logic variables are not eye-pleasing}.  So, we want
+to devise a good way to write them.  Normally, a logic system
+will use a \texttt{gensym} name, but then the results are
+very difficult to follow.  So rather than using generated names,
+we are going to construct our own artificial names.
+
+\begin{alltt}
+(define artificial-name
+  (lambda (name c)
+    (string->symbol
+      (string-append (symbol->string name) "." (number->string c)))))
+
+> (artificial-name 'w 5)
+
+w.5
+\end{alltt}
+We associate a unique artificial name with each logic variable.
+Each logic variable, however, only stores a symbol within it.  Two
+different logic variables could easily have the same symbol within it,
+so there needs to be a mechanism to have two different artificial
+names.  The way we solve this problem is to use an environment that
+is both an input and an output result.  In other words, it is threaded
+throughout the computation.  Each item in the environment binds a
+logic variable to a pair of an artificial name and a counter.  If the
+logic variable is found in the environment, then the associated
+artificial name is returned.  If it is not found in the environment,
+then a second search using \texttt{assv/lv-name} is attempted.  If a
+logic variable built from the same name is in the environment, then a
+new item is added to the environment, but its counter is one larger
+than the previous one and the associated artificial name is included.
+If these two attempts fail, then the new item added to the
+envionment starts the counter at one.  This is the job of
+\texttt{concretize-var}, below.
+
+\begin{alltt}
+(define concretize-var
+  (lambda (var env)
+    (cond
+      [(assv var env)
+       => (lambda (pr)
+            (values (cadr pr) env))]
+      [else (let ([tname (lv-name var)])
+              (let ([c (let ([pr (assv/lv-name tname env)])
+                         (+ (if (not pr) 0 (cddr pr)) 1))])
+                (let ([name (artificial-name tname c)])
+                  (values name (cons `(,var . (,name . ,c)) env)))))])))
+\end{alltt}
+\begin{alltt}
+(define assv/lv-name
+  (lambda (name env)
+    (cond
+      [(null? env) #f]
+      [(eqv? (lv-name (caar env)) name) (car env)]
+      [else (assv/lv-name name (cdr env))])))
+\end{alltt}
+
+The only thing to notice about this code is that two items are returned
+using \texttt{values} as the result of any call to
+\texttt{concretize-var}.
+
+Because we are in a logic system, we don't know if we are concretizing
+a variable or a trivial constant.  Thus, we use a driver
+\texttt{concretize-term}, which dispatches appropriately.  When we add
+pairs as a kind of term, then we need to extend this definition.
+
+\begin{alltt}
+(define concretize-term
+  (lambda (t env)
+    (cond
+      [(lv? t) (concretize-var t env)]
+      [else (values t env)])))
+\end{alltt}
+
+In keeping with our philosophy of avoiding gratuitous lists, we have
+the macro \texttt{concretize-sequence}, which build a list of
+concretized terms from a bunch of terms.  It always returns \emph{two}
+values.
+
+\begin{alltt}
+(define-syntax concretize-sequence
+  (syntax-rules ()
+    [(_ t0 ...) (concretize-sequence-aux '() t0 ...)]))
+
+(define-syntax concretize-sequence-aux
+  (syntax-rules ()
+    [(_ env) '()]
+    [(_ env t0 t1 ...)
+     (let-values (ct new-env) (concretize-term t0 env)
+       (cons ct (concretize-sequence-aux new-env t1 ...)))]))
+\end{alltt}
+
+Let us return to our discussion about how we are going to use
+\texttt{stream-prefix}.  Once we have a finite list of substitutions,
+we are free to use them however we wish. For example, we define a
+macro \texttt{solve} that takes a positive integer upper bound and a
+relation call.  It returns a list like the one above for
+\texttt{pete}'s children.  If any of the \texttt{t}\emph{i} are
+variables, then it will be replaced by its value in each substitution.
+
+\begin{alltt}
+(define-syntax solve
+  (syntax-rules ()
+    [(_ n (rel t0 ...))
+     (map (lambda (subst)
+            (concretize-sequence (subst-in t0 subst) ...))
+       (stream-prefix (- n 1) (query (rel t0 ...))))]))
+\end{alltt}
+
+\begin{alltt}
+> (exists (x) (solve 5 (father 'pete x)))
+
+((pete sal) (pete pat))
+\end{alltt}
+
+\noindent
+Of course, the resultant list contains only two answers, but
+asking for five does no harm, since it quits early when the
+\texttt{null?} test in \texttt{stream-prefix} holds.  
+
+Let's see what this call partially expands to.
+\begin{alltt}
+> (expand-only '(solve)
+    '(exists (x) (solve 5 (father 'pete x))))
+
+(exists (x)
+  (map (lambda (subst)
+         (concretize-sequence (subst-in 'pete subst) (subst-in x subst)))
+       (stream-prefix (- 5 1) (query (father 'pete x)))))
+\end{alltt}
+
+If we further expand \texttt{concretize-sequence}, we see
+exactly what this does.
+
+\begin{alltt}
+(exists (x)
+  (map 
+    (lambda (subst)
+      (let-values (ct new-env) (concretize-term (subst-in 'pete subst) '())
+        (cons ct
+          (let-values (ct new-env) (concretize-term (subst-in x subst) new-env)
+            (cons ct '())))))
+    (stream-prefix (- 5 1) (query (father 'pete x)))))
+\end{alltt}
+
+\texttt{Exercise 5:} Redefine \texttt{solve} to set up an interactive
+loop to force more answers.  Use \texttt{0} to indicate no more
+answers and use \texttt{+} to indicate more answers.)
+
+We can simplify things a bit when we want at most one result with
+\texttt{solution},
+
+\begin{alltt}
+(define-syntax solution
+  (syntax-rules ()
+    [(_ x)
+     (let ([ls (solve 1 x)])
+       (if (null? ls) #f (car ls)))]))
+\end{alltt}
+
+\begin{alltt}
+> (exists (x) (solution (father 'pete x)))
+
+(pete sal)
+\end{alltt}
+
+\texttt{Exercise 6:} Rewrite \texttt{solution} by redefining
+\texttt{initial-sk} and \texttt{initial-fk}, instead.
+
+Using \texttt{stream-prefix} meets our needs for this tutorial, but in
+general, it may be too naive.  We may want all the answers until some
+predicate holds about one or more of the answers.  For example, the
+result might be a stream of integers that terminates after the third odd
+integer appears.  In this case, it is impossible to know what integer bound
+to pass to \texttt{stream-prefix}.  In those circumstances, it is best
+to process the stream of substitutions using a hand-crafted procedure.
+
+\subsection{Sequences of antecedents}
+
+In the definition of \texttt{child-of-male}, we have exactly one
+antecedent.  We are going to look at relations with additional
+antecedents.
+
+Let's first redefine \texttt{father}.
+
+\begin{alltt}
+(define father
+  (binary-extend-relation
+    (fact () 'john 'sam)
+      (binary-extend-relation
+        (fact () 'sam 'pete)
+        (binary-extend-relation 
+          (fact () 'pete 'sal)
+          (fact () 'pete 'pat)))))
+\end{alltt}
+
+Now, we can see that Sam is the grandfather of Sal and Pat, and John
+is the grandfather of Pete.  We might ask if \texttt{sam} is the
+grandfather of anyone in our closed five-person world.  
+
+\begin{alltt}
+(define grandpa-sam
+  (relation _ (grandchild)
+    (to-show grandchild)
+    (exists (parent)
+      (all (father 'sam parent) (father parent grandchild)))))
+\end{alltt}
+
+\begin{alltt}
+> (exists (y) (solve 6 (grandpa-sam y)))
+
+((sal) (pat))
+\end{alltt}
+
+It is correct, because Sam is the father of Pete, and
+Pete is the father of Sal and Pat.  Here is
+how the substitutions that led to this answer were built.  First
+\texttt{y} became some \texttt{grandchild}.  At this point, \texttt{y}
+is not instantiated, only \emph{shared} with the variable
+\texttt{grandchild}.  Then \texttt{parent} is instantiated to
+Pete.  Next, \texttt{grandchild} is instantiated to
+Sal, but we know that \texttt{y} is shared with
+\texttt{grandchild}, so \texttt{y} is also instantiated to
+Sal.  Then we fail, thus re-instantiating \texttt{grandchild}
+to Pat.  Finally, the failures back all the way out, leading
+to the empty list (the result of invoking \texttt{initial-fk}).
+
+The macro \texttt{any} is the dual of \texttt{all}.  It
+succeeds whenever one of its antecedents succeeds, whereas
+\texttt{all} fails whenever one of its antecedents fails.  
+
+\begin{alltt}
+(define-syntax any
+  (syntax-rules ()
+    [(_) (lambda@ (sk fk subst cutk) (fk))]
+    [(_ ant) ant]
+    [(_ ant0 ant1 ...)
+     (lambda@ (sk fk subst cutk)
+       (@ ant0 sk (lambda () (@ (any ant1 ...) sk fk subst cutk)) subst cutk))]))
+\end{alltt}
+
+The implementation of the basic unsullied logic system is now
+complete.  Most of what we may want to do with a logic system can be
+programmed with this basic system comprised of \texttt{relation}
+(and \texttt{fact}), \texttt{binary-extend-relation} , \texttt{all},
+\texttt{deterministic-all}, \texttt{any}, and \texttt{solve}.
+
+Let's return (using \texttt{all}) to the most recent definition of
+\texttt{grandpa-sam}.  Obviously this is not as general as we might
+expect.  Consider an attempt to take us beyond concerns for
+\texttt{sam}.
+
+\begin{alltt}
+(define grandpa-maker
+  (lambda (grandad)
+    (relation _ (grandchild)
+      (to-show grandchild)
+      (exists (parent)
+        (all (father grandad parent) (father parent grandchild))))))
+
+> (exists (x) (solve 6 ((grandpa-maker 'sam) x)))
+\end{alltt}
+
+\noindent
+This just uses lexical scope to reconstruct \texttt{grandpa-sam}.
+But, it still requires that we know who we want to find out about. We
+do something a bit more abstract, below.  We postpone the
+determination of the function \texttt{guide} by making it, too, a
+variable. Here it is lexical, but it can be a logic variable, instead,
+because procedures are treated as raw values.  Thus, we can pass the function
+\texttt{father}, which then gets invoked.  This allows for the
+potential creation of a more abstract relation.  For example, if we
+had a \texttt{mother} definition, like our \texttt{father} definition,
+then \texttt{grandpa-maker} would still work, as long as
+\texttt{mother} is passed to \texttt{grandpa-maker} instead of
+\texttt{father}.  Then we would have a matrilineal grandparent instead
+of a patrilineal one.  Of course, then ``\texttt{grandpa-maker}'' and
+``\texttt{grandad}'' would be poorly chosen names.
+
+\begin{alltt}
+(define grandpa-maker
+  (lambda (guide grandad)
+    (relation _ (grandchild)
+      (to-show grandchild)
+      (exists (parent)
+        (all (guide grandad parent) (guide parent grandchild))))))
+
+> (exists (x) (solve 4 ((grandpa-maker father 'sam) x)))
+
+((sal) (pat))
+\end{alltt}
+
+Next we consider a more concrete problem, which is to use our logic
+system to define \texttt{grandpa}.  Now, we can replace the lexical
+variable \texttt{grandad} with the logic variable \texttt{grandad},
+which leaves the decision completely open.  
+
+Here is our first (somewhat naive) definition of \texttt{grandpa}.
+
+\begin{alltt}
+(define grandpa
+  (relation _ (grandad grandchild)
+    (to-show grandad grandchild)
+    (exists (parent)
+      (all (father grandad parent) (father parent grandchild)))))
+
+> (exists (x) (solve 4 (grandpa 'sam x)))
+
+((sam sal) (sam pat))
+\end{alltt}
+
+We make Pete an uncle of Betty and David, the children of his sister,
+Polly.  First, we include Polly in the \texttt{father} relation.
+Then, we define a \texttt{mother} relation, including some facts like
+we did for the \texttt{father} relation.  Finally, we add a relation
+to the \texttt{grandpa} relation, so that Pete's sister's children can
+claim Sam as their grandfather.
+
+\begin{alltt}
+(define sam-polly (fact () 'sam 'polly))
+(define father (binary-extend-relation father sam-polly))
+\end{alltt}
+
+\begin{alltt}
+(define polly-betty (fact () 'polly 'betty))
+(define polly-david (fact () 'polly 'david))
+(define mother (binary-extend-relation polly-betty polly-david))
+\end{alltt}
+
+\begin{alltt}
+(define grandpa
+  (binary-extend-relation grandpa
+    (relation _ (grandad grandchild)
+      (to-show grandad grandchild)
+      (exists (parent)
+        (all (father grandad parent) (mother parent grandchild))))))
+\end{alltt}
+
+\begin{alltt}  
+> (exists (y) (solve 10 (grandpa 'sam y)))
+
+((sam sal) (sam pat) (sam betty) (sam david))
+\end{alltt}
+
+\noindent
+And we discover that Sam is, indeed, the grandfather of
+Betty and David.
+
+\subsection{Lexically-shared variables}
+In the previous definition of \texttt{grandpa}, both relations use the
+same logic variables, so why should we write it twice?
+Instead, we use \texttt{exists} like this,
+\begin{alltt}
+(define grandpa
+  (exists (parent grandad grandchild)
+    (binary-extend-relation
+      (relation _ ()
+        (to-show grandad grandchild)
+        (all (father grandad parent) (father parent grandchild)))
+      (relation _ ()
+        (to-show grandad grandchild)
+        (all (father grandad parent) (mother parent grandchild))))))
+\end{alltt}
+
+And since the \texttt{to-show}'s are the same, we can use \texttt{any}
+like this.
+
+\begin{alltt}
+(define grandpa
+  (relation _ (grandad grandchild)
+    (to-show grandad grandchild)
+    (exists (parent)
+      (any
+        (all (father grandad parent) (father parent grandchild))
+        (all (father grandad parent) (mother parent grandchild))))))
+\end{alltt}
+\newpage
+\texttt{Exercise 7:}
+Determine if 
+\begin{alltt}
+(define grandpa
+  (exists (parent)
+    (relation _ (grandad grandchild)
+    (to-show grandad grandchild)
+      (any
+        (all (father grandad parent) (father parent grandchild))
+        (all (father grandad parent) (mother parent grandchild))))))
+\end{alltt}
+works and compare this variant with the previous ones.  Which one is
+better?  There are relations for which this last style backfires.
+Characterize when this placement of \texttt{exists} might backfire
+by defining a more complicated relation.  (Althogh this problem can
+be solved, here, it might be best to have understood the definition
+of \texttt{ancestor}, below, before trying it.)
+
+\texttt{Exercise 8:} Suppose that the keyword \texttt{to-show} were
+restricted to take a single argument.  Rewrite some variant of
+\texttt{grandpa} with that restriction.  To get started, study the code
+of \texttt{grandpa-sam}, below.
+
+\begin{alltt}
+(define grandpa-sam
+  (let ([r (relation _ (child)
+             (to-show child)
+             (exists (parent)
+               (all (father 'sam parent) (father parent child))))])
+    (relation _ (child)
+      (to-show child)
+      (r child))))
+\end{alltt}
+
+In the remainder of the paper, we present some sullied operators,
+consider the role of recursion in our logic system, and study some
+famous examples that display some of the power of logic programming.
+
+\section{Sullied antecedents}
+
+In this section we present three operators for creating a
+Prolog-like cut operator, four for interfacing Scheme predicates and
+functions, and three other operators: \texttt{fails}, \texttt{instantiated},
+and \texttt{view-subst}.
+
+The grammar for antecedents \texttt{<A>} completes the language.
+\begin{alltt}
+<A> = 
+     <relation call> 
+   | (all <A>*)
+   | (any <A>*) 
+   | <sullied antecedent>
+   | <or any Scheme expression that evaluates to these,
+       since these are all values.>
+
+<sullied antecedent> = 
+   | cut
+   | (deterministic-all cutter <A>*)
+   | fail
+   | (fails <A>)
+   | (instantiated <t>)
+   | (view-subst <t>)
+   | (<Scheme interface> <t> ...)
+   | <or any Scheme expression that evaluates to these,
+       since these are all values.>
+
+<Scheme interface> = 
+     (pred <Scheme predicate>)
+   | (pred-nocheck <Scheme predicate>)
+   | (fun <Scheme function>)
+   | (fun-nocheck <Scheme function>)
+   | <or any Scheme expression that evaluates to these,
+       since these are all values.>
+
+\end{alltt}
+
+\noindent
+where \texttt{<t>} is a term.
+
+\subsection{Short cuts}
+
+In this section we introduce the conventional \emph{cut} operator.
+The texttt{relation} macro takes a lexical variable as its first
+argument, and it will find itself bound to \texttt{(!! cutk)} inside
+the big \texttt{lambda} expression.  What \texttt{!!} does is take the
+current \texttt{cutk} failure continuation and builds an antecedent
+that always succeeds, but as part of succeeding it installs that
+earlier \texttt{cutk} as the failure continuation.  Thus it exits the
+relation call if failure backs into it.  This is far more drastic
+than \texttt{next}, since it gives up on the whole call, not just the
+relation perhaps within an extended relation.
+
+We present three variants of \texttt{grandpa}, each with only one use
+of \texttt{cut}, below. The first one places it as the last
+antecedent of the only rule of \texttt{grandpa/father}.  If we look
+back at the definition of \texttt{relation}, we can see that
+\texttt{cut} becomes a lexically-scoped variable.
+
+\begin{alltt}
+(define grandpa/father
+  (relation cut (grandad grandchild)
+    (to-show grandad grandchild)
+    (exists (parent)
+      (all (father grandad parent) (father parent grandchild) cut))))
+\end{alltt}
+\newpage
+\noindent
+expands to
+
+\begin{alltt}
+(define grandpa/father
+  (lambda (g1 g2)
+    (lambda@ (sk fk subst cutk)
+      (let ([next (!! fk)] [cut (!! cutk)])
+        (exists (grandad grandchild)
+          (@ (all (deterministic-all next
+                    (== grandad g1)
+                    (== grandchild g2))
+               (exists (parent)
+                 (all (father grandad parent) (father parent grandchild) cut)))
+             sk fk subst cutk))))))
+\end{alltt}
+
+The procedure \texttt{!!} takes a failure continuation \texttt{cutk}
+and returns an antecedent.  If the antecedent is invoked, it
+\emph{succeeds} and replaces the current failure continuation with
+\texttt{cutk}.  Thus, if failure backs into it, the attempt to find a
+result for this relation call is abandoned.  To see this in action,
+we redefine \texttt{grandpa}, below.
+
+\begin{alltt}
+(define grandpa/mother
+  (relation _ (grandad grandchild)
+    (to-show grandad grandchild)
+    (exists (parent)
+      (all (father grandad parent) (mother parent grandchild)))))
+
+(define grandpa
+  (binary-extend-relation grandpa/father grandpa/mother))
+\end{alltt}
+
+\begin{alltt}
+> (exists (x y) (solve 10 (grandpa x y)))
+
+((john pete))
+\end{alltt}
+
+For \texttt{!!}, \texttt{exiting-fk} is the \texttt{cutk} of the
+call to \texttt{grandpa}.  The effect of using \texttt{cut} at
+the end is that once the first answer is found and failure forced, the
+\texttt{exiting-fk} that has been passed as the failure continuation is
+invoked, so it takes us completely out of the call to
+\texttt{grandpa}.
+
+Next, consider the following revision of \texttt{grandpa}, where
+we swap the last two antecedents of \texttt{grandpa/father}.
+
+\begin{alltt}
+(define grandpa/father
+  (relation cut (grandad grandchild)
+    (to-show grandad grandchild)
+    (exists (parent)
+      (all (father grandad parent) cut (father parent grandchild)))))
+
+(define grandpa
+  (binary-extend-relation grandpa/father grandpa/mother))
+\end{alltt}
+\begin{alltt}
+> (exists (x y) (solve 10 (grandpa x y)))
+
+((john pete) (john polly))
+\end{alltt}
+
+\noindent 
+The variable \texttt{grandad} cannot be re-instantiated because of the
+invocation of the \texttt{exiting-fk}, but \texttt{parent} and
+\texttt{grandchild} can. As failure works its way back into the same
+call to \texttt{father}, new instantiations for \texttt{parent} and
+\texttt{grandchild} are found.  If we run out of data to match
+\texttt{parent} and \texttt{grandchild}, then instead of looking for
+the next match of \texttt{grandad} and \texttt{parent}, we invoke the
+\texttt{cutk} that was passed to \texttt{!!}. So, we have merely two
+answers.  One way to describe this is to state that we only want the
+\emph{first} father's grandchildren. So, if we moved the facts about
+Pete and his children to the top of \texttt{father}, we would get no
+answers, because then Pete would be the first father and he has no
+grandchildren.
+
+Finally, we have the last variation of \texttt{grandpa}, where the
+\texttt{cut} is the first antecedent of \texttt{grandpa/father}.
+
+\begin{alltt}
+(define grandpa/father
+  (relation cut (grandad grandchild)
+    (to-show grandad grandchild)
+    (exists (parent)
+      (all cut (father grandad parent) (father parent grandchild)))))
+\end{alltt}
+\begin{alltt}
+(define grandpa
+  (binary-extend-relation grandpa/father grandpa/mother))
+\end{alltt}
+
+\begin{alltt}
+> (exists (x y) (solve 10 (grandpa x y)))
+
+((john pete) (john polly) (sam sal) (sam pat))
+\end{alltt}
+
+\noindent This variation yields only paternal grandfathers, because
+when it runs out of fathers as potential grandfathers, \texttt{cutk}
+is invoked.  This is the same as ignoring the second relation,
+altogether.  If we reorganize the facts in \texttt{father} as we did
+at the end of the previous example, we get the same four answers.  If
+Pete were the father of Betty, too, then she would show up as Sam's
+grandchild.  She would have appeared only once, however, because
+\texttt{cutk}'s invocation has precluded us from using the
+\texttt{grandpa/mother} relation in all three examples.
+
+It is okay to use \texttt{cut} more than once within a single rule.
+Be careful, however, to fully appreciate its consequences each time it
+is used.  Such a powerful control mechanism must be handled with great
+care.  In the type inferencer we have several antecedents where there
+is more than one occurrence of \texttt{cut}.
+
+An idiom is to cut and then fail immediately.  Doing the cut always
+succeeds and the exiting doesn't happen until failure works its way
+back into the cut.  One way to force that failure is with the
+\texttt{fail} antecedent.  For example, we might say that if someone is a
+\emph{mother} she cannot be a grand\emph{pa} under any circumstances.
+
+\begin{alltt}
+(define fail
+  (lambda@ (sk fk subst cutk)
+    (fk)))
+\end{alltt}
+
+\begin{alltt}
+(define no-grandma
+  (relation cut (grandad grandchild)
+    (to-show grandad grandchild)
+    (exists (parent)
+      (all (mother grandad parent) cut fail))))
+
+(define no-grandma-grandpa
+  (binary-extend-relation no-grandma grandpa))
+
+> (exists (x) (solution (no-grandma-grandpa 'polly x)))
+
+#f
+\end{alltt}        
+
+\subsection{Interfacing Scheme functions}
+
+Suppose we want to restrict the answers of \texttt{grandpa} so that
+someone isn't a grandfather unless his child's name starts with the
+letter, ``p.''  John's child's name is Sam, so John is no
+longer considered a grandfather. But, Sam's child's name is
+Pete, so Pete's children are still someone's grandchildren.
+
+\begin{alltt}
+(define grandpa
+  (relation _ (grandad grandchild)
+    (to-show grandad grandchild)
+    (exists (parent)
+      (all 
+        (father grandad parent)
+        (starts-with-p? parent)
+        (father parent grandchild)))))
+\end{alltt}
+
+\begin{alltt}
+(define starts-with-p?
+  (lambda (x)
+    (lambda@ (sk fk subst cutk)
+      (let ([x (subst-in x subst)])
+        (if (lv? x)
+          (error 'starts-with-p? "Variable found: ~s." x))
+        (if (and
+              (symbol? x)
+              (string=? (string (string-ref (symbol->string x) 0)) "p"))
+          (@ sk fk subst cutk)
+          (fk))))))
+\end{alltt}
+
+\begin{alltt}
+> (exists (x y) (solve 10 (grandpa x y)))
+
+((sam sal) (sam pat))
+\end{alltt}
+
+Let's look closely at the Scheme function \texttt{starts-with-p?}.
+Like other relations, it returns a function that expects the same
+arguments: a success continuation, a substitution, and two failure
+continuations.  If \texttt{x} (after it has been substituted for) is
+needed for the actual test, then it should not still be a variable.
+It is certainly possible for an argument to get substituted by a
+variable, but in this case it would not be meaningful. If the test,
+\texttt{string=?} is true, then we take the success path, which is
+\emph{always} \texttt{(@ sk fk subst cutk)}, otherwise we take the
+failure path, which is \emph{always} \texttt{(fk)}.
+
+The function \texttt{starts-with-p?} is arbitrary.  Any Scheme
+function of any number of arguments can be used.  The Scheme function
+can do anything that any Scheme function can do, including capturing
+continuations, setting variables, writing to files, etc.  The full
+panoply of options is available to the user.  The only requirement is
+that these functions take the same arguments, and that they exit the
+same way: \texttt{(@ sk fk subst cutk)} for success
+and \texttt{(fk)} for failure.
+
+We abstract this with new operators, \texttt{pred}, and
+\texttt{pred-nocheck}, below. (We hesitate to include such operators,
+since we are trying to minimize the tools that we use.  Here we are
+using \texttt{apply} and multi-arity procedures, but as we have shown
+with the definition of \texttt{starts-with-p?}, their use is not
+strictly necessary.
+
+\begin{alltt}
+(define pred             
+  (lambda (p)
+    (pred-nocheck (check 'pred p))))
+
+(define check
+  (lambda (name f)
+    (lambda term
+      (if (not (procedure? f))
+          (error name "Non-procedure found: ~s" f))
+      (if (ormap lv? term)
+          (error name "Variable found: ~s" term))
+      (apply f term))))
+\end{alltt}
+
+\begin{alltt}
+(define pred-nocheck
+  (lambda (p)
+    (lambda term
+      (lambda@ (sk fk subst cutk)
+        (if (apply p (map (lambda (t) (subst-in t subst)) term))
+          (@ sk fk subst cutk)
+          (fk))))))
+\end{alltt}
+
+\noindent
+This allows us to redefine \texttt{starts-with-p?}.
+
+\begin{alltt}
+(define starts-with-p?
+  (pred
+    (lambda (x)
+      (and
+        (symbol? x)
+        (string=? (string (string-ref (symbol->string x) 0)) "p")))))
+\end{alltt}
+
+Also, we can call \emph{any} Scheme function and unify the results of
+the call with something else.  For example, we can use \texttt{((fun
+*) 15 3 5)} as an antecedent.  We know that all but the \emph{first}
+argument should be a value, so we are safe to apply the Scheme
+function to those values.  We then unify the answer with the first
+argument.  If that first argument is an uninstantiated variable or
+contains an uninstantiated variable, then this causes the exiting
+substitution to be larger than the entering one.
+
+\begin{alltt}
+(define fun    
+  (lambda (f)
+    (fun-nocheck (check 'fun f))))
+\end{alltt}
+
+\begin{alltt}
+(define fun-nocheck
+  (lambda (f)
+    (lambda (t . term)
+      (lambda@ (sk fk subst cutk)
+        (cond
+          [(unify (apply f (map (lambda (x) (subst-in x subst)) term)) t subst)
+           =>
+           (lambda (subst)
+             (@ sk fk subst cutk))]
+          [else (fk)])))))
+\end{alltt}
+
+\begin{alltt}
+> (exists (q) (solution ((fun *) q 3 5)))
+
+(15 3 5)
+\end{alltt}
+
+The Scheme interface functions \texttt{pred} and \texttt{pred-nocheck}
+allow the user to treat Scheme \texttt{pred}icates as logic predicates,
+whereas the interface functions \texttt{fun} and \texttt{fun-nocheck} allow
+the user to treat Scheme \texttt{fun}ctions as logic functions (A logic
+function is a logic relation that has at most one value for each input.)
+Since functions return a value, \texttt{fun} and \texttt{fun-nocheck} cause
+that value to get unified with the (possibly uninstantiated) first
+argument.  The \texttt{-nocheck} versions are for conveniently writing
+extensions to the logic system that \emph{can} handle logic variables as
+parameters, whereas \texttt{pred} and \texttt{fun} catch errors when
+calling functions that do not expect their arguments to be logic variables.
+\newpage
+\subsubsection{\texttt{fails}, \texttt{instantiated}, and \texttt{view-subst}}
+
+Below is the function \texttt{fails} that fails when its goal succeeds and
+succeeds when its goal fails.  Basically, we hand build both the success
+and failure continuations.
+
+\begin{alltt}
+(define fails
+  (lambda (ant)
+    (lambda@ (sk fk subst cutk)
+      (@ ant
+        (lambda@ (current-fk subst cutk) (fk))
+        (lambda () (@ sk fk subst cutk))
+        subst 
+        cutk))))
+\end{alltt}
+
+\noindent
+And here is an example of \texttt{fails}.
+
+\begin{alltt}
+(define grandpa
+  (relation _ (grandad grandchild)
+    (to-show grandad grandchild)
+    (exists (parent)
+      (all
+        (father grandad parent)
+        (fails (starts-with-p? parent))
+        (father parent grandchild)))))
+\end{alltt}
+
+\begin{alltt}
+> (exists (x y) (solve 10 (grandpa x y)))
+
+((john pete) (john polly))
+\end{alltt}
+
+To determine if a variable, \texttt{t}, is instantiated, use
+\texttt{(instantiated t)} as an antecedent and this definition.
+
+\begin{alltt}
+(define instantiated
+  (pred-nocheck
+    (lambda (t)
+      (not (lv? t)))))
+\end{alltt}
+
+\noindent
+At this point, \texttt{t} is either some variable or some value.  
+
+To view a substitution, use \texttt{(view-subst t)} with this
+definition.  The definition of \texttt{concretize-subst} should
+be obvious, since it simply concretizes every logic variable in
+a substitution.  
+
+\begin{alltt}
+(define view-subst
+  (lambda (t)
+    (lambda@ (sk fk subst cutk)
+      (pretty-print (subst-in t subst))
+      (pretty-print (concretize-subst subst))
+      (@ sk fk subst cutk))))
+
+(define concretize-subst
+  (letrec
+    ([cs (lambda (subst env)
+           (cond
+             [(null? subst) '()]
+             [else
+               (let ([comm (car subst)])
+                 (let-values (cv new-env)
+                   (concretize-var (commitment->var comm) env)
+                   (let-values (ct newer-env)
+                     (concretize-term (commitment->term comm) new-env)
+                     (cons
+                       (commitment cv ct)
+                       (cs (cdr subst) newer-env)))))]))])
+    (lambda (subst)
+      (cs subst '()))))
+\end{alltt}
+
+Here is a new definition of \texttt{grandpa}, like an earlier one,
+but views the substitution.
+
+\begin{alltt}
+(define grandpa
+  (relation _ (grandad grandchild)
+    (to-show grandad grandchild)
+    (exists (parent)
+      (all
+        (father grandad parent)
+        (father parent grandchild)
+        (view-subst grandchild)))))
+\end{alltt}
+
+\begin{alltt}
+> (exists (x y) (solve 10 (grandpa x y)))
+
+pete
+((grandad.1 x.1)
+ (grandchild.1 y.1)
+ (x.1 john)
+ (parent.1 sam)
+ (y.1 pete))
+
+polly
+((grandad.1 x.1)
+ (grandchild.1 y.1)
+ (x.1 john)
+ (parent.1 sam)
+ (y.1 polly))
+\end{alltt}
+\newpage
+\begin{alltt}
+sal
+((grandad.1 x.1)
+ (grandchild.1 y.1)
+ (x.1 sam)
+ (parent.1 pete)
+ (y.1 sal))
+
+pat
+((grandad.1 x.1)
+ (grandchild.1 y.1)
+ (x.1 sam)
+ (parent.1 pete)
+ (y.1 pat))
+
+((john pete) (john polly) (sam sal) (sam pat))
+\end{alltt}
+
+This completes the discussion of the features and implementation of
+our logic system.  We have accomplished this using merely eight
+people.  The population of our world is about to grow.
+
+\section{Recursive definitions}
+
+In this section, we introduce two interesting problems.  The first
+finds the youngest common ancestor of two people in our world.  The
+second is the well-known ``Towers of Hanoi'' problem.  The second 
+is interesting because it uses recursion, \texttt{pred}, and
+\texttt{fun} in one relation.  We start with the youngest common
+ancestor problem.
+
+\subsection{Youngest common ancestor}
+
+Suppose that we want to know if someone is a (patrilineal) ancestor.
+We know that if someone old is the father of someone young, then the
+old person is a patrilineal ancestor.  But, also, if the old person is
+the father of someone not so old, and the not so old person is the
+ancestor of the young person, then we know that we have an ancestor.
+This way of describing ancestor is defined directly in our logic
+system.  We add a few more facts to \texttt{father} to make the
+outcomes a bit more interesting.  Specifically, we add that ``John is
+the father of Harry,'' ``Harry is the father of Carl,'' and ``Sam is the
+father of Ed.''
+
+\begin{alltt}
+(define father
+  (binary-extend-relation father
+    (binary-extend-relation (fact () 'john 'harry)
+      (binary-extend-relation (fact () 'harry 'carl) (fact () 'sam 'ed)))))
+\end{alltt}
+
+We use \texttt{binary-extend-relation} to define
+\texttt{extend-relation} to take any number of relations.
+The code only gets interesting when there are three
+or ore operands passed to the macro.  If there are, we generate
+a \texttt{let-values} of the approriate size, whose body
+invokes \texttt{binary-extend-relation} multiple times.
+
+\begin{alltt}
+(define-syntax extend-relation
+  (syntax-rules ()
+    [(_) fail]
+    [(_ r) r]
+    [(_ r0 r1) (binary-extend-relation r0 r1)]
+    [(_ r0 ...) (extend-relation-aux () (r0 ...) (r0 ...))]))
+
+(define-syntax extend-relation-aux
+  (syntax-rules ()
+    [(_ (var0 ...) () (r0 ...))
+     (let-values (var0 ...) (values r0 ...)
+       (extend-relation-aux* var0 ...))]
+    [(_ (var0 ...) (r0 r1 ...) r0s)
+     (extend-relation-aux (var0 ... h) (r1 ...) r0s)]))
+
+(define-syntax extend-relation-aux*
+  (syntax-rules ()
+    [(_ var) var]
+    [(_ var0 var1 ...)
+     (binary-extend-relation var0
+       (extend-relation-aux* var1 ...))]))
+\end{alltt}
+
+\noindent
+Then we can redefine \texttt{father} like this.
+
+\begin{alltt}
+(define father
+  (extend-relation 
+    father (fact () 'john 'harry) (fact () 'harry 'carl) (fact () 'sam 'ed)))
+\end{alltt}
+
+We are now ready to solve the problem that we stated earlier.  To do
+this, we first define and test the ancestor relation.
+
+\begin{alltt}
+(define ancestor
+  (extend-relation
+    (relation _ (old young)
+      (to-show old young)
+      (father old young))
+    (relation _ (old young)
+      (to-show old young)
+      (exists (not-so-old)
+        (all (father old not-so-old) (ancestor not-so-old young))))))
+\end{alltt}
+
+\texttt{Exercise 10:} Since the first two arguments to each relation
+are identical, redefine this with one relation using \texttt{any}.
+
+Here is a simple test.
+
+\begin{alltt}
+> (exists (x y) (solve 100 (ancestor x y)))
+
+((john sam)
+ (sam pete)
+ (pete sal)
+ (pete pat)
+ (sam polly)
+ (john harry)
+ (harry carl)
+ (sam ed)
+ (john pete)
+ (john polly)
+ (john ed)
+ (john sal)
+ (john pat)
+ (sam sal)
+ (sam pat)
+ (john carl))
+\end{alltt}
+
+Once we have the concept of ancestor, it is easy to think in terms of
+a common ancestor.  Two people share a common ancestor if somewhere
+along their respective ancestor chains, their paths cross.  Here is
+how we can write that in our logic system.
+
+\begin{alltt}
+(define common-ancestor
+  (relation _ (young-a young-b old)
+    (to-show young-a young-b old)
+    (all (ancestor old young-a) (ancestor old young-b))))
+
+> (exists (x) (solve 4 (common-ancestor 'pat 'ed x)))
+
+((pat ed john) (pat ed sam))
+\end{alltt}
+
+\noindent
+This says that John and Sam are both common
+ancestors of Pat and Ed.
+
+If two people share two common ancestors, then we can determine if one
+of the common ancestors is younger than the other common ancestor.
+
+\begin{alltt}
+(define younger-common-ancestor
+  (relation _ (young-a young-b old not-so-old)
+    (to-show young-a young-b old not-so-old)
+    (all
+      (common-ancestor young-a young-b not-so-old)
+      (common-ancestor young-a young-b old)
+      (ancestor old not-so-old))))
+\end{alltt}
+
+According to \texttt{relation}, the \texttt{(all} and matching
+\texttt{)} are unnecessary.
+
+\begin{alltt}
+> (exists (x y) (solve 4 (younger-common-ancestor 'pat 'ed x y)))
+
+((pat ed john sam))
+\end{alltt}
+
+We finally come to the problem that we are most interested in, which
+is how do we determine the youngest common ancestor.  We already know
+that Pat and Ed share Sam and John, but we want the youngest among the
+common ancestors. Since John must be older than Sam, the answer should
+be Sam.
+
+\begin{alltt}
+(define youngest-common-ancestor
+  (relation _ (young-a young-b not-so-old)
+    (to-show young-a young-b not-so-old)
+    (all
+      (common-ancestor young-a young-b not-so-old)
+      (exists (y)
+        (fails (younger-common-ancestor young-a young-b not-so-old y))))))
+
+> (exists (x) (solve 4 (youngest-common-ancestor 'pat 'ed x)))
+((pat ed sam))
+\end{alltt}
+
+\noindent
+The tricky part of this is that if we find a younger ancestor,
+then the one we have chosen is not the youngest common ancestor.  So, the
+ancestor is the youngest common ancestor provided each attempt to find
+a younger common ancestor fails.
+
+What is interesting about this approach is that it is recursive: we
+define \texttt{ancestor} in terms of \texttt{ancestor}.  Although
+we don't use recursion to implement our logic system, our model
+relies heavily on the idea that users are facile with recursion
+and we rely heavily on the fact that Scheme supports recursion.  For
+instance, the recursion supported by \texttt{define} in these four
+definitions could just as easily have been supported using
+\texttt{letrec}.  Furthermore, we can bind \texttt{father} lexically,
+so that the expression takes any binary relation as an argument.
+
+\begin{alltt}
+(define youngest-common-ancestor
+  (lambda (father)
+    (letrec ([ancestor ...]
+             [common-ancestor ...]
+             [younger-common-ancestor ...]
+             [youngest-common-ancestor ...])
+      youngest-common-ancestor)))
+\end{alltt}  
+
+\noindent
+This would also solve a problem related to an organizational chart.
+If we pass a relation, say \texttt{supervisor}, instead of
+\texttt{father}, then \texttt{youngest-common-ancestor} would find the
+least common supervisor.  In general, this procedure produces the
+\emph{least upper bound} of a \emph{finite} binary relation, provided one
+exists.
+
+\subsection{Comparison with Seres and Spivey}
+The similarities with Seres and Spivey are striking.  In fact, a
+subset of our model maps directly onto theirs, although our goal
+has been a full implementation of logic programming, including
+many of the sullied operations as well as some meta operations.
+
+Using \texttt{==} our Scheme embedding resembles their Haskell
+embedding.  Where we differ is that we would be limited to using only
+\texttt{any}, \texttt{all}, and \texttt{==}.  We would no longer have
+\texttt{relation} and \texttt{extend-relation}, and all the sullied
+operators.  This means that we could use \texttt{lambda} to define
+relations.  For example, we can define \texttt{father} and
+\texttt{ancestor} like this,
+
+\begin{alltt}
+(define father
+  (lambda (dad child)
+    (any
+      (all (== dad 'john) (== child 'sam))
+      (all (== dad 'sam) (== child 'pete))
+      (all (== dad 'sam) (== child 'polly))
+      (all (== dad 'pete) (== child 'sal))
+      (all (== dad 'pete) (== child 'pat))
+      (all (== dad 'john) (== child 'harry))
+      (all (== dad 'harry) (== child 'carl))
+      (all (== dad 'sam) (== child 'ed)))))
+\end{alltt}
+
+\begin{alltt}
+(define ancestor
+  (lambda (old young)
+    (any
+      (father old young)
+      (exists (not-so-old)
+        (all (father old not-so-old) (ancestor not-so-old young))))))
+\end{alltt}
+
+\noindent
+And this can be tested similarly.
+\begin{alltt}
+> (exists (x) (solve 20 (ancestor 'john x)))
+
+((john sam)
+ (john harry)
+ (john pete)
+ (john polly)
+ (john ed)
+ (john sal)
+ (john pat)
+ (john carl))
+\end{alltt}
+
+Does the Haskell embedding differ in any significant way from our
+embedding in Scheme?  Yes, besides avoiding sullied operators, there
+is a fundamental difference.  Everything that works in the Haskell
+embedding works in the Scheme embedding, but not vice versa.  Because
+the Haskell embedding does unification piecewise within an
+\texttt{all}, any time that the unification fails to match, there is
+automatic backtracking.  That is not the case with \texttt{relation}
+and \texttt{fact}.  In our embedding, if unification fails, it invokes
+the failure continuation, immediately.  It is as though each relation
+has a lock on it and a term either opens it or a new one is tried.  In
+order to accomplish this in the Haskell embedding, there would need to
+be a \emph{local} cut, but stay in the relation if the relation was
+constructed as an extended relation.  This is not how a conventional
+Prolog-like cut would work, but it should be easy enough to implement.
+
+In sum, the Haskell embedding is good as far as it goes, but it
+leaves many of the more interesting aspects of logic programming
+unresolved.  The approach of treating every antecedent as a stream
+of substitutions is not far from our approach.  Since we have
+substitutions \texttt{subst} and failure continuations \texttt{fk}
+in every antecedent, we could use a different representation of the
+body of the antecedent, where all but \texttt{fk} would comprise
+a data structure and the \texttt{fk} would be a stream (thunk).
+Then each antecedent closure could be modelled as the \texttt{cons}ing
+of the data structure to a stream.  Because this is a relatively
+small program, making this last step in order to use the stream
+monad seems like overkill, especially since this approach does not
+appear to extend naturally to the all important sullied antecedents.
+\newpage
+\subsection{\texttt{any} revisited}
+
+We revisit \texttt{any} to make a point about the difference between
+\emph{success} and \emph{truth}.  Consider the following three
+relations (\texttt{test1}, \texttt{test2}, and \texttt{test3}), which
+rely only on \texttt{lambda} as in the Haskell embedding.
+
+\begin{alltt}
+> (define test1
+    (lambda (x)
+      (any ((pred <) 4 5) ((fun <) x 6 7))))
+
+> (exists (x) (solution (test1 x)))
+
+(x.1)
+\end{alltt}
+\begin{alltt}
+> (define test2
+    (lambda (x)
+      (any ((pred <) 5 4) ((fun <) x 6 7))))
+
+> (exists (x) (solution (test2 x)))
+
+(#t)
+\end{alltt}
+\begin{alltt}
+> (define test3
+    (lambda (x y)
+      (any ((fun <) x 5 4) ((fun <) y 6 7))))
+
+> (exists (x y) (solution (test3 x y)))
+
+(#f y.1)
+\end{alltt}
+
+The first two should not be much of a surprise.  In the first example,
+\texttt{4} is less than \texttt{5}, so \texttt{x} remains uninstantiated,
+and \texttt{6} is less than \texttt{7}, so \texttt{x} is instantiated in
+the second example.  In the last example, however, we discover that
+\texttt{y} remains uninstantiated even though \texttt{5} is \emph{not} less
+than \texttt{4}.  Why? A \texttt{fun} call always succeeds if its non-value
+argument is an uninstantiated variable.  So, succeeding is not the same as
+being true in a logic system.
+
+\subsection{``Towers of Hanoi''}
+
+Three poles (a \emph{left}, a \emph{middle}, and a \emph{right}) can hold
+disks of various sizes provided that a larger one is never on top of a
+smaller one.  The initial state of the problem has a set of \emph{n}
+disks (all different sizes) sitting on the left pole.  The goal is to
+place the entire set of disks on the middle pole.  Only the top disk
+of any pole can be moved to a different pole and then that disk
+becomes the top disk of the chosen pole.\footnote{This solution has been derived from
+page 141 of \emph{Programming in Prolog Fourth Edition} by
+W.\ F.\ Clocksin and C.\ S.\ Mellish.}
+
+\begin{alltt}
+(define towers-of-hanoi
+  (letrec
+      ([move
+         (extend-relation
+           (relation cut ()
+             (to-show 0 _ _ _)
+             (all cut))
+           (relation _ (n a b c)
+             (to-show n a b c)
+             (exists (m)
+               (all
+                 ((fun -) m n 1)
+                 (move m a c b)
+                 ((pred printf) "Move a disk from ~s to ~s~n" a b)
+                 (move m c b a)))))])
+    (relation _ (n)
+      (to-show n)
+      (move n 'left 'middle 'right))))
+\end{alltt}
+
+\begin{alltt}
+> (begin (solution (towers-of-hanoi 3)) (void))
+
+Move a disk from left to middle
+Move a disk from left to right
+Move a disk from middle to right
+Move a disk from left to middle
+Move a disk from right to left
+Move a disk from right to middle
+Move a disk from left to middle
+\end{alltt}
+
+The algorithm is straightforward. First, figure out how to solve the
+problem for one fewer disks and then move that stack of disks as a
+virtual disk.  The use of \texttt{pred} allows us to have a procedure
+that writes one move.  Since we are displaying information, we know
+that the value of \texttt{printf} is not false.  Also, the
+\texttt{move} subtracts one from the number of disks using
+\texttt{fun} and its first relation uses the anonymous variable three
+times.  (Recall that the anonymous variable unifies with everything,
+but it adds nothing to the substitution; the underscore after
+\texttt{relation} has been chosen arbitrarily.  If the scope uses
+undesore, choose a variable that is not live in the scope.  You can
+always just use \texttt{cut}, however limiting its use to when the
+program relies on it seems wiser.
+
+\section{Three famous problems}
+
+Three famous problems that we discuss are the so-called
+\texttt{append} problem, the type-inference problem of a typed variant
+of the lambda calculus with constants, conditional expressions,
+primitives, and polymorphic \texttt{let}, and a generalization of
+Prolog's \texttt{name} pedicate.  Before we can begin this walk down
+memory lane, we must enlarge the set of possible terms and
+consequently change the behavior of three functions:
+\texttt{subst-in}, \texttt{concretize-term}, and \texttt{unify}.
+\newpage
+\subsection{Enlarging the set of terms}
+
+Presently, a term is a variable or something that can be compared 
+trivially.  Now, we change that set of terms to be those that cannot
+be compared trivially, such as pairs and vectors.  We restrict our
+concerns to pairs.
+
+\begin{alltt}
+(define subst-in
+  (lambda (t subst)
+    (cond
+      [(lv? t)
+       (cond
+         [(assv t subst) => commitment->term]
+         [else t])]
+      [(pair? t) (cons (subst-in (car t) subst) (subst-in (cdr t) subst))]
+      [else t])))
+
+(define concretize-term
+  (lambda (t env)
+    (cond
+      [(lv? t) (concretize-var t env)]
+      [(pair? t)
+       (let-values (carct env) (concretize-term (car t) env)
+         (let-values (cdrct env) (concretize-term (cdr t) env)
+           (values (cons carct cdrct) env)))]
+      [else (values t env)])))
+\end{alltt}
+
+These are not significant changes.  They each say walk recursively
+through the term and replace all variables by their association in a
+substitution (or in a threaded environment in the case of \texttt{concretize-term}).
+
+Here is an interesting example,
+
+\begin{alltt} 
+> (exists (x y z)
+    (let ([term `(p ,x ,y (g ,z))])
+      (let ([s (compose-subst (unit-subst y z) (unit-subst x `(f ,y)))]
+            [r (compose-subst (unit-subst x 'a) (unit-subst z 'b))])
+        (let ([new-term (subst-in term s)])
+          (printf "~s~n" (concretize new-term))
+          (printf "~s~n" (concretize (subst-in new-term r)))
+          (let ([sr (compose-subst s r)])
+            (printf "~s~n" (concretize-subst sr))
+            (concretize (subst-in term sr)))))))
+\end{alltt}
+
+\begin{alltt}
+(p (f y.1) z.1 (g z.1))
+(p (f y.1) b (g b))
+((y.1 b) (x.1 (f y.1)) (z.1 b))
+(p (f y.1) b (g b))
+\end{alltt}
+
+In the example, we demonstrate a fact about substitutions: it does not
+matter if we apply the substitutions to a term one at a time or apply
+the composed substitution to the same term.
+
+Next, we must change \texttt{unify*} (Recall that \texttt{unify*} is
+called from \texttt{unify}.) to accomodate this new kind of term.  We
+can ask if two data structures are \texttt{equal?}, which does a
+recursive tree walk, comparing subparts.  If they are equal,
+\texttt{equal?} responds with true, otherwise, it responds with false.
+The redefinition of \texttt{unify*}, below, shares that attribute with
+\texttt{equal?}. That is, when two data structures are equal,
+\texttt{unify*} returns the empty substitution, otherwise, it returns
+false.  But, unification is more than just equality.  The function
+\texttt{unify*} takes two terms, and returns a substitution that allows
+for the two terms to be perceived as \emph{equal} if the substitution
+were applied to the two terms.  To accomplish this, each variable in
+the two terms is added to the substitution by associating some term
+with it.  In the recursive tree walk, two leaves that are aligned must
+be \texttt{equal?}.  If one argument has a variable and the other one
+contains something other than a variable, then that pair is added to
+the substitution.  If the same variable is aligned in both arguments,
+then the substitution remains unchanged.  If both are variables, then
+one of them is treated as the term.  Each time something is added to
+the substitution, it is a commitment. So, as the recursive tree walk
+continues, it refines previous commitments.
+
+The version of \texttt{unify*}, below, takes any two terms and returns a
+substitution if the terms unify and returns false, otherwise.
+
+\begin{alltt}
+(define unify*
+  (lambda (t u)
+    (cond
+      [(trivially-equal? t u) empty-subst]
+      [(lv? t) (if (occurs? t u) #f (unit-subst t u))]
+      [(lv? u) (if (occurs? u t) #f (unit-subst u t))]
+      [(and (pair? t) (pair? u))
+       (cond
+         [(unify* (car t) (car u))
+           => (lambda (s-car)
+                (cond
+                  [(unify* (subst-in (cdr t) s-car) (subst-in (cdr u) s-car))
+                   => (lambda (s-cdr)
+                        (compose-subst s-car s-cdr))]
+                  [else #f]))]
+         [else #f])]
+      [else #f])))
+\end{alltt}
+There are only three kinds of terms for us to consider: trivial
+values, variables, and pairs.  The first case is straightforward.  Two
+terms (including two variables) unify and return the empty
+substitution if they are trivially equal.  If at least one of them is
+a variable, then the other becomes the term associated with it,
+provided that that term does not contain an occurrence of the
+variable.  Two pairs might unify if their \texttt{car}s unify.  But,
+before we determine if the \texttt{cdr}s unify, we must take the
+substitution returned from successfully unifying the \texttt{car}s,
+its commitments, and apply it to the \texttt{cdr}s.  This brings the
+\texttt{cdr}s up-to-date with those commitments.  Then all the
+commitments from unifying the \texttt{car}s, \texttt{s-car}, and all
+the commitments from unifying the substituted for \texttt{cdr}s,
+\texttt{s-cdr}, are composed.
+
+Do not underestimate just how difficult it is to understand the pair
+case.  As it it written, it looks rather straightforward, but when we
+process a deeply nested term, we make lots of commitments and they
+must be repeatedly refined by future substitutions.  It is a testament
+to the power of recursion that it can look this simple.
+
+The check for an occurrence of a variable in a term, below, is a
+straightforward recursive tree walk, however, for reasons of efficiency,
+most logic systems have chosen not to include it.  Later, we show a
+variant of unification that simply avoids it even though there might
+be an occurrence.
+
+\begin{alltt}
+(define occurs?
+  (lambda (var t)
+    (cond
+      [(lv? t) (eqv? t var)]
+      [(pair? t) (or (occurs? var (car t)) (occurs? var (cdr t)))]
+      [else #f])))
+\end{alltt}
+
+\texttt{Exercise 11:} Each of the functions, \texttt{subst-in},
+\texttt{concretize-term}, \texttt{unify*}, and \texttt{occurs?}
+treats pairs.  Include vectors as terms and allow the values in
+a vector to be any term.
+
+\texttt{Exercise 12:} All calls to \texttt{unify} can be improved by
+passing it success and failure continuations, making sure to thread
+them through the auxiliary calls.  Revise the entire system to make
+this improvement.
+
+\subsection{Unification examples}
+
+There are many ways for two terms to fail to unify.  For example, it
+is possible for the same variable to appear twice in one structure but
+be associated with different integers.  Another easy way for two terms
+to fail to unify is to have the same variable appear once in each term
+but be associated with different integers.  These two ways are
+demonstrated below.
+
+\begin{alltt}
+> (define w (exists (w) w))
+> (define x (exists (x) x))
+> (define y (exists (y) y))
+> (define z (exists (z) z))
+> (define u (exists (u) u))
+\end{alltt}
+\newpage
+\begin{alltt}
+> (unify `(,x ,4) `(3 ,x) empty-subst)
+
+#f
+
+> (unify `(,x ,x) '(3 4) empty-subst)
+
+#f
+\end{alltt}
+
+\noindent
+In the preceding examples, \texttt{x} commits to \texttt{3},
+but then looking at the second elements of each term, there is an
+attempt to commit \texttt{x} to \texttt{4}, which violates an
+earlier commitment.  The following two examples do unify, however.
+
+\begin{alltt}
+> (concretize-subst (unify `(,x ,y) '(3 4) empty-subst))
+
+((x.1 3) (y.1 4))
+
+> (concretize-subst (unify `(,x 4) `(3 ,y) empty-subst))
+
+((x.1 3) (y.1 4))
+\end{alltt}
+
+\noindent
+First, \texttt{x} commits to \texttt{3} and then \texttt{y}
+commits to \texttt{4}.  Let's try a slightly more difficult
+example.
+
+\begin{alltt}
+> (concretize-subst (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst))
+
+((x.1 3) (y.1 4) (w.1 z.1))
+\end{alltt}
+
+\noindent
+We can see that the last two items in each term do not violate earlier
+commitments.  Thus, the two terms unify.  If any other integer appears
+where the \texttt{3} in the first argument appears, then these fail to
+unify.  If \texttt{y} appears where the \texttt{x} appears in the
+second argument, then these also fail to unify.  The variable
+\texttt{w} shares with the variable \texttt{z}, which means that when
+one of them commits to some non-variable term, so does the other
+one. Consider these two examples.
+
+\begin{alltt}
+> (concretize-subst (unify `(,x 4) `(,y ,y) empty-subst))
+
+((x.1 4) (y.1 4))
+\end{alltt}
+
+\begin{alltt}
+> (unify `(,x 4 3) `(,y ,y ,x) empty-subst)
+
+#f
+\end{alltt}
+\noindent
+
+\noindent
+In the first example, \texttt{x} commits to \texttt{y} and agrees to
+be associated with the same term.  Then \texttt{y} commits to
+\texttt{4}.  In the second example, once \texttt{y} has committed to
+\texttt{4}, since \texttt{y} and \texttt{x} are shared, \texttt{x} is
+committed to \texttt{4}, but \texttt{x} tries to commit to \texttt{3},
+which violates an earlier commitment.
+
+\subsubsection{More unification examples}
+
+We present five unification examples, below.
+
+\begin{alltt}
+> (concretize-subst (unify `(,w (,x (,y ,z) 8)) `(,w (,u (abc ,u) ,z)) empty-subst))
+
+((x.1 8) (y.1 abc) (z.1 8) (u.1 8))
+\end{alltt}
+
+\begin{alltt}
+> (concretize-subst (unify `(p (f a) (g ,x)) `(p ,x ,y) empty-subst))
+
+((x.1 (f a)) (y.1 (g (f a))))
+\end{alltt}
+
+\begin{alltt}
+> (concretize-subst (unify `(p (g ,x) (f a)) `(p ,y ,x) empty-subst))
+
+((y.1 (g (f a))) (x.1 (f a)))
+\end{alltt}
+
+\begin{alltt}
+> (concretize-subst (unify `(p a ,x (h (g ,z))) `(p ,z (h ,y) (h ,y)) empty-subst))
+
+((z.1 a) (x.1 (h (g a))) (y.1 (g a)))
+\end{alltt}
+
+\begin{alltt}
+> (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)
+
+#f
+\end{alltt}
+
+\noindent
+The first example commits \texttt{w} to itself, which is no commitment
+at all.  Then \texttt{x} shares with \texttt{u}, \texttt{y} commits to
+the symbol \texttt{abc}, \texttt{z} shares with \texttt{u}, and
+\texttt{z} commits to \texttt{8}.  In the second example, the
+\texttt{p} symbols match, leading to no commitments.  Then, \texttt{x}
+commits to \texttt{(f a)}.  Finally, \texttt{y} commits to \texttt{(g
+(f a))}, since the \texttt{x} in \texttt{`(g ,x)} gets replaced by
+what \texttt{x} is committed to, \texttt{(f a)}.  The third example
+produces the same values for the variables, but in a different way.
+Again, \texttt{p} symbols lead to no commitments.  Then \texttt{y}
+commits to \texttt{`(g ,x)}. Finally, \texttt{x} commits to \texttt{(f
+a)}.  The fourth example first commits \texttt{z} to the symbol
+\texttt{a}.  Then, \texttt{x} commits to \texttt{`(h ,y)}. Next the
+\texttt{h} symbols contribute nothing.  Finally, \texttt{y} commits to
+\texttt{`(g ,z)}.  But, since \texttt{z} has committed to \texttt{a},
+we know that \texttt{y} must become \texttt{(g a)}, which is why
+\texttt{x}'s value is \texttt{(h (g a))}.  The fifth example fails to
+unify, but only when we reach the last item in each term.  The
+\texttt{p} symbols unify.  Then, \texttt{x} is shared with \texttt{y}.
+When we try to unify \texttt{x} with \texttt{`(f ,y)}, we discover
+that since \texttt{y} has been replaced by \texttt{x}, we are really
+unifying \texttt{x} with \texttt{(f x)}.  It should be clear that this
+is a violation of the \emph{occurs check} in the second \texttt{cond}
+clause of \texttt{unify}.
+
+\subsubsection{A lazy \texttt{unify}}
+
+A different approach to writing \texttt{unify} is to postpone when we
+apply a substitution.  This postponing makes it possible to avoid
+applying substitutions in two separate circumstances.  First, if
+somewhere deep in the two terms we have not seen any variable, but we
+have found a place where the two terms fail to unify, then we return
+false without having applied any substitutions.  Also, if the two
+terms unify, but contain no variables, we also avoid applying a
+substitution.  This differs significantly from the preceding
+\texttt{unify*}, where we applied a substitution to every
+\texttt{cdr}.
+
+In this definition of \texttt{unify}
+\footnote{This version is similar to the algorithm on pages 219--222 in Dybvig's
+\emph{The Scheme Programming Language ANSI Scheme, second edition}. There,
+however, the substitutions are represented as functions from terms to
+terms.}, below, the excitement happens only when a variable is found in at
+least one of the terms.  Otherwise, we walk recursively through the two
+terms making sure that they are equal until we find a variable in either
+term. Then we pass the variable, the substituted for other term, and
+the substitution to \texttt{unify-with-lv}, below.
+
+\begin{alltt}
+(define unify
+  (lambda (t u subst)
+    (cond
+      [(trivially-equal? t u) subst]
+      [(lv? t) (unify/lv t (subst-in u subst) subst)]
+      [(lv? u) (unify/lv u (subst-in t subst) subst)]
+      [(and (pair? t) (pair? u))
+       (cond
+         [(unify (car t) (car u) subst)
+          => (lambda (subst)
+               (unify (cdr t) (cdr u) subst))]
+         [else #f])]
+      [else #f])))
+\end{alltt}
+
+\begin{alltt}
+(define unify/lv
+  (lambda (t-var u subst)
+    (cond
+      [(assv t-var subst) (unify (subst-in t-var subst) u subst)]
+      [(occurs? t-var u) #f]
+      [else (compose-subst subst (unit-subst t-var u))])))
+\end{alltt}
+
+In \texttt{unify/lv}, we must compose the substitution with a
+commitment to be built with the variable \texttt{t-var} and the term
+\texttt{u}.  As part of the call, we have brought \texttt{u}
+up-to-date.  If \texttt{t-var} is bound in the substitution, we start
+the whole process over again after bringing \texttt{t-var} up-to-date,
+too.  Otherwise, we try to commit \texttt{u} to \texttt{t-var}.
+
+\texttt{Exercise 12:} Determine the value of the unifications examples
+given above.  Which ones produce the same answers?  Of the ones that
+produce different answers, how close are they to the earlier answers.
+Write a program that transforms substitutions yielded by the lazy
+unifier and produces the same substitutions yielded by the earlier
+one.
+\subsection{Unification without the occurs check}
+
+It is also possible to completely avoid the occurs check even if
+there is an occurs-check violation.  In most Prologs, there is a
+conscious decision to avoid the occurs check, but not too many of
+them have a way to avoid it even if there is a violation. In
+this section we present such a unifier.\footnote{The trick used here
+also appears in Quintus Prolog}
+
+Before we can discuss the unifier, we must redefine \texttt{subst-in}
+to account for decisions that will be made within the unifier.  We
+choose to use \texttt{subst-in} sparingly, so when we do use it, we
+have more work to do.  Before, \texttt{subst-in} merely replaced each
+variable by its binding.  Now, however, if the binding exists,
+it starts over at that binding.  If it is not bound, it stops.
+
+\begin{alltt}
+(define subst-in
+  (lambda (t subst)
+    (cond
+      [(lv? t)
+       (cond
+         [(assv t subst)
+          => (lambda (c)
+               (subst-in (commitment->term c) subst))]
+         [else t])]
+      [(pair? t)
+       (cons (subst-in (car t) subst) (subst-in (cdr t) subst))]
+      [else t])))
+\end{alltt}
+
+The unifier below avoids \texttt{subst-in} until it is ready to do
+a \texttt{compose-subst}.  The two auxiliary procedures each take
+a logic variable, but one takes another logic variable and the other
+takes something that is not a logic variable.  
+
+\begin{alltt}
+(define unify
+  (lambda (t u subst)
+    (cond
+      [(trivially-equal? t u) subst]
+      [(lv? t) (if (lv? u) (unify-lv/lv t u subst) (unify-lv/value t u subst))]
+      [(lv? u) (unify-lv/value u t subst)]
+      [(and (pair? t) (pair? u))
+       (cond
+         [(unify (car t) (car u) subst)
+          => (lambda (car-subst)
+               (unify (cdr t) (cdr u) car-subst))]
+         [else #f])]
+      [else #f])))
+\end{alltt}
+
+The procedure \texttt{unify-lv/lv}, unifies with the binding of the
+first logic variable against the binding of the second one, if they
+are bound.  If one of them is bound and the other is not, then
+we set up a loop in \texttt{unbound/bound}, below, that follows the
+bound one until either the same variable comes up, or it ends up with
+a value.  If both variables are unbound, and we already know that they
+are not the same from the test in \texttt{unify}, then we naively
+extend the substitution.  It's probably easier to skip to the bound
+\texttt{u-lv} case first, before studying the bound \texttt{t-lv}
+case.
+
+\begin{alltt}
+(define unify-lv/lv
+  (lambda (t-lv u-lv s)
+    (cond
+      [(assv t-lv s)
+       => (lambda (ct)
+            (cond
+              [(assv u-lv s)
+               => (lambda (cu)
+                    (let ([u-term (commitment->term cu)]
+                          [t-term (commitment->term ct)])
+                      (unify t-term u-term s)))]
+              [else ((unbound/bound u-lv s) ct)]))]
+      [(assv u-lv s) => (unbound/bound t-lv s)]
+      [else (extend-subst t-lv u-lv s)])))
+
+(define unbound/bound
+  (lambda (t-lv s)
+    (lambda (cu)
+      (let loop ([cm cu])
+        (let ([u-term (commitment->term cm)])
+          (cond
+            [(eqv? u-term t-lv) s]
+            [(lv? u-term)
+             (cond
+               [(assv u-term s) => loop]
+               [else (unify-lv/value t-lv u-term s)])]
+            [else (extend-subst t-lv u-term s)]))))))
+\end{alltt}
+The procedure \texttt{unify-lv/value} is the interesting
+part of this algorithm.  Now we know that the second argument
+is a non-variable (i.e., a value).  First, we check to see
+if the variable is bound and if so, unify against its binding.
+Now, if the variable is \emph{unbound} and the value of the
+second argument is a \emph{pair}, then we have the situation
+like before when we used the occurs check.  But, this time,
+we will do something else.  Since we know that we have a pair,
+we construct a pair with two new logic variables.  Then we
+place the pair in the substitution.  We use the new substitution
+to unify the first new logic variable with the \texttt{car} of
+the term and when that returns, we use the resultant substitution
+to unify the second new logic variable with the \texttt{cdr} of
+the term.  If it not a pair, we do the same as above.
+
+\begin{alltt}
+(define unify-lv/value
+  (lambda (t-lv u-value s)
+    (cond
+      [(assv t-lv s)
+       => (lambda (ct)
+            (let ([t-term (commitment->term ct)]) 
+              (unify t-term u-value s)))]
+      [(pair? u-value)
+       (let ([car-var (lv ':a)]
+             [cdr-var (lv ':d)])
+         (cond
+           [(unify car-var (car u-value)
+              (extend-subst t-lv (cons car-var cdr-var) s))
+            => (lambda (s)
+                 (unify cdr-var (cdr u-value) s))]
+           [else #f]))]
+      [else (extend-subst t-lv u-value s)])))
+\end{alltt}
+This allows us to produce a legitimate substitution in the example
+that failed the occurs check.  In order to actually view the
+substitution, we need to use an auxiliary procedure
+\texttt{subst-vars-recursively}, which is nearly the same as
+\texttt{subst-in}, but when it follows a binding of a variable, it
+makes sure that the associated commitment is not found again by
+removing it from the substitution.
+
+\begin{alltt}
+(define subst-vars-recursively
+  (lambda (t subst)
+    (cond
+      [(lv? t)
+       (cond
+         [(assv t subst) =>
+          (lambda (c)
+            (subst-vars-recursively
+              (commitment->term c) (remq c subst)))]
+         [else t])]
+      [(pair? t)
+       (cons
+         (subst-vars-recursively (car t) subst)
+         (subst-vars-recursively (cdr t) subst))]
+      [else t])))
+
+> (concretize-subst
+    (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
+      (let ([vars (map commitment->var s)])
+        (map commitment vars (subst-vars-recursively vars s)))))
+
+((:d.1 ())
+ (:a.1 (f :a.1))
+ (:d.2 ((f . :d.2)))
+ (:a.2 f)
+ (y.1 (f (f . :d.2)))
+ (x.1 (f (f . :d.2))))
+\end{alltt}
+
+If we look closely at the output, we can see the circularity in the
+binding of \texttt{:a.1} and \texttt{:d.2}.  Therefore, any binding
+that contains them is circular, which includes the binding of 
+\texttt{x.1}, and \texttt{y.1}.
+
+\subsubsection{``Towers of Hanoi'' revisited}
+
+Before, we look at the three famous problems, let's take another look at
+the ``Towers of Hanoi'' problem.  It is less than satisfying that the
+solution is not a value returned but just some displaying of information.
+Instead, we can replace those effects by other effects and build
+the answer in a table.  Then, that path can be the result.  Thus, we are
+free to write functions that process the path.  For example, we can now
+determine how many steps it takes for any n.  Before, we were limited by
+our willingness to read and process screens or files.
+\newpage
+\begin{alltt}
+(define towers-of-hanoi-path
+  (let ([steps '()])
+    (letrec
+      ([move
+         (extend-relation
+           (relation cut ()
+             (to-show 0 _ _ _)
+             (all cut))
+           (relation _ (n a b c)
+             (to-show n a b c)
+             (exists (m)
+               (all
+                 ((fun -) m n 1)
+                 (move m a c b)
+                 ((pred (lambda (x y)
+                          (set! steps (cons (list x y) steps))))
+                  a b)
+                 (move m c b a)))))])
+      (relation _ (n path)
+        (to-show n path)
+        (begin
+          (set! steps '())
+          (any
+            (fails (move n 'l 'm 'r))
+            (== path (reverse steps))))))))
+\end{alltt}
+
+\begin{alltt}
+> (exists (path) (solution (towers-of-hanoi-path 3 path)))
+
+(3 ((l m) (l r) (m r) (l m) (r l) (r m) (l m)))
+\end{alltt}
+
+The primary difference between this version and the earlier version is that
+in this version there is a lexical variable \texttt{steps} that holds each
+step, where before we printed each step.  Then, by forcing failure with
+\texttt{fails}, we are guaranteed to process the second rule.  It always
+succeeds, since \texttt{path} is guaranteed to be uninstantiated. We
+reverse the steps so that it looks like our earlier output. Everything else
+is the same.  This solution would work with the earlier unifier, since it
+does not look at the type of the term it is associating with \texttt{path},
+but a strongly-typed system would complain.
+
+\texttt{Exercise 13:} Use this definition of
+\texttt{towers-of-hanoi-path} to produce a table of the number of
+disks with the number of steps it takes to move that number of disks.
+
+Our unifier now handles pairs (lists), so we can continue the
+discussion of the three famous problems.
+
+\subsection{The \emph{Append} Problem}
+
+We can often mimic value-returning functions with relations
+that take an \emph{additional} argument.  For example,  we
+can write a function that concatenates \emph{two} lists.
+
+\begin{alltt}
+(define concat
+  (lambda (xs ys)
+    (cond
+      [(null? xs) ys]
+      [else (cons (car xs) (concat (cdr xs) ys))])))
+\end{alltt}
+
+\begin{alltt}
+> (concat '(a b c) '(u v))
+
+(a b c u v)
+\end{alltt}
+
+\noindent
+or the equivalent
+
+\begin{alltt}
+> (exists (q) (solve 1 ((fun concat) q '(a b c) '(u v))))
+
+(((a b c u v) (a b c) (u v)))
+\end{alltt}
+
+\noindent
+And we can write the corresponding relation over \emph{three} lists,
+
+\begin{alltt}
+(define concat
+  (extend-relation
+    (fact (xs) '() xs xs)
+    (relation _ (x xs ys zs)
+      (to-show `(,x . ,xs) ys `(,x . ,zs))
+      (concat xs ys zs))))
+\end{alltt}        
+\noindent
+
+\begin{alltt}
+> (exists (q) (solve 6 (concat '(a b c) '(u v) q)))
+
+(((a b c) (u v) (a b c u v)))
+\end{alltt}
+
+\noindent which determines that there is only one answer and which
+shows if we concatenate \texttt{(a b c)} to \texttt{(u v)}, we get
+\texttt{(a b c u v)}. But, we can move \texttt{q} to another position.
+
+\begin{alltt}
+> (exists (q) (solve 6 (concat '(a b c) q '(a b c u v))))
+
+(((a b c) (u v) (a b c u v)))
+\end{alltt}
+
+\noindent
+This time we determine that \texttt{q} should be \texttt{(u v)}, which
+is \emph{not} possible with \texttt{concat} as a function.
+Similarly, we can determine that \texttt{q} is \texttt{(a b c)}.
+
+\begin{alltt}
+> (exists (q) (solve 6 (concat q '(u v) '(a b c u v))))
+
+(((a b c) (u v) (a b c u v)))
+\end{alltt}
+
+\noindent
+But what if we include another variable?
+\begin{alltt}
+> (exists (q r) (solve 6 (concat q r '(a b c u v))))
+
+((() (a b c u v) (a b c u v))
+ ((a) (b c u v) (a b c u v))
+ ((a b) (c u v) (a b c u v))
+ ((a b c) (u v) (a b c u v))
+ ((a b c u) (v) (a b c u v))
+ ((a b c u v) () (a b c u v)))
+\end{alltt}
+
+\noindent
+We get all the ways that we might concatenate
+two lists to form \texttt{(a b c u v)}.
+Now, what if we include yet another variable?
+
+\begin{alltt}
+> (exists (q r s) (solve 6 (concat q r s)))
+
+((() xs.1 xs.1)
+((x.1) xs.1 (x.1 . xs.1))
+((x.1 x.2) xs.1 (x.1 x.2 . xs.1))
+((x.1 x.2 x.3) xs.1 (x.1 x.2 x.3 . xs.1))
+((x.1 x.2 x.3 x.4) xs.1 (x.1 x.2 x.3 x.4 . xs.1))
+((x.1 x.2 x.3 x.4 x.5) xs.1 (x.1 x.2 x.3 x.4 x.5 . xs.1)))
+\end{alltt}
+
+\noindent
+Here we see that the empty list and any list yield that list.  Then we
+get all sorts of constructed lists with the first $N$ elements of the
+list chosen as variables of that length.  There is no bound on the
+number of answers.  
+
+We can also get an unbounded number of answers with only two variables.
+
+\begin{alltt}
+> (exists (q r) (solve 6 (concat q '(u v) `(a b c . ,r))))
+
+(((a b c) (u v) (a b c u v))
+((a b c x.1) (u v) (a b c x.1 u v))
+((a b c x.1 x.2) (u v) (a b c x.1 x.2 u v))
+((a b c x.1 x.2 x.3) (u v) (a b c x.1 x.2 x.3 u v))
+((a b c x.1 x.2 x.3 x.4) (u v) (a b c x.1 x.2 x.3 x.4 u v))
+((a b c x.1 x.2 x.3 x.4 x.5) (u v) (a b c x.1 x.2 x.3 x.4 x.5 u v)))
+\end{alltt}
+
+\noindent
+The first answer is the one we expect, where \texttt{q} is
+instantiated to \texttt{(a b c)} and \texttt{r} is instantiated to
+\texttt{(u v)}.  But, then we discover that \texttt{q} could be a bit
+longer.  
+
+And here is an unbounded number of answers with a single variable.
+
+\begin{alltt}
+> (exists (q) (solve 6 (concat q '() q)))
+
+((() () ())
+((x.1) () (x.1))
+((x.1 x.2) () (x.1 x.2))
+((x.1 x.2 x.3) () (x.1 x.2 x.3))
+((x.1 x.2 x.3 x.4) () (x.1 x.2 x.3 x.4))
+((x.1 x.2 x.3 x.4 x.5) () (x.1 x.2 x.3 x.4 x.5)))
+\end{alltt}
+
+\noindent
+Again, the first answer is the one that we expect, but
+the others make sense, too, since no matter what we replace
+the variables \texttt{x.}\emph{i} with, we create a
+legitimate equation.
+
+A program like \texttt{concat} is what excited the
+logic programming world.  It was called \texttt{append}
+because of the use of that name in Lisp, but since 
+\texttt{concat} is defined globally, it would be wise to
+avoid overriding the built-in Scheme function, \texttt{append}.
+
+\subsection{The Type-Inference Problem}
+
+The second famous problem is the type-inference problem.  We start by
+considering integers and booleans.  Next, we include some familiar
+primitives.  When we are comfortable with those features we include
+conditionals, followed by lexical variables, then \texttt{lambda},
+application, and \texttt{fix} expressions. Finally, we include
+polymorphic \texttt{let}.  Type inference allows for the system to
+determine a unique type if the expression has one. 
+
+\subsubsection{Buiding a type inferencer with small relations}
+
+The language for which we infer a type is basically a lambda-calculus
+variant of Scheme.  We have chosen, however, to parse this variant
+into a language where every expression has a tag as in \texttt{parse},
+below.  We have also included an \texttt{unparse}, below, to get back
+the original Scheme variant.
+
+\begin{alltt}
+(define parse
+  (lambda (e)
+    (cond
+      [(symbol? e) `(var ,e)]
+      [(number? e) `(intc ,e)]
+      [(boolean? e) `(boolc ,e)]
+      [else 
+        (case (car e)
+          [(zero?) `(zero? ,(parse (cadr e)))]
+          [(sub1) `(sub1 ,(parse (cadr e)))]
+          [(+) `(+ ,(parse (cadr e)) ,(parse (caddr e)))]
+          [(if) `(if ,(parse (cadr e)) ,(parse (caddr e)) ,(parse (cadddr e)))]
+          [(fix) `(fix ,(parse (cadr e)))]
+          [(lambda) `(lambda ,(cadr e) ,(parse (caddr e)))]
+          [(let) `(let ([,(car (car (cadr e))) ,(parse (cadr (car (cadr e))))])
+                    ,(parse (caddr e)))]
+          [else `(app ,(parse (car e)) ,(parse (cadr e)))])])))
+\end{alltt}
+\newpage
+\begin{alltt}
+(define unparse
+  (lambda (e)
+    (case (car e)
+      [(var) (cadr e)]
+      [(intc) (cadr e)]
+      [(boolc) (cadr e)]
+      [(zero?) `(zero? ,(unparse (cadr e)))]
+      [(sub1) `(sub1 ,(unparse (cadr e)))]
+      [(+) `(+ ,(unparse (cadr e)) ,(unparse (caddr e)))]
+      [(if) `(if ,(unparse (cadr e)) ,(unparse (caddr e)) ,(unparse (cadddr e)))]
+      [(fix) `(fix ,(unparse (cadr e)))]
+      [(lambda) `(lambda (,(car (cadr e))) ,(unparse (caddr e)))]
+      [(let) 
+       `(let ([,(car (car (cadr e)))
+               ,(unparse (cadr (car (cadr e))))])
+          ,(unparse (caddr e)))]
+      [(app) `(,(unparse (cadr e)) ,(unparse (caddr e)))])))
+\end{alltt}
+
+While you are reading the code for the type system, \texttt{!-}, it is
+important to keep in mind that although we are presenting a type
+inferencing algorithm, it is just a relatively simple logic program.
+
+\texttt{!-} corresponds to the mathematical symbol $\vdash$
+(turnstile) and reads ``we can infer.''  That is, from looking at the
+relation \texttt{int-rel} and the definition of \texttt{!-}, below, we
+can read it as, ``From \texttt{g} \emph{we can infer} that \texttt{x}
+is of type \texttt{int} provided that \texttt{x} is an \texttt{intc}.''
+For now, we leave \texttt{g} unspecified.
+
+In the expressions below, we use \texttt{int}, \texttt{bool},
+\texttt{-->} for our type constructors.  We define \texttt{int}
+and \texttt{bool} to avoid using lots of quotes.
+
+\begin{alltt}
+(define int 'int)
+
+(define bool 'bool)
+\end{alltt}
+
+\begin{alltt}
+(define int-rel
+  (fact (g x) g `(intc ,x) "int"))
+
+(define !- int-rel)
+\end{alltt}
+
+\begin{alltt}
+(define g (exists (g) g))
+
+> (let ([result (solution (!- g (parse 17) int))])
+    `(!- ,(car result) ,(unparse (cadr result)) ,(caddr result)))
+
+(!- g.1 17 int)
+\end{alltt}
+\newpage
+\begin{alltt}
+(define ? (exists (?) ?))
+
+> (let ([result (solution (!- g (parse 17) int))])
+    `(!- ,(car result) ,(unparse (cadr result)) ,(caddr result)))
+
+(!- g.1 17 int)
+\end{alltt}
+
+In the first example, we verify that \texttt{17} is of type
+\texttt{int}.  In the second example, the type is unknown, but
+whatever is instantiated to the logic variable \texttt{?} is the
+type.  In this case, \texttt{?} is instantiated to \texttt{int}.
+The existence of \texttt{g.1} in the answers indicates that \texttt{g}
+is uninstantiated, so these work for all possible \texttt{g}s.
+
+As a way to abstract the behavior of our testing technology, we
+introduce \texttt{infer-type}, which abbreviates some of the
+repetition of the first two examples and supports the idea that
+the expression might not have a type.
+
+\begin{alltt}
+(define-syntax infer-type
+  (syntax-rules ()
+    [(infer g term type)
+     (cond
+       [(solution (!- g (parse term) type))
+        => (lambda (result)
+             `(!- ,(car result) ,(unparse (cadr result)) ,(caddr result)))]
+       [else #f])]))
+\end{alltt}
+
+Next, we include \texttt{bool-rel}, below, in \texttt{!-}.
+\begin{alltt}
+(define bool-rel
+  (fact (g x) g `(boolc ,x) bool))
+
+(define !- (extend-relation int-rel bool-rel))
+\end{alltt}
+
+\texttt{Exercise 14:} Test \texttt{infer-type} over true and false.
+
+Before we include relations for the arithmetic primitives, we
+introduce a special \texttt{all}, below, which places \texttt{cut} as
+the first antecedent and also places \texttt{cut} after each
+antecedent.  This means whenever there is failure, all the antecedents
+fail.  We do this because our type inferencer has this deterministic
+behavior.  There cannot be any backtracking.  Once a decision is made,
+it cannot be reconsidered.
+
+Now we can extend \texttt{!-}, below, with the relations
+\texttt{zero?-rel}, \texttt{sub1-rel}, and \texttt{+-rel}, which
+correspond to the primitves \texttt{zero?}, \texttt{sub1}, and
+\texttt{+}, respectively.
+
+\begin{alltt}
+(define zero?-rel
+  (relation cut (g x)
+    (to-show g `(zero? ,x) bool)
+    (deterministic-all cut (!- g x int))))
+
+(define sub1-rel
+  (relation cut (g x)
+    (to-show g `(sub1 ,x) int)
+    (deterministic-all cut (!- g x int))))
+
+(define +-rel
+  (relation cut (g x y)
+    (to-show g `(+ ,x ,y) int)
+    (deterministic-all cut (!- g x int) (!- g y int))))
+\end{alltt}
+
+\begin{alltt}
+(define !- (extend-relation !- zero?-rel sub1-rel +-rel))
+\end{alltt}
+
+\begin{alltt}
+> (infer-type g '(zero? 24) ?)
+
+(!- g.1 (zero? 24) bool)
+\end{alltt}
+
+\begin{alltt}
+> (infer-type g '(zero? (+ 24 50)) ?)
+
+(!- g.1 (zero? (+ 24 50)) bool)
+\end{alltt}
+
+The type system can infer that \texttt{(zero? 24)} is of type
+\texttt{bool}, because it can infer that \texttt{24} is of type
+\texttt{int}.  It can infer that \texttt{(+ 24 50)} is of type
+\texttt{int}, so the answer in the second example must be of type
+\texttt{bool}.  We can, of course, make more complicated examples
+using \texttt{zero?}, \texttt{sub1}, and \texttt{+}, but if they have
+a type, it is \texttt{int} or \texttt{bool}.  For example,
+
+\begin{alltt}
+> (infer-type g '(zero? (sub1 (+ 18 (+ 24 50)))) ?)
+
+(!- g.1 (zero? (sub1 (+ 18 (+ 24 50)))) bool)
+\end{alltt}
+
+Although our parser (and unparser) expects a larger language, at each
+stage of defining \texttt{!-}, we are writing a type inferencer for a
+larger and larger language.  When we have defined \texttt{!-} for
+\texttt{let}, then we have a type inferencer for the full language.
+To reiterate, the language starts out very small! It only contains
+integers.  Then, as we progress, it gets bigger.  But, the beauty of
+type inferencing, is that these little relations grow naturally.  Of
+course, we cannot write the relation for \texttt{zero?}  until we have
+a relation for numbers and booleans, so there is a natural ordering to
+some extent.
+
+In this type system, we must preserve the property that every
+well-typed expression has \emph{one} type.  So, what do we do about
+conditionals?  Easy.  We require that not only must the test be of
+type \texttt{bool}, but the true branch and the false branch must
+have the same type.  In a language without variables, \texttt{lambda}
+expressions, applications, \texttt{fix} expressions, and \texttt{let}
+expressions, that means that they must both be of type \texttt{int}
+or they must both be of type \texttt{bool}.  By extending
+\texttt{!-}, we can now handle \texttt{if} expressions.
+
+\begin{alltt}
+(define if-rel
+  (relation cut (g t test conseq alt)
+    (to-show g `(if ,test ,conseq ,alt) t)
+    (deterministic-all cut (!- g test bool) (!- g conseq t) (!- g alt t))))
+\end{alltt}
+
+\begin{alltt}
+(define !- (extend-relation !- if-rel))
+\end{alltt}
+
+\begin{alltt}
+> (infer-type g '(if (zero? 24) 3 4) ?)
+
+(!- g.1 (if (zero? 24) 3 4) int)
+\end{alltt}
+
+\noindent
+Not surprisingly, we discover that the type of the test is \texttt{bool}
+and the type of the entire expression is \texttt{int}.
+
+Next, we include lexical variables, which are represented using
+symbols.  What is the type of \texttt{(zero? a)}?  If the type of
+\texttt{a} is \texttt{int}, then we know that the type of the entire
+expression is \texttt{bool}, but if the type of \texttt{a} is
+\texttt{bool}, then the expression does not have a type.  How do we
+determine the type of \texttt{a}?  We look in \texttt{g}, which is a
+type environment that associates lexical (both generic and
+non-generic) variables with types.  So far we have ignored \texttt{g},
+but now we consider its content using \texttt{non-generic} (a tag)
+variables.  We extend \texttt{!-} to include a rule for variables.
+
+\begin{alltt}
+(define var-rel
+  (relation cut (g v t)
+    (to-show g `(var ,v) t)
+    (deterministic-all cut (env g v t))))
+
+(define !- (extend-relation !- var-rel))
+\end{alltt}
+
+\begin{alltt}
+(define non-generic-match-env
+  (fact (g v t) `(non-generic ,v ,t ,g) v t))
+
+(define non-generic-recursive-env
+  (relation cut (g v t w type-w)
+    (to-show `(non-generic ,w ,type-w ,g) v t)
+    (deterministic-all cut (unequal? w v) (instantiated g) (env g v t))))
+
+(define env (extend-relation non-generic-match-env non-generic-recursive-env)))
+\end{alltt}
+
+\begin{alltt}
+(define unequal?
+  (extend-relation
+    (relation cut (a)
+      (to-show a a)
+      (all cut fail))
+    (relation _ (a b)
+      (to-show a b)
+      (fails fail))))
+\end{alltt}
+
+\texttt{Exercise 15:} Implement the global antecedent
+\texttt{failure}, which fails to fail.  It could be used in
+\texttt{unequal?}, above.
+
+\begin{alltt}
+> (solution (env `(non-generic b int (non-generic a bool ,g)) 'a ?))
+
+((non-generic b int (non-generic a bool g.1)) a bool)
+\end{alltt}
+
+\begin{alltt}
+> (infer-type `(non-generic a int ,g) '(zero? a) ?)
+
+(!- (non-generic a int g.1) (zero? a) bool)
+\end{alltt}
+
+\begin{alltt}
+> (infer-type `(non-generic b bool (non-generic a int ,g)) '(zero? a) ?)
+
+(!- (non-generic b bool (non-generic a int g.1)) (zero? a) bool)
+\end{alltt}
+
+The first example tests \texttt{env}.  The environment starts out with
+\texttt{int} bound to \texttt{b} and \texttt{bool} bound to
+\texttt{a}.  The \texttt{non-generic-recursive} relation succeeds,
+since we are looking up \texttt{a}, and then the
+\texttt{non-generic-match-env} relation succeeds, since we find
+\texttt{a}.  In the second answer, we have one item in the type
+environment and the \texttt{non-generic-match-env} relation is
+followed. In the third example, we have two items in the type
+environment, so we take the \texttt{non-generic-recursive} relation, 
+then the \texttt{non-generic-match-env} relation succeeds,
+since we have stripped off \texttt{b} and \texttt{bool}, leaving
+\texttt{a} and its associated type.
+
+Now that we can deal with lexical (non-generic) variables, we can
+consider the relation for \texttt{lambda} expressions by extending
+\texttt{!-}.
+
+\begin{alltt}
+(define lambda-rel
+  (relation cut (g v t body type-v)
+    (to-show g `(lambda (,v) ,body) `(--> ,type-v ,t))
+    (deterministic-all cut (!- `(non-generic ,v ,type-v ,g) body t))))
+
+(define !- (extend-relation !- lambda-rel))
+\end{alltt}
+\newpage
+\begin{alltt}
+> (infer-type 
+    `(non-generic b bool (non-generic a int ,g))
+    '(lambda (x) (+ x 5))
+    ?)
+
+(!- (non-generic b bool (non-generic a int g.1))
+    (lambda (x) (+ x 5))
+    (--> int int))
+\end{alltt}
+
+\begin{alltt}
+> (infer-type
+    `(non-generic b bool (non-generic a int ,g))
+    '(lambda (x) (+ x a))
+    ?)
+
+(!- (non-generic b bool (non-generic a int g.1))
+    (lambda (x) (+ x a))
+    (--> int int))
+\end{alltt}
+
+\begin{alltt}
+> (infer-type g '(lambda (a) (lambda (x) (+ x a))) ?)
+
+(!- g.1 (lambda (a) (lambda (x) (+ x a)))
+         (--> int (--> int int)))
+\end{alltt}
+
+In the first answer, we see that we have an arrow (\texttt{-->})
+type.  The left argument of the arrow type is the type of argument
+coming into the function, and the right argument of the arrow type is
+the type of the result going out of the function.  So, the inferred
+type is a function whose argument is an integer and whose result is an
+integer.  The second answer states that the argument is an integer,
+but consults the type environment to make sure that the argument going
+out is an integer.  In the third example, we forget about the first
+environment, because there are no free variables in the expression. We
+see that the argument coming in is an integer, but the result is an
+arrow type, which takes in an integer and returns an integer.  Close
+inspection of the type (directly aligned below the item it is typing)
+shows that for each \texttt{lambda} there is an arrow and for each
+formal parameter there is a type.  Also, there is a type for the body
+of each \texttt{lambda}.  If we think about the type from the inside
+out, we see that \texttt{(+ x a)} is an integer only if \texttt{x} and
+\texttt{a} are integers.  That determines the type of the inner
+\texttt{lambda} and then the type of the outer \texttt{lambda}.  It is
+important that we \emph{can} infer the type of \texttt{lambda}
+expressions, even though we do not yet have application in our language.
+This should be a bit of a surprise.
+
+We come next to application.  In determining the type of an
+application, we know that the operator in an application should be
+some arrow type.  Furthermore, once we know that type, we know that
+the type going out of that type is the same as the type of the entire
+application and we know that the operand of the application must be
+the type going into that type.  
+\newpage
+\begin{alltt}
+(define app-rel
+  (relation cut (g t rand rator)
+    (to-show g `(app ,rator ,rand) t)
+    (exists (t-rand)
+      (deterministic-all cut (!- g rator `(--> ,t-rand ,t)) (!- g rand t-rand)))))
+
+(define !- (extend-relation !- app-rel))
+\end{alltt}
+
+\begin{alltt}
+> (infer-type g '(lambda (f) (lambda (x) ((f x) x))) ?)
+
+(!- g.1
+    (lambda (f) (lambda (x) ((f x) x)))
+    (-->
+      (--> t.1 (--> t.1 t.2))
+      (--> t.1 t.2)))
+\end{alltt}
+
+Here, the type of \texttt{f} is \texttt{(--> t.1 (--> t.1 t.2))}, so
+the type of \texttt{x} must be \texttt{t.1}, and the type of
+\texttt{(lambda (x) ((f x) x))} must be \texttt{(--> t.1 t.2)}.
+As should be evident, once we add a relation for application, things
+start to get a bit tricky.  We can no longer rely on aligning the
+\texttt{lambda}s with the arrows.  Here we have two \texttt{lambda}s
+and four arrows.  Yet another surprise.  Our inferencer is starting
+to be clever.
+
+We may be tempted to use our language to write (and test) recursive
+functions.  To test the expression, we use the call-by-value \texttt{fix}
+primitive:
+
+\begin{alltt}
+(define fix-rel
+  (relation cut (g rand t)
+    (to-show g `(fix ,rand) t)
+    (deterministic-all cut (!- g rand `(--> ,t ,t)))))
+
+(define !- (extend-relation !- fix-rel))
+\end{alltt}
+
+In Scheme, we define \texttt{fix}, below.  Although \texttt{fix} can
+be defined using simple \texttt{lambda} terms as in the \texttt{Y}
+combinator, \emph{this} type system cannot determine a type for it.
+Thus, \texttt{fix} must be primitive and the associated primitive
+call's type can be inferred as above.
+
+\begin{alltt}
+(define fix
+  (lambda (e)
+    (e (lambda (z) ((fix e) z)))))
+\end{alltt}
+
+\begin{alltt}
+> (infer-type
+    g
+    '((fix (lambda (sum)
+             (lambda (n)
+               (if (zero? n)
+                 0
+                 (+ n (sum (sub1 n)))))))
+      10)
+    ?)
+
+(!- g.1
+    ((fix (lambda (sum)
+            (lambda (n)
+              (if (zero? n)
+                0 
+                (+ n (sum (sub1 n)))))))
+     10)
+    int)
+\end{alltt}
+
+Let's consider the following expression
+\begin{alltt}
+> ((fix (lambda (sum)
+          (lambda (n)
+            (+ n (sum (sub1 n))))))
+   10)
+\end{alltt}
+
+It fails to terminate.  But, can we infer its type?  Yes, \emph{an
+expression may have a type, even if evaluating it would lead to
+nontermination.}  This is a confusing aspect of type inference.  We
+know from the ``Halting Problem'' that we cannot tell in advance
+whether evaluating an expression will terminate, but \emph{this}
+type inferencing system is guaranteed to terminate.  Thus, we
+can infer the type before we run it.  As a result, information that
+the run-time system can learn from the type (or the process of
+inferring the type) can be put to good use.  Here is its type.
+
+\begin{alltt}
+> (infer-type
+    g
+    '((fix (lambda (sum)
+             (lambda (n)
+               (+ n (sum (sub1 n))))))
+      10)
+    ?)
+
+(!- g.1
+    ((fix (lambda (sum) (lambda (n) (+ n (sum (sub1 n)))))) 10)
+    int)
+\end{alltt}
+
+\newpage
+\subsection{Polymorphic \texttt{let}}
+
+The \texttt{let}-expression is a bit more subtle.  Let's take a look at
+an expression that should type check, but won't in the absence of
+\texttt{let}.
+
+\begin{alltt}
+> (infer-type
+    g
+    '((lambda (f)
+        (if (f (zero? 5))
+          (+ (f 4) 8)
+          (+ (f 3) 7)))
+      (lambda (x) x))
+    ?)
+#f
+\end{alltt}
+
+Because \texttt{f} becomes the non-generic identity, once a type for
+\texttt{f} is determined, it must stay the same.  Obviously, we would
+expect that the evaluation of ``\texttt{((lambda (f) ...) ...)}
+to be 10, but it has no type.  If, however, we change the
+expression to use \texttt{let}
+\begin{alltt}
+(let ([f (lambda (x) x)])
+  (if (f (zero? 5))
+    (+ (f 4) 8)
+    (+ (f 3) 7)))
+\end{alltt}
+
+\noindent
+and think about $\beta$-substituting for \texttt{f} throughout, then
+we can see that this expression should have a type, \texttt{int}.
+Instead of doing the substitution, we mark certain variables
+\emph{generic} as they are placed in the environment. 
+
+This is the \emph{polymorphic} \texttt{let}, since the variable is
+tagged with \texttt{generic} in the environment.  If the variable were
+tagged with \texttt{non-generic}, then this would be the familiar
+\texttt{let}.  We have only to determine what happens in environment
+lookup when a variable with a \texttt{generic} tag is an arrow type.
+Those who wish to include a more general \texttt{let} expression, one
+whose binding variable is bound to a \texttt{non-generic}, feel free
+to do so, but for our purposes, we assume that all right-hand sides of
+\texttt{let} expressions are \texttt{lamdda} expressions.
+
+\begin{alltt}
+(define polylet-rel
+  (relation cut (g v rand body t)
+    (to-show g `(let ([,v ,rand]) ,body) t)
+    (exists (t-rand)
+      (deterministic-all cut
+        (!- g rand t-rand)
+        (!- `(generic ,v ,t-rand ,g) body t)))))
+
+(define !- (extend-relation !- polylet-rel))
+\end{alltt}
+
+In order to implement these generics, we introduce a relation,
+\texttt{instantiate}, which uses \texttt{fun-nocheck}, whose purpose
+is to associate the type \texttt{(--> targ tresult)} with the type
+\texttt{t}.
+
+\begin{alltt}
+(define instantiate
+  (fun-nocheck
+    (letrec
+        ([instantiate-term
+           (lambda (t env)
+             (cond
+               [(lv? t)
+                (cond
+                  [(assv t env)
+                   => (lambda (pr)
+                        (values (cdr pr) env))]
+                  [else (let ([new-lv (lv (lv-name t))])
+                          (values new-lv (cons `(,t . ,new-lv) env)))])]
+               [(pair? t)
+                (let-values (a-t env) (instantiate-term (car t) env)
+                  (let-values (d-t env) (instantiate-term (cdr t) env)
+                    (values (cons a-t d-t) env)))]
+               [else (values t env)]))])
+      (lambda (t)
+        (let-values (ct env) (instantiate-term t '())
+          ct)))))
+
+(define generic-base-env
+  (relation cut (g v targ tresult t)
+    (to-show `(generic ,v (--> ,targ ,tresult) ,g) v t)
+    (deterministic-all cut (instantiate t `(--> ,targ ,tresult)))))
+
+(define generic-recursive-env
+  (relation cut (g v w type-w t)
+    (to-show `(generic ,w ,type-w ,g) v t)
+    (deterministic-all cut (env g v t))))
+
+(define generic-env
+  (extend-relation generic-base-env generic-recursive-env))
+
+(define env (extend-relation env generic-env))
+\end{alltt}
+\newpage
+Now that we have extended our environments to handle generic
+as well as non-generic variables, we can infer the right type.
+
+\begin{alltt}
+> (infer-type 
+    g
+    '(let ([f (lambda (x) x)])
+             (if (f (zero? 5))
+               (+ (f 4) 8)
+               (+ (f 3) 7)))
+    ?)
+
+(!- g.1
+    (let ([f (lambda (x) x)])
+      (if (f (zero? 5))
+        (+ (f 4) 8)
+        (+ (f 3) 7)))
+    int)
+\end{alltt}
+
+\subsubsection{Long cuts}
+Each call returns whenever the computation backs into the cut, but
+that means that recursive calls just return by following the control
+stack of procedure calls.  Instead, we would prefer to pick the point
+where we want to be whenever failure backs into a cut.  This is
+possible and we demonstrate it by passing a specific cut into the
+function \texttt{!-generator}, below.  Thus no matter how deeply
+nested we are in an expression that we wish to type check, as soon as
+an invalid expression occurs or we have a type violation, we jump
+\emph{way} out.  In \texttt{deterministic-all}, it takes the
+the long \texttt{cut}, not a local short one.
+
+\newpage
+\begin{alltt}
+(define !-generator
+  (lambda (long-cut)
+    (letrec
+      ([!- (extend-relation
+             (relation _ (g v t)
+               (to-show g `(var ,v) t)
+               (deterministic-all long-cut (env g v t)))
+             (relation _ (g x)
+               (to-show g `(intc ,x) int)
+               (deterministic-all long-cut))
+             (relation _ (g x)
+               (to-show g `(boolc ,x) bool)
+               (deterministic-all long-cut))
+             (relation _ (g x)
+               (to-show g `(zero? ,x) bool)
+               (deterministic-all long-cut (!- g x int)))
+             (relation _ (g x)
+               (to-show g `(sub1 ,x) int)
+               (deterministic-all long-cut (!- g x int)))
+             (relation _ (g x y)
+               (to-show g `(+ ,x ,y) int)
+               (deterministic-all long-cut (!- g x int) (!- g y int)))
+             (relation _ (g t test conseq alt)
+               (to-show g `(if ,test ,conseq ,alt) t)
+               (deterministic-all long-cut (!- g test bool) (!- g conseq t) (!- g alt t)))
+             (relation _ (g v t body type-v)
+               (to-show g `(lambda (,v) ,body) `(--> ,type-v ,t))
+               (deterministic-all long-cut (!- `(non-generic ,v ,type-v ,g) body t)))
+             (relation _ (g t rand rator)
+               (to-show g `(app ,rator ,rand) t)
+               (exists (t-rand)
+                 (deterministic-all long-cut
+                   (!- g rator `(--> ,t-rand ,t))
+                   (!- g rand t-rand))))
+             (relation _ (g rand t)
+               (to-show g `(fix ,rand) t)
+               (deterministic-all long-cut (!- g rand `(--> ,t ,t))))
+             (relation _ (g v rand body t)
+               (to-show g `(let ([,v ,rand]) ,body) t)
+               (exists (t-rand)
+                 (deterministic-all long-cut
+                   (!- g rand t-rand)
+                   (!- `(generic ,v ,t-rand ,g) body t)))))])
+      !-)))
+\end{alltt}
+\newpage
+\begin{alltt}
+(define !-
+  (relation cut (g exp t)
+    (to-show g exp t)
+    ((!-generator cut) g exp t)))
+\end{alltt}
+
+And, now we can test it with \texttt{infer-type} as before.
+
+\subsubsection{Type inhabitation}
+
+We are going to do an experiment and in order to get the results
+we want, we need to respecify the order of the relations.  Thus
+we redefine \texttt{!-}.
+
+\begin{alltt}
+(define !-
+  (extend-relation
+    var-rel int-rel bool-rel zero?-rel sub1-rel +-rel 
+    if-rel lambda-rel app-rel fix-rel polylet-rel))
+\end{alltt}
+
+Here are four, perhaps unexpected, examples.
+
+\begin{alltt}
+> (let ([res (exists (g ?)
+               (solution (!- g ? '(--> int int))))])
+    `(!- ,(car res) ,(unparse (cadr res)) ,(caddr res)))
+
+(!- (non-generic v.1 (--> int int) g.1)
+    v.1
+    (--> int int))
+\end{alltt}
+
+\begin{alltt}
+> (let ([res (exists (g la f b)
+               (solution
+                 (!- g `(,la (,f) ,b) '(--> int int))))])
+    `(!- ,(car res) ,(unparse (cadr res)) ,(caddr res)))
+
+(!- g.1 (lambda (v.1) v.1) (--> int int))
+\end{alltt}
+
+\begin{alltt}
+> (let ([res (exists (g h r q z y t)
+               (solution 
+                  (!- g `(,h ,r (,q ,z ,y)) t)))])
+    `(!- ,(car res) ,(unparse (cadr res)) ,(caddr res)))
+
+(!- (non-generic v.1 int g.1) (+ v.1 (+ v.1 v.1)) int)
+\end{alltt}
+
+\begin{alltt}
+> (let ([res (exists (g h r q z y t u v)
+               (solution
+                 (!- g `(,h ,r (,q ,z ,y)) `(,t ,u ,v))))])
+    `(!- ,(car res) ,(unparse (cadr res)) ,(caddr res)))
+
+(!- g.1 (lambda (v.1) (+ v.1 v.1)) (--> int int))
+\end{alltt}
+
+The first example attempts to find an expression whose type is
+\texttt{(--> int int)}, but instead finds a type environment that
+binds that type to the variable \texttt{v.1}, and then the expression is
+trivially \texttt{v.1}.  The second example produces an expression
+given the type.  This is answering the question, ``What expression
+\emph{inhabits} that type?''  In our case, the identity function
+inhabits that type.  But, to make these first two examples work, we
+had to place \texttt{var-rel} first in the definition of
+\texttt{!-}, above.  In the third example, it infers that \texttt{t}
+must be of \texttt{int} type.  Then since there is only one binary
+operation that returns an \texttt{int} (i.e., \texttt{+}), it
+determines \texttt{q} and \texttt{h}.  Next, we can infer that \texttt{r},
+\texttt{z}, and \texttt{y} must be of \texttt{int} type, and what is
+easier than making them all the same variable and placing it in the
+initial type environment.  The last example only differs in the shape
+of the resultant type.  Here it assumes that since the type contains
+three parts, it must be an arrow type.  That means that \texttt{h}
+must be the symbol \texttt{lambda}. Once again the only binary
+operator is \texttt{+} making \texttt{z} and \texttt{y} be of
+\texttt{int} type.
+
+\subsection{Prolog's \texttt{name} as a relation}
+
+Consider treating invertible binary operators as three-place
+relations. The function
+\texttt{invertible-binary-function->ternary-relation}, below, expects
+that at most one of the three arguments is a variable and solves the
+problem by determining which of the three variables is uninstantiated.
+
+\begin{alltt}
+(define invertible-binary-function->ternary-relation
+  (lambda (op inverted-op)
+    (extend-relation
+      (relation _ (x y z)
+        (to-show x y z)
+        (all (fails (instantiated z)) ((fun op) z x y)))
+      (relation _ (x y z)
+        (to-show x y z)
+        (all (fails (instantiated y)) ((fun inverted-op) y z x)))
+      (relation _ (x y z)
+        (to-show x y z)
+        (all (fails (instantiated x)) ((fun inverted-op) x z y)))
+      (relation _ (x y z)
+        (to-show x y z)
+        ((fun op) z x y)))))
+
+(define ++ (invertible-binary-function->ternary-relation + -))
+(define -- (invertible-binary-function->ternary-relation - +))
+(define ** (invertible-binary-function->ternary-relation * /))
+(define // (invertible-binary-function->ternary-relation / *))
+\newpage
+> (exists (x) (solution (++ x 16.0 8)))
+
+(-8.0 16.0 8)
+
+> (exists (x) (solution (** 10 x 50)))
+
+(10 5 50)
+
+> (exists (x) (solution (-- 10 7 x)))
+
+(10 7 3)
+\end{alltt}
+
+And we can do something similar with invertible unary functions.
+\begin{alltt}
+(define invertible-unary-function->binary-relation
+  (lambda (op inverted-op)
+    (extend-relation
+      (relation _ (x y)
+        (to-show x y)
+        (all (fails (instantiated y)) ((fun op) y x)))
+      (relation _ (x y)
+        (to-show x y)
+        (all (fails (instantiated x)) ((fun inverted-op) x y)))
+      (relation third _ (x y)
+        (to-show x y)
+        (begin (pretty-print "Third rule") ((fun op) y x))))))
+\end{alltt}
+
+\begin{alltt}
+(define symbol->lnum
+  (lambda (sym)
+    (map char->integer (string->list (symbol->string sym)))))
+
+(define lnum->symbol
+  (lambda (lnums)
+    (string->symbol (list->string (map integer->char lnums)))))
+
+(define name
+  (invertible-unary-function->binary-relation symbol->lnum lnum->symbol))
+\end{alltt}
+\begin{alltt}
+> (exists (x) (solution (name 'sleep x)))
+
+(sleep (115 108 101 101 112))
+
+> (exists (x) (solution (name x '(115 108 101 101 112))))
+
+(sleep (115 108 101 101 112))
+\end{alltt}
+
+In the first example, we return the \texttt{char->integer} of each
+character in \texttt{sleep}.  In the second, given a list of integers,
+presumably derived from \texttt{char->integer}, it returns the symbol
+made from those integers.  Thus, we have the Prolog relation
+\texttt{name}.  For our purposes, which is an embedding in Scheme, it
+is probably unnecessary, but it is interesting, nonetheless, that we
+can define these two relation-generating Scheme functions.  There are
+more unary functions that can be so treated, like
+\texttt{symbol->string} and \texttt{string->symbol}, but we leave
+their inclusion to the programmer who might need them.
+
+\section{Final thoughts}
+
+One disadvantage of this implementation is that there is no obvious
+place to change the depth-first search strategy to one that supports
+breadth-first search.  This may emerge after serious contemplation.
+In its place we have made relations lexically-scoped, first-class, and
+extensible, which seems to be a fair tradeoff.  
+
+In a relation call such as \texttt{(exists (x) (foo x 'a y))} we have
+three different kinds of values.  The symbol \texttt{'a} is a raw
+value, the lexical variables, \texttt{foo} and \texttt{y}, become
+values as part of the call, and the logic variable \texttt{x} becomes
+a value (or is shared with another logic variable) when its argument
+unifies with another value.  Having the call allow for their
+intermingling clarifies why we need to manage their scopes.  Because
+the call is awaiting other arguments, we do not need to think about
+this in terms of a finished call that returns a value until these
+additional arguments are absorbed by the result of the relation call.
+
+We have given up two main features of logic programming?  First, we do
+not have meta-level operations that allow for construction of relations
+from existing relations.  This may be retrieved by building the relations
+as data structures and using \texttt{eval} to construct the actual
+relations when they are needed.  This solution leaves much to be
+desired and the way Prolog handles this is cleaner, especially since
+\texttt{eval} should only be used in the rarest of circumstances.  It
+may be possible, however, with higher-order capabilities to get
+around most of these needs.  Second, and more importantly, we have
+abandoned the database capability associated with logic
+programming. By that, we mean the ability for relations to be
+treated as a global monolithic relation.  To circumvent this
+shortcoming, one can write a driver that knows some subset (possibly
+all) of the relations and their arities and whenever a relation of a
+particular arity is invoked, it searches through all the relations of
+that arity.  This would be easy to set up with
+\texttt{extend-relation} and an association list that associates an
+arity with an extended relation of that arity. We can further
+partition this association list by replacing the arity with a type
+signature.  But, this approach would have to re-address the cut.
+Since, this browsing capability is not required by the problem domains
+we have in mind, probably it is best that it be developed on an as
+needed basis.  From the start we have been developing a tool that
+would allow for easy implementation of language-related programs such
+as type inferencers, interpreters, and compilers.  These clearly do
+not need a global database.
+\newpage
+Our goal has been to present the ideas of logic programming without
+using a lot of special features of Scheme and without losing the feel
+of programming in Scheme.  Now, we can say that the basic unsullied
+logic system interface contains basically five macros:
+\texttt{relation}, \texttt{extend-relation}, \texttt{all}
+\texttt{any}, and \texttt{solve}.  Only \texttt{relation} of these
+four must be a macro, the others can be written as functions, but then
+some of the \texttt{lambda} terms would require arbitrary arity which
+might cause us to abandon all the considerable advantages of
+\texttt{unify-sequence}.  We leave the writing of those as an
+exercise.  More sophisticated macros could make the code as
+user-friendly as one might want, but then what is going on would be
+concealed from the users.  They might want to add features of their
+own such as keeping track of all the relations that were applied
+successfully (i.e., a proof tree), but this would be quite difficult
+unless it is clear exactly how things worked.
+
+\section{Acknowledgments}
+
+This paper would not have been possible without the earlier work on
+implementing logic systems with Anurag Mendhekar.  The work with
+Anurag led to Jon Rossie's use of our logic system in the development
+of his dissertation's results.  His utilization of the tool helped us
+understand how we had to weave things together.  But, it wasn't until
+work with Mitch Wand and Chris Haynes in \emph{Essentials of
+Programming Languages, Second Edition} on the material on unification,
+substitutions, and logic programming that it seemed there might be a
+chance for a ``Poor Man's'' solution.  Steve Ganz's dissertation also
+needed an inference system.  Over the years, Steve began to see how we
+could make the seamlessness of Scheme possible by showing how to
+partition the monolithic relations into functions.  Such a function
+then represents a relation that can be invoked as a function.  Next we
+noticed that the sullied operators could also be written as functions
+with the same interface, thus removing a dispatch.  Once the dispatch
+was removed, it was easy to remove the lone remaining search down the
+antecedents.  Discovering that a non-recursive unifier was possible
+came much later.  The first implementation and discussion of
+polymorphic \texttt{let} is the work of Jeremiah Willcock.  Several
+fruitful discussions with Venkatesh Choppella led to more thought
+about the types in the code of this logic system.  We are grateful to
+Oscar Waddell for implementing \texttt{expand-only}, the partial macro
+expander.  Regretably, it cannot be made fully general, however, it
+does meet our needs.
+\end{document}
+\bibliography{rollyourown}
+\end{document}
+
