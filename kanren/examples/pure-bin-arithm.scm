@@ -136,17 +136,22 @@
 ; holds if a=0 and b>0, or if (floor (log2 a)) < (floor (log2 b))
 ; That is, we compare the length (logarithms) of two numerals
 ; For a positive numeral, its bitlength = (floor (log2 n)) + 1
+; We also make sure that 'n' is a well-formed number.
 (define <ol
   (extend-relation (n m)
     (fact () '() `(,_ . ,_))
-    (relation (x y) (to-show `(,_ . ,x) `(,_ . ,y)) (<ol x y))))
+    (fact () '(1) `(,_ ,_ . ,_))
+    (relation (x y x1 y1) (to-show `(,_ ,x1 . ,x) `(,_ ,y1 . ,y))
+      (<ol `(,x1 . ,x) `(,y1 . ,y)))))
 
-; holds if both a and b are zero
+; holds if both a and b have the same number of bits, i.e., they are zero
 ; or if (floor (log2 a)) = (floor (log2 b))
 (define =ol
   (extend-relation (n m)
     (fact () '() '())
-    (relation (x y) (to-show `(,_ . ,x) `(,_ . ,y)) (=ol x y))))
+    (fact () '(1) '(1))
+    (relation (x y x1 y1) (to-show `(,_ ,x1 . ,x) `(,_ ,y1 . ,y))
+      (=ol `(,x1 . ,x) `(,y1 . ,y)))))
 
 ; (<ol3 p1 p n m) holds iff
 ; p1 = 0 and p > 0 or
@@ -491,6 +496,18 @@
   (relation (head-let n m)
     (exists (x) (all (pos x) (++o n x m)))))
 
+; The following is an optimization: it is easier to test for the
+; length of two numbers. If one number has fewer bits than the other number,
+; the former is clearly shorter (provided that the numbers are well-formed,
+; that is, the higher-order bit is one). So we don't need to go through
+; the trouble of subtracting them.
+(define <o  ; n < m iff exists x >0 such that n + x = m
+  (relation (head-let n m)
+    (any-interleave
+      (<ol n m)
+      (all (=ol n m)
+	(exists (x) (all (pos x) (++o n x m)))))))
+
 
 ; n * m = p
 (define **o
@@ -615,10 +632,9 @@
   (relation (head-let n m q r)
     (any-interleave
 	; m has more digits than n: q=0,n=r
-      (all (== r n) (== q '()) (<ol n m) (<o n m)) 
-      ; n has the same number of digits than m
+      (all (== r n) (== q '()) (<o n m)) ; if n < m, then q=0, n=r
+      ; n is at least m and has the same number of digits than m
       (all (== q '(1)) (=ol n m) (++o r m n) (<o r m))
-      (all (== r n) (== q '()) (=ol n m) (<o n m))  ; if n < m, then q=0, n=r
       (all
 	(<ol m n)			; n has more digits than m
 					; Note that m is L-instantiated here
@@ -781,16 +797,16 @@
 (test (x) (<o x (build 4)))
 (test (x) (all (== x (build 3)) (<o x (build 4))))
 (test (x) (all (== x (build 4)) (<o x (build 3))))
-(test-check "print all numbers hat are less than 6"
+(test-check "print all numbers that are less than 6"
   (solve 10 (x) (<o x (build 6)))
-  '(((x.0 ())) ((x.0 (1))) ((x.0 (1 0 1)))
-    ((x.0 (0 1))) ((x.0 (1 1))) ((x.0 (0 0 1))))
+  '(((x.0 ())) ((x.0 (1 0 1))) ((x.0 (1))) 
+     ((x.0 (0 0 1))) ((x.0 (*anon.0 1))))
   )
 
-(test-check "print a few numbers that are greater than 4"
-  (solve 5 (x) (<o (build 4) x))
-  '(((x.0 (1 0 1))) ((x.0 (0 1 1))) ((x.0 (1 1 1)))
-    ((x.0 (0 0 0 1))) ((x.0 (1 0 0 1))))
+(test-check "print *all* numbers that are greater than 4"
+  (solve 10 (x) (<o (build 4) x))
+  '(((x.0 (*anon.0 y1.0 y1.1 *anon.1 . *anon.2)))
+    ((x.0 (1 0 1))) ((x.0 (0 1 1))) ((x.0 (1 1 1))))
 )
 
 
@@ -991,12 +1007,11 @@
 
 
 (test-check 'div-all-3
-  (solve 3 (x y z r) (divo x y z r))
+  (solve 4 (x y z r) (divo x y z r))
 '(((x.0 ()) (y.0 (*anon.0 . *anon.1)) (z.0 ()) (r.0 ())) ; 0 = a*0 + 0, a>0
-  ; if z = 1, the two numbers must be equal -- but positive!
-  ((x.0 (*anon.0)) (y.0 (*anon.0)) (z.0 (1)) (r.0 ()))
-   ; There, anon.0 must be 1
-  ((x.0 (0 *anon.0)) (y.0 (1 *anon.0)) (z.0 ()) (r.0 (0 *anon.0)))
+  ((x.0 (1)) (y.0 (1)) (z.0 (1)) (r.0 ())) ; 1 = 1*1 + 0
+  ((x.0 (0 1)) (y.0 (1)) (z.0 (0 1)) (r.0 ())) ; 2 = 1*2 + 0
+  ((x.0 (0 1)) (y.0 (1 1)) (z.0 ()) (r.0 (0 1))) ; 2 = 3*0 + 2
 ))
 
 (test-check 'div-even
