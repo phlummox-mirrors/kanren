@@ -17,25 +17,26 @@
       (father dad child)
       (father2 dad child)
       (all!! (== dad 'pete) (== child 'sol)))))
-(run (fk sub x y)
-  (all (father4 x y) (project (x y) (trace-vars "=0=" (x y))))
-  (fk))
-(run (fk sub x y)
+(run (x y) (all (father4 x y) (project (x y) (trace-vars "=0=" (x y)))) fk subst (fk) #f)
+
+(run-once (x y)
   (all!! (father4 x y) (project (x y) (trace-vars "=1=" (x y))) (any))
   (void))
-(run (fk sub x y)
-  (all! (father4 x y) (project (x y) (trace-vars "=2=" (x y))) (any))
-  (void))
-(run (fk sub x y)
-  (all! (father4 x y) (project (x y) (trace-vars "=3=" (x y))))
-  (fk))
-(run (fk sub x y)
+
+(run-once (x y)
+  (all! (father4 x y) (project (x y) (trace-vars "=2=" (x y))) (any)) (void))
+
+(run (x y)
+  (all! (father4 x y) (project (x y) (trace-vars "=3=" (x y)))) fk sub (fk) #f)
+
+(run (x y)
   (all
     (any (fails (father4 x y)) (all))
     (project (x y)
-      (when-only (fails (instantiated x))
+      (when-only (predicate (var? x))
         (trace-vars "=4=" (x)))))
-  (fk))
+  fk sub (fk) #f)
+
 
 (display "Zebra") (newline)
 
@@ -80,7 +81,7 @@
 	(memb `(,_ ,_ ,_ zebra ,_) h)))))
 
 (test-check "Zebra"
-  (time (run (fk subst h) (zebra h) h))
+  (time (run-once (h) (zebra h) h))
   '((norwegian kools water fox yellow)
     (ukrainian chesterfields tea horse blue)
     (englishman oldgolds milk snails red)
@@ -138,7 +139,7 @@
 
 (define data '(1 2 3 4 5 6 7 8))
 
-(printf "~s~n" (run (fk subst out) (benchmark data out) out))
+(printf "~s~n" (run-once (out) (benchmark data out) out))
 
 
 
@@ -155,8 +156,9 @@
       (all!! (== dad 'sam) (== child 'jay)))))
 
 (pretty-print
-  (run (fk subst x y) (father x y)
-    (cons (list x y) (fk))))
+  (run-list (x y) (father x y) (list x y)))
+
+
 
 (define ancestor
   (lambda (old young)
@@ -166,8 +168,9 @@
         (all (father old not-so-old) (ancestor not-so-old young))))))
 
 (pretty-print
-  (run (fk subst x) (ancestor 'jon x)
-    (cons x (fk))))
+  (run-list (x) (ancestor 'jon x) x))
+
+
 
 (define common-ancestor
   (lambda (young-a young-b old)
@@ -176,8 +179,9 @@
       (ancestor old young-b))))
 
 (pretty-print
-  (run (fk subst x) (common-ancestor 'pat 'jay x)
-    (cons x (fk))))
+  (run-list (x) (common-ancestor 'pat 'jay x) x))
+
+
 
 (define younger-common-ancestor
   (lambda (young-a young-b old not-so-old)
@@ -187,8 +191,7 @@
       (ancestor old not-so-old))))
 
 (pretty-print
-  (run (fk subst x y) (younger-common-ancestor 'pat 'jay x y)
-    (list x y)))
+  (run-once (x y) (younger-common-ancestor 'pat 'jay x y) (list x y)))
 
 (define youngest-common-ancestor
   (lambda (young-a young-b not-so-old)
@@ -198,21 +201,20 @@
         (fails (younger-common-ancestor young-a young-b not-so-old y))))))
 
 (pretty-print
-  (run (fk subst x) (youngest-common-ancestor 'pat 'jay x) x))
+  (run-once (x) (youngest-common-ancestor 'pat 'jay x) x))
 
 ;;; Test eigen
 
 (pretty-print
-  (run (fk subst x) (eigen (a b) (== x (cons a b))) x))
+  (run-once (x) (eigen (a b) (== x (cons a b))) x))
+
 
 (pretty-print
-  (run (fk subst z) 
-  ((lambda (x) (ef/only (== x 5) (all) (== x 4))) z)
-  z))
+  (run-once (z) ((lambda (x) (ef/only (== x 5) (all) (== x 4))) z) z))
 
 (define test
   (lambda ()
-    (run (fk subst x)
+    (run-once (x)
       (all (any (begin (write 4) (all)) (begin (write 11) (all)))
 	(only/forget ;;; this has a different meaning if once is replaced by forget
 	  (any
@@ -248,35 +250,37 @@
 
 (define test2
   (lambda ()
-    (run (fk subst c) (all (busy-children c) (trace-vars "::" (c)) (any)) #t)
+    (run-once (c) (all (busy-children c) (trace-vars "::" (c)) (any)) #t)
     (display "------------------------------------")
     (newline)
-    (run (fk subst c) (all (social-children c) (trace-vars "::" (c)) (any)) #t)))
+    (run-once (c) (all (social-children c) (trace-vars "::" (c)) (any)) #t)))
 
 (test2)
-    
+
 (define invertible-binary-function->ternary-relation
   (lambda (op inverted-op)
     (extend-relation (a1 a2 a3)
       (relation (x y z)
         (to-show x y z)
-        (all (fails (instantiated z))
-          (project (x y)
-            (== z (op x y)))))
+        (project (z)
+          (if (var? z)
+              (project (x y)
+                (== z (op x y)))
+              (fail))))
       (relation (x y z)
         (to-show x y z)
-        (all (fails (instantiated y))
-          (project (z x)
-            (== y (inverted-op z x)))))
+        (project (y)
+          (if (var? y)
+              (project (z x)
+                (== y (inverted-op z x)))
+              (fail))))
       (relation (x y z)
         (to-show x y z)
-        (all (fails (instantiated x))
-          (project (z y)
-            (== x (inverted-op z y)))))
-      (relation (x y z)
-        (to-show x y z)
-        (project (x y)
-          (== z (op x y)))))))
+        (project (x)
+          (if (var? x)
+              (project (z y)
+                (== x (inverted-op z y)))
+              (fail)))))))
 
 (define ++ (invertible-binary-function->ternary-relation + -))
 (define -- (invertible-binary-function->ternary-relation - +))
@@ -285,9 +289,9 @@
 
 (test-check 'test-instantiated-1
   (and
-    (run (fk subst x) (++ x 16.0 8) (= -8.0 x))
-    (run (fk subst x) (++ 10 16.0 x) (= 26.0 x))
-    (run (fk subst x) (-- 10 x 3) (= 13 x)))
+    (run-once (x) (++ x 16.0 8) (= -8.0 x))
+    (run-once (x) (++ 10 16.0 x) (= 26.0 x))
+    (run-once (x) (-- 10 x 3) (= 13 x)))
   #t)
 
 (define symbol->lnum
@@ -303,14 +307,18 @@
     (extend-relation (a1 a2)
       (relation (x y)
         (to-show x y)
-        (all (fails (instantiated y))
-          (project (x)
-            (== y (op x)))))
+        (project (y)
+          (if (var? y)
+              (project (x)
+                (== y (op x)))
+              (fail))))
       (relation (x y)
         (to-show x y)
-        (all (fails (instantiated x))
-          (project (y)
-            (== x (inverted-op y)))))
+        (project (x)
+          (if (var? x)
+              (project (y)
+                (== x (inverted-op y)))
+              (fail))))
       (relation (x y)
         (to-show x y)
         (begin
@@ -323,6 +331,7 @@
 
 (test-check 'test-instantiated-2
   (and
-    (run (subst fk x) (name 'sleep x) (equal? '(115 108 101 101 112) x))
-    (run (subst fk x) (name x '(115 108 101 101 112)) (equal? x 'sleep)))
+    (run-once (x) (name 'sleep x) (equal? '(115 108 101 101 112) x))
+    (run-once (x) (name x '(115 108 101 101 112)) (equal? x 'sleep)))
   #t)
+
