@@ -99,32 +99,23 @@
 
 (define runner
   (lambda (fn x g)
-    (map reify-fresh
-      (fn (lambda () (rn x (g empty-s)))))))
+    (fn (lambda () (rn x (g empty-s))))))
 
 (define rn
   (lambda (x r)
     (case-ans r
       (quote ())
-      ((s) (cons (still-fresh x s)
+      ((s) (cons (reify x s)
              (lambda () (quote ()))))
-      ((s f) (cons (still-fresh x s)
+      ((s f) (cons (reify x s)
                (lambda () (rn x (f))))))))
 
-(define still-fresh
-  (lambda (x s)
-    (let ((v (reify-nonfresh x s)))
-      (cond
-        ((var? v) x)
-        (else v)))))
 
 (define-syntax run
   (syntax-rules ()
     ((_ n (x) g0 g ...)
      (let ((x (var 'x)))
        (runner (prefix n) x (all g0 g ...))))))
-
-
 
 (define-syntax all
   (syntax-rules ()

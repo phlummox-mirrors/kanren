@@ -64,7 +64,6 @@
   (lambda (x)
     (vector? x)))
 
-
 (define ground?
   (lambda (v)
     (cond
@@ -139,63 +138,18 @@
 ; build an inverse index to find the equivalence class of x.
 
 
-; Given a substitution { xi -> ti ...}, compute the inverse index
-; ( (ti . xi) ... ) provided ti is a variable. There may be multiple
-; bindings of ti in the index.
-; We essentially compute the set of inverse paths for each equivalence
-; class of ultimately free vars
-
-(define subst-to-inverse-index
-  (lambda (subst)
-    (if (null? subst) '()
-      (let* ((h (car subst))
-	     (v (car h))
-	     (t (rhs h))
-	     (subst (cdr subst)))
-	(if (var? t)
-	  (cons (cons t v) (subst-to-inverse-index subst))
-	  (subst-to-inverse-index subst))))))
-
-; Compute the list of (free) variables of a term t.
-; the second arg is the accumulator: should be set to '()
+; Compute the list of (free) variables of a term t, in the depth-first 
+; term-traversal order.
 (define free-vars
+  (lambda (t)
+    (reverse (fv t '()))))
+
+(define fv
   (lambda (t acc)
     (cond
-      ((pair? t) (free-vars (cdr t) (free-vars (car t) acc)))
+      ((pair? t) (fv (cdr t) (fv (car t) acc)))
       ((var? t) (if (memq t acc) acc (cons t acc)))
       (else acc))))
-
-; Given a variable v and the inverse index idx, compute the 
-; name of the pretty representative of that variable
-; The third argument should be set to (var-id v)
-; and the forth to idx itself.
-; Such a bad decision is forced upon us by the requirement to avoid
-; letrec and named-let.
-; We essentially enumerate the whole equivalence class whose
-; natural representative is v.
-(define find-pretty-rep-name
-  (lambda (v curr-idx e idx)
-    (cond
-      ((assq v curr-idx) =>
-	(lambda (b)
-	  (let* ((next-idx (cdr (memq b curr-idx)))
-		 (v1 (cdr b))
-		 (e1 (var-id v1)))
-	    (find-pretty-rep-name v1 idx 
-	      (find-pretty-rep-name v next-idx 
-		(if (string<? e1 e) e1 e) idx)
-	      idx))))
-      (else e))))
-
-
-
-; Remove the element e from the list preserving the order
-(define rem
-  (lambda (e l)
-    (cond
-      ((null? l) l)
-      ((eq? e (car l)) (cdr l))
-      (else (cons (car l) (rem e (cdr l)))))))
 
 
 ; Given a term v and a subst s, return v', the weak normal form of v:
@@ -220,137 +174,35 @@
 	(lambda (b) (walk-strong (cdr b) s)))
       (else v))))
 
-(define reify walk-strong)
-
-; That should be renamed
-
-(define reify-nonfresh
-  (lambda (x s)
-    (let* ((t (walk-strong x s))
-	   ; the reverse is here because free-vars computes the list
-	   ; of free vars in the _reverse_ of the depth-first order
-	   (fv (reverse (free-vars t '())))
-	   (pns (find-pretty-names fv 0))
-	    )
-      ;(pretty-print pns)
-      (walk-strong t pns))))
+(define reify
+  (lambda (v s)
+    (let ((t (walk-strong v s)))
+      (let ((fv (free-vars t)))
+	(walk-strong t (find-pretty-names fv 0))))))
 
 ; Given the list of free variables and the initial index,
 ; create a subst { v -> pretty-name-indexed }
-; where pretty-name-indexed is the combination of "_" (indicating
+; where pretty-name-indexed is the combination of "x" (indicating
 ; a free variable) and the index ".0", ".1", etc.
 (define find-pretty-names
   (lambda (fv index)
     (if (null? fv) empty-s
-      (ext-s (car fv) (reify-id "_" index)
+      (ext-s (car fv) (reify-id index)
 	(find-pretty-names (cdr fv) (+ 1 index))))))
-
-(define disambiguate
-  (lambda (pns acc)
-    (if (null? pns) acc
-      (let* ((h (car pns)) (pns (cdr pns)))
-	(cond
-	  ((assoc (car h) pns)  => ; name of h is not unique
-	    (lambda (b)
-	      (disambiguate-truly 1 b pns
-		(ext-s (cdr h) (reify-id (car h) 0) acc))))
-	  (else
-	    (disambiguate pns (ext-s (cdr h) (reify-id (car h) 0) acc))))))))
-
-(define disambiguate-truly
-  (lambda (index b pns acc)
-    (if (not b) (disambiguate pns acc)
-      (let ((pns (rem b pns)))
-	(disambiguate-truly (+ 1 index) (assoc (car b) pns) pns
-	  (ext-s (cdr b) (reify-id (car b) index) acc))))))
-
-
-; Tests
-; (run* (r)
-;     (fresh (w a z x b)
-;        (== w a)
-;         (== x b)
-;         (== a z)
-;          (== b z)
-;          (== `(,z) r)))
-; (run* (r)
-;     (fresh (w a z x b)
-;        (== w a)
-;         (== x b)
-;         (== z a)
-;          (== b z)
-;          (== `(,z) r)))
-; (run* (r)
-;     (fresh (w a z x b)
-;        (== w a)
-;         (== b x)
-;         (== z a)
-;          (== b z)
-;          (== `(,z) r)))
-; (run* (r)
-;     (fresh (w a z x b)
-;        (== a w)
-;         (== b x)
-;         (== z a)
-;          (== b z)
-;          (== `(,z) r)))
-; (run* (r)
-;     (fresh (w a z x b)
-;        (== a w)
-;         (== b x)
-;         (== z a)
-;          (== z b)
-;          (== `(,z) r)))
-; (run* (r)
-;     (fresh (w a z x b)
-;        (== a w)
-;         (== b x)
-;         (== z a)
-;          (== z b)
-;          (== `(,x) r)))
-; (run* (r)
-;     (fresh (w a z x b)
-;        (== a w)
-;         (== b x)
-;         (== z a)
-;          (== z b)
-;          (== `(,w) r)))
-; ; In all the cases, the result should be 
-; ((_.0))
-
-
-
-(define reify-fresh (lambda (v) v))
-
-'(define r-f           ;;;;; NEW
-  (lambda (v p* s k)
-    (cond
-      ((var? v)
-       (let ((str (var-id v)))
-         (let ((id (string->symbol str)))
-           (let ((n (index id p*)))
-             (k (cons `(,id . ,n) p*)
-                (ext-s v (reify-id str n) s))))))
-      ((pair? v)
-       (r-f (walk (car v) s) p* s
-         (lambda (p* s)
-           (r-f (walk (cdr v) s) p* s k))))
-      (else (k p* s)))))
 
 
 (define reify-id      ;;;;; NEW
-  (lambda (name-str index)
+  (lambda (index)
     (string->symbol
       (string-append
-        name-str
-        "$_{_"
+        "$x_{"
         (number->string index)
         "}$"))))
 
 (define reify-id      ;;;; NEW
-  (lambda (s index)
+  (lambda (index)
     (string->symbol
-      (string-append s (string #\.) (number->string index)))))
+      (string-append "x" (string #\.) (number->string index)))))
 
 
 (define unify-check
