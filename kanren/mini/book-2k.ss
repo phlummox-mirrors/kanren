@@ -1,4 +1,4 @@
-(load "minikanrensupport.ss")
+(load "minikanrensupport.scm")
 
 (define-syntax lambda@ 
   (syntax-rules () 
@@ -14,135 +14,137 @@
     ((_ h e0 e ...) 
      (@ (h e0) e ...))))
 
-(define-syntax lambdap@
-  (syntax-rules ()
-    ((_ (g) body) (ppp (lambda@ (g) body)))
-    ((_ (g f) body) (ppp (lambda@ (g) (lambdaa@ (f) body))))))
+; Type representation
+; Type constants
+;  'subst
+;  'sk
+;  'fk
+;  'answer
+;  'unit
+;  'goal
+;  'semi-goal
+; Arrow type: a->b is represented as (a b)
+; Types are associated with lambdas and checked by applications
 
-(define-syntax p@ 
-  (syntax-rules ()
-    ((_ p g) (@ (ppp-of p) g))
-    ((_ p g f) (a@ (@ (ppp-of p) g) f))))
+(define (tag-tag) tag-tag)
+(define (make-tag tag body)
+  (vector tag-tag tag body))
+(define (assert-tag v expected-tag)
+  (if (not
+	(and (vector? v) (= 3 (vector-length v))
+	  (eq? (vector-ref v 0) tag-tag)))
+    (error 'untagged "~s, expected ~s" v expected-tag)))
 
-(define ppp
-  (lambda (p)
-    (cons 'awaiting-g-and-f p)))
+(define (remove-tag tag expr)
+  (assert-tag expr tag)
+  (if (equal? (vector-ref expr 1) tag) (vector-ref expr 2)
+    (error 'tag-mismatch "expected ~a, found ~a" tag (vector-ref expr 1))))
 
-(define ppp-of
-  (lambda (p)
-    (cond
-      ((pair? p) (if (eq? (car p) 'awaiting-g-and-f) 
-                   (cdr p)
-                   (error 'ppp-of "~s" p)))
-      (else (error 'ppp-of2 "~s" p)))))
+; Replace the following two macros tag+ and tag- to remove
+; all run-time tag checking
+(define-syntax tag+
+  (syntax-rules (answer)
+    ((_ (answer) body) body)
+    ((_ tag body) (make-tag 'tag body))))
 
-(define-syntax lambdaf@
-  (syntax-rules ()
-    ((_ () body) (fff (lambda@ () body)))))
+(define-syntax tag-
+  (syntax-rules (answer)
+    ((_ (answer) body) body)
+    ((_ tag body) (remove-tag 'tag body))))
 
-(define-syntax ff@ 
-  (syntax-rules ()
-    ((_ f) (@ (fff-of f)))))
+; The following two macros do essentially implication introduction
+; and elimination.
+; To be more precise, a _series_ of implication introductions,
+; or a series of implication eliminations.
 
-(define fff
-  (lambda (f)
-    (cons 'awaiting-nothing f)))
+(define-syntax lambda-tagged
+  (syntax-rules (answer unit)
+    ((_ "rem" (answer) () body) body)
+    ((_ "rem" (unit tags ...) () body)
+      (lambda () (lambda-tagged "rem"  (tags ...) () body)))
+    ((_ "rem" (tag tags ...) () body)
+      (tag- (tag tags ...) body))
+    ((_ "rem" (tag tags ...) (arg args ...) body)
+      (lambda (arg) (lambda-tagged "rem"  (tags ...) (args ...) body)))
+    ((_ (tag tags ...) (args ...) body)
+      (tag+ (tag tags ...)
+	(lambda-tagged "rem" (tag tags ...) (args ...) body)))
+))
 
-(define fff-of
-  (lambda (f)
-    (cond
-      ((pair? f) (if (eq? (car f) 'awaiting-nothing) 
-                   (cdr f)
-                   (error 'fff-of "~s" f)))
-      (else (error 'fff-of2 "~s" f)))))
+(define-syntax app-tagged
+  (syntax-rules (answer unit)
+    ((_ "rem" (answer) () body) body)
+    ((_ "rem" (unit tags ...) () body)
+      (app-tagged "rem"  (tags ...) () (body)))
+    ((_ "rem" (tag tags ...) () body)
+      (tag+ (tag tags ...) body))
+    ((_ "rem" (tag tags ...) (arg args ...) body)
+     (app-tagged "rem" (tags ...) (args ...) (body arg)))
+    ((_ (tag tags ...) body args ...)
+      (app-tagged "rem" (tag tags ...) (args ...) 
+	(tag- (tag tags ...) body)))
+))
 
-(define-syntax lambdak@
-  (syntax-rules ()
-    ((_ (s) body) (kkk (lambda@ (s) body)))
-    ((_ (s f) body) (kkk (lambda@ (s) (lambdaa@ (f) body))))))
-
-(define-syntax k@ 
-  (syntax-rules ()
-    ((_ k s) (@ (kkk-of k) s))
-    ((_ k s f) (a@ (@ (kkk-of k) s) f))))
-
-(define kkk
-  (lambda (k)
-    (cons 'awaiting-s-and-f k)))
-
-(define kkk-of
-  (lambda (k)
-    (cond
-      ((pair? k) (if (eq? (car k) 'awaiting-s-and-f) 
-                   (cdr k)
-                   (error 'kkk-of "~s" k)))
-      (else (error 'kkk-of2 "~s" k)))))
-
-(define-syntax lambdaa@
-  (syntax-rules ()
-    ((_ (f) body) (aaa (lambda@ (f) body)))))
-
-(define-syntax a@ 
-  (syntax-rules ()
-    ((_ a f) (@ (aaa-of a) f))))
-
-(define aaa
-  (lambda (a)
-    (cons 'awaiting-f a)))
-
-(define aaa-of
-  (lambda (a)
-    (cond
-      ((pair? a) (if (eq? (car a) 'awaiting-f) 
-                   (cdr a)
-                   (error 'aaa-of "~s" a)))
-      (else (error 'aaa-of2 "~s" a)))))
-
-(define-syntax lambdar@
-  (syntax-rules ()
-    ((_ (k) body) (rrr (lambda@ (k) body)))
-    ((_ (k f) body) (rrr (lambda@ (k) (lambdaa@ (f) body))))))
-
-(define-syntax r@ 
-  (syntax-rules ()
-    ((_ r k) (@ (rrr-of r) k))
-    ((_ r k f) (a@ (@ (rrr-of r) k) f))))
-
-(define rrr
-  (lambda (r)
-    (cons 'awaiting-k-and-f r)))
-
-(define rrr-of
-  (lambda (r)
-    (cond
-      ((pair? r) (if (eq? (car r) 'awaiting-k-and-f) 
-                   (cdr r)
-                   (error 'rrr-of "~s" r)))
-      (else (error 'rrr-of2 "~s" r)))))
 
 (define-syntax lambdag@
   (syntax-rules ()
-    ((_ (s) body) (ggg (lambda@ (s) body)))
-    ((_ (s k) body) (ggg (lambda@ (s) (lambdar@ (k) body))))
-    ((_ (s k f) body) (ggg (lambda@ (s) (lambdar@ (k f) body))))))
+    ((_ args body) (lambda-tagged (subst sk fk answer) args body))))
 
-(define-syntax g@ 
+(define-syntax g@
   (syntax-rules ()
-    ((_ g s) (@ (ggg-of g) s))
-    ((_ g s k) (r@ (@ (ggg-of g) s) k))
-    ((_ g s k f) (r@ (@ (ggg-of g) s) k f))))
+    ((_ body args ...) (app-tagged (subst sk fk answer) body args ...))))
 
-(define ggg
-  (lambda (g)
-    (cons 'awaiting-s-k-f g)))
 
-(define ggg-of
-  (lambda (g)
-    (cond
-      ((pair? g) (if (eq? (car g) 'awaiting-s-k-f) 
-                   (cdr g)
-                   (error 'ggg-of "~s" g)))
-      (else (error 'ggg-of2 "~s" g)))))
+(define-syntax lambdar@
+  (syntax-rules ()
+    ((_ args body) (lambda-tagged (sk fk answer) args body))))
+
+(define-syntax r@ 
+  (syntax-rules ()
+    ((_ body args ...) (app-tagged (sk fk answer) body args ...))))
+
+(define-syntax lambdaa@
+  (syntax-rules ()
+    ((_ args body) (lambda-tagged (fk answer) args body))))
+
+(define-syntax a@ 
+  (syntax-rules ()
+    ((_ body args ...) (app-tagged (fk answer) body args ...))))
+
+
+(define-syntax lambdak@
+  (syntax-rules ()
+    ((_ args body) (lambda-tagged (subst fk answer) args body))))
+
+(define-syntax k@
+  (syntax-rules ()
+    ((_ body args ...) (app-tagged (subst fk answer) body args ...))))
+
+(define-syntax lambdaf@
+  (syntax-rules ()
+    ((_ args body) (lambda-tagged (unit answer) args body))))
+
+(define-syntax ff@ 
+  (syntax-rules ()
+    ((_ body args ...) (app-tagged (unit answer) body args ...))))
+
+
+(define-syntax lambdap@
+  (syntax-rules ()
+    ((_ args body) (lambda-tagged (goal fk answer) args body))))
+
+(define-syntax p@ 
+  (syntax-rules ()
+    ((_ body args ...) (app-tagged (goal fk answer) body args ...))))
+
+(define-syntax lambda-sr@
+  (syntax-rules ()
+    ((_ args body) (lambda-tagged (subst semi-goal answer) args body))))
+
+(define-syntax sr@ 
+  (syntax-rules ()
+    ((_ body args ...) (app-tagged (subst semi-goal answer) body args ...))))
+
 
 (define prefix
   (lambda (n v*)
@@ -268,20 +270,21 @@
 (define interleave
   (lambda (r1 r2)
     (lambdar@ (k f)
-      (p@ (r@ r1 anyi-k anyi-f)
-        (lambdag@ (s r1)
-          (k@ k s 
+      (p@ 
+	(r@ r1 anyi-k anyi-f)
+        (lambda-sr@ (s r1)
+          (k@ k s
             (lambdaf@ ()
               (r@ (interleave r2 r1) k f))))
         (lambdaf@ () (r@ r2 k f))))))
 
 (define anyi-k
   (lambdak@ (s f)
-    (lambdap@ (g _)
-      (g@ g s 
+    (lambdap@ (sg _)
+      (sr@ sg s
         (lambdar@ (k1 f1)
           (p@ (ff@ f)
-            (lambdag@ (s r)
+            (lambda-sr@ (s r)
               (k@ k1 s (lambdaf@ () (r@ r k1 f1))))
             f1))))))
 
@@ -298,7 +301,7 @@
   (lambda (r g)
     (lambdar@ (k f)
       (p@ (r@ r anyi-k anyi-f)
-        (lambdag@ (s r)
+        (lambda-sr@ (s r)
           (r@ (interleave (g@ g s) (ai r g))
             k f))
         f))))
