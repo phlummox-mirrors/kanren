@@ -503,23 +503,51 @@
 
 ; when the unifier is moved up, move lv-elim test from below up...
 
+; That was the code for the unifier that introduced temp variables
+; (define-syntax exists
+;   (syntax-rules ()
+;     [(_ () ant) ant]
+;     [(_ (ex-id) ant)
+;      (let-lv (ex-id)
+;        (lambda@ (sk fk in-subst)
+;          (@ ant
+;            (lambda@ (fk out-subst)
+;              (@ sk fk (lv-elim-1 ex-id in-subst out-subst)))
+;            fk in-subst)))]
+;     [(_ (ex-id ...) ant)
+;      (let-lv (ex-id ...) 
+;        (lambda@ (sk fk in-subst)
+;          (@ ant
+;            (lambda@ (fk out-subst)
+;              (@ sk fk (lv-elim (list ex-id ...) in-subst out-subst)))
+;            fk in-subst)))]))
+
+; For the unifier that doesn't introduce temp variables,
+; exists is essentially let-lv
+; At present, we don't do any GC.
+; Here's the reason we don't do any pruning now:
+; Let's unify the variable x with a term `(1 2 3 4 5 ,z). The result
+; will be the binding x -> `(1 2 3 4 5 ,z). Let's unify `(1 . ,y) with
+; x. The result will be a binding y -> `(2 3 4 5 ,z). Note that the
+; bindings of x and y share a tail. Let us now unify z with 42. The
+; result will be a binding z->42. So far, so good. Suppose however that
+; z now "goes out of scope" (the exists form that introduced z
+; finishes). We now have to traverse all the terms in the substitution
+; and replace z with its binding. The result will be a substitution
+; 	x -> (1 2 3 4 5 42)
+; 	y -> (2 3 4 5 42)
+; Now, the bindings of x and y do not share anything at all! The pruning
+; has broke sharing. If we want to unify x and `(1 . ,y) again, we have
+; to fully traverse the corresponding terms again.
+; So, to prune variables and preserve sharing, we have to topologically sort
+; the bindings first!
+
 (define-syntax exists
   (syntax-rules ()
     [(_ () ant) ant]
-    [(_ (ex-id) ant)
-     (let-lv (ex-id)
-       (lambda@ (sk fk in-subst)
-         (@ ant
-           (lambda@ (fk out-subst)
-             (@ sk fk (lv-elim-1 ex-id in-subst out-subst)))
-           fk in-subst)))]
     [(_ (ex-id ...) ant)
-     (let-lv (ex-id ...) 
-       (lambda@ (sk fk in-subst)
-         (@ ant
-           (lambda@ (fk out-subst)
-             (@ sk fk (lv-elim (list ex-id ...) in-subst out-subst)))
-           fk in-subst)))]))
+     (let-lv (ex-id ...) ant)]
+    ))
 
 ;-----------------------------------------------------------
 ; Sequencing of relations
@@ -1316,8 +1344,8 @@
   (concretize-subst
     (car (@ (child-of-male 'sam 'jon)
 	    initial-sk initial-fk empty-subst)))
-  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))))
-  '())  ; variables shouldn't leak
+  `(,(commitment 'dad.0 'jon) ,(commitment 'child.0 'sam)))
+  ;'())  ; variables shouldn't leak
 
 
 ; The mark should be found here...
@@ -1329,8 +1357,8 @@
   (concretize-subst
     (car (@ (child-of-male 'sam 'jon)
 	    initial-sk initial-fk empty-subst)))
-  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))))
-  '())
+  `(,(commitment 'dad.0 'jon) ,(commitment 'child.0 'sam)))
+  ;'())
 
 (define rob/sal
   (relation ()
@@ -2529,7 +2557,7 @@
 ;
 ; Just like in the union-find unification algorithm, we produce
 ; substitutions in the "triangular form" (see Baader, Snyder, Unification
-; Theory). Cicularity is detected only at the end (when we do subst-in).
+; Theory). Circularity is detected only at the end (when we do subst-in).
 
 (define unify
   (lambda (t u subst)
@@ -2571,22 +2599,15 @@
 	      [else (extend-subst t u subst)])
 	    ([ct (assq t subst)])
 	    (unify-bound/nonvar ct u subst))]
-	; t is some simple or composite value. So is u. Traverse the spine
+	; t is some simple or composite value. So is u.
       [(and (pair? t) (pair? u))
-	(let loop ((t t) (u u) (subst subst))
-	  (let*-and #f ([subst (unify-internal/any (car t) (car u) subst)])
-	    (if (and (pair? (cdr t)) (pair? (cdr u)))
-	      (loop (cdr t) (cdr u) subst)
-	      (unify-internal/any (cdr t) (cdr u) subst)
-	      )))]
+	(let*-and #f ([subst (unify-internal/any (car t) (car u) subst)])
+	  (unify-internal/any (cdr t) (cdr u) subst))]
       [else (and (equal? t u) subst)]))))
 
 
 ; Just like unify. However, the first term, t, comes from
-; an internalized term. We know it can't be _
-; We also know that either
-;  t is ground
-;  t is a non-ground, internalized pair but then u is not a pair
+; an internalized term. We know it can't be _ and can't contain _
 
 (define unify-internal/any
   (lambda (t u subst)
@@ -2601,7 +2622,7 @@
 	   (unify-bound/nonvar ct u subst)))]
       [(var? u)				; t is not a variable...
        (let*-and			; It's a part of an internal term
-	 (extend-subst u t subst)	; it must be ground
+	 (extend-subst u t subst)	; no further checks needed
          ([cu (assq u subst)])
          (unify-internals (commitment->term cu) t subst))]
       [(and (pair? t) (pair? u))
@@ -2620,8 +2641,6 @@
 ; facts about (commitment->term cx) (where cx is an existing commitment):
 ;   - it is never _
 ;   - it never contains _
-;   - if it is a complex term (a pair), it is either ground
-;     or contain variables only at the top (spine) level.
 ; Most importantly, if, for example, (commitment->term ct) is a free variable,
 ; we enter its binding to (commitment->term cu) with fewer checks.
 ; in particular, we never need to call unify-free/list nor
@@ -2661,8 +2680,8 @@
 ; t-var is a free variable, u can be anything
 ; This is analogous to get_variable instruction of Warren Abstract Machine
 ; (WAM).
-; This function always succeeds. See the theorem below.
-; It is mutually recursive only with unify-free/list.
+; This function is not recursive and always succeeds, 
+; because unify-free/bound and unify-free/list always succeed.
 (define unify-free/any
   (lambda (t-var u subst)
     (cond
@@ -2680,6 +2699,13 @@
 ; This also works somewhat like union-find...
 ; This function always succeeds. The resulting substitution is either
 ; identical to the input one, or differs only in the binding to t-var.
+;
+; Unlike the previous version of the unifier,
+; The following code does not introduce the temp variables *a and *d
+; It makes substitutions more complex. Therefore, pruning them
+; will take a while, and will break up the sharing. Therefore, we
+; don't do any pruning.
+
 (define unify-free/bound
   (lambda (t-var cu s)
     (let loop ([cm cu])
@@ -2705,20 +2731,6 @@
 ; 	      => loop)
 ; 	    (else (cons (cons tree1 (cdr binding)) env))))))
 
-;;; Don't add the commitment of an uncommited variable x to a pair (a . b)
-; instead, add the commitment x = (var1 . var2) and
-; unify var1 with a and var2 with b.
-
-;;; Don't add the commitment of an uncommitted variable x to a pair (a . b)
-; instead, add the commitment x = (var1 . var2) and
-; unify var1 with a and var2 with b.
-; However, if either 'a' or 'b' are atomic values (that is, do not contain
-; variables), we can avoid introducing var1 or var2 and bind x
-; to the correspondingly specvialized pair,
-; Note, if either 'a' or 'b' are _, the current algorithm _effectively_
-; replaces _ with a fresh variable. We do a lazy replacement.
-; A neat accident!
-
 (define ground?
   (lambda (t)
     (cond
@@ -2728,134 +2740,39 @@
 
 ; t-var is a free variable, u-value is a proper or improper
 ; list, which may be either fully or partially grounded (or not at all).
-; We replace all non-grounded components of the list with fresh variables,
-; bind t-var to the resulting list, and proceed unifying the introduced
-; variables with the corresponding components of the original list.
-; NB: in the general case, if more than one component of u-value
-; is replaced by fresh variables, we must use the full unify rather
-; than unify-free/any because some component of u-value may
-; mention t-var (and so, after the first unification, fresh variables
-; may become ground). Actually, after a bit more thought one can
-; realize that cannot happen. We can formulate a theorem:
-; for any term t and a free variable v, (unify-free/any v t s)
-; succeeds. The resulting substitution may bind v. The resulting substitution
-; will _not_ bind any variables that freely occur in t or in s
-; with the exception of 'v'.
-; Proof: by induction, keeping in mind unify-free/any and
-; unify-free/list are mutually recursive.
-; Base case: t is atomic or ground, t is a free variable, t is _,
-;            t is bound. The code for unify-free/any upholds the
-;            theorem.
-; Inductive case. Assume the theorem holds for structures
-; (proper or improper lists) of the nesting depth at most n.
-; Let t be a structure of the nesting depth n+1.
-; If t is ground, v is bound to t. The theorem holds.
-; unify-free/list binds v to the rebuilt t. The rebuilt
-; term contains only fresh variables. We then invoke
-; (unify-free/any v' t' s) where v' is a fresh variable and
-; t' is a subterm of t. t' has the nesting depth at most n.
-; By the induction hypothesis (unify-free/any v' t' s) succeeds and
-; returns the substitution that perhaps binds v' -- but no other
-; existing variable. Because v' is fresh, the entered binding does not
-; affect variables that had occurred in the original t.
+; We scan the u-value for _, and if, found, replace them with fresh
+; variables. We then bind t-var to the term.
+; This function is not recursive and always succeeds.
+;
+; We assume that more often than not u-value does not contain _.
+; Therefore, to avoid the wasteful rebuilding of u-value, we 
+; first scan it for the occurrence of _. If the scan returns negative,
+; we can use u-value as it is.
 
-    ; return the list of assoc of fresh variables with
-    ; non-ground cells of lst-src (which may be improper!)
-(define ufl-analyze-list
+(define ufl-contains-anon?
   (lambda (lst-src)
-    (cond
-      [(pair? lst-src)
-       (cond
-         [(ground? (car lst-src)) (ufl-analyze-list (cdr lst-src))]
-         [else
-	   (let ([fresh-var (logical-variable 'a*)])
-	     (cons (cons fresh-var (car lst-src))
-	       (ufl-analyze-list (cdr lst-src))))])]
-      ; lst-src is either null? or the end of an improper list
-      [(or (null? lst-src) (ground? lst-src)) '()]
-      [else (list (cons (logical-variable 'd*) lst-src))])))
+    (or (eq? lst-src _)
+      (and (pair? lst-src)
+	(or (ufl-contains-anon? (car lst-src))
+	    (ufl-contains-anon? (cdr lst-src)))))))
 
-      ; Given a proper or improper list lst,
-      ; return a list in which some of the cells are replaced with
-      ; the corresponding variables
-      ; term-assoc is an assoc list of variables _to_ cells
-      ; (note the reverse association!).
-      ; We are guaranteed however that term-assoc is properly ordered.
-(define ufl-rebuild-with-vars
-  (lambda (term-assoc lst)
+      ; Rebuild lst replacing all anonymous variables with some
+      ; fresh logical variables
+(define ufl-rebuild-without-anons
+  (lambda (lst)
     (cond
-      [(null? term-assoc) lst]
+      [(eq? lst _) (logical-variable '*anon)]
       [(pair? lst)
-	(if (eq? (cdar term-assoc) (car lst))
-	  (cons (caar term-assoc)
-	    (ufl-rebuild-with-vars (cdr term-assoc) (cdr lst)))
-	  (cons (car lst)
-	    (ufl-rebuild-with-vars term-assoc (cdr lst))))]
-      [else (caar term-assoc)])))
+	(cons
+	  (ufl-rebuild-without-anons (car lst))
+	  (ufl-rebuild-without-anons (cdr lst)))]
+      [else lst])))
 
 (define unify-free/list
   (lambda (t-var u-value subst)
-    (let ([to-unify (ufl-analyze-list u-value)])
-      (cond 
-	[(null? to-unify)		; u-value was totally ground
-         (extend-subst t-var u-value subst)]
-	[else				; general case
-	  (let loop ([subst
-		       (unify-free/any (caar to-unify) (cdar to-unify)
-			 (extend-subst t-var 
-			   (ufl-rebuild-with-vars to-unify u-value)
-			   subst))]
-                     [to-unify (cdr to-unify)])
-	    (cond
-              [(null? to-unify) subst]
-               [else
-                 (loop (unify-free/any (caar to-unify) (cdar to-unify) subst)
-                   (cdr to-unify))]))]))))
-
-; The following does not introduce the temp variables *a and *d
-; It makes substitutions more complex. Therefore, pruning them
-; will take a while, so it is disabled below.
-; Also, we should make an occurs check as we check the term for
-; anon variables.
-; It all works -- and faster (without pruning). Yet we have to carefully
-; think it over.
-; Let's unify the variable x with a term `(1 2 3 4 5 ,z). The result
-; will be the binding x -> `(1 2 3 4 5 ,z). Let's unify `(1 . ,y) with
-; x. The result will be a binding y -> `(2 3 4 5 ,z). Note that the
-; bindings of x and y share a tail. Let us now unify z with 42. The
-; result will be a binding z->42. So far, so good. Suppose however that
-; z now "goes out of scope" (the exists form that introduced z
-; finishes). We now have to traverse all the terms in the substitution
-; and replace z with its binding. The result will be a substitution
-; 	x -> (1 2 3 4 5 42)
-; 	y -> (2 3 4 5 42)
-; Now, the bindings of x and y do not share anything at all! The pruning
-; has broke sharing. If we want to unify x and `(1 . ,y) again, we have
-; to fully traverse the corresponding terms again.
-; (define unify-free/list
-;   (let ()
-;   (define (has-anon? term)
-;     (cond
-;       ((eq? term _) #t)
-;       ((pair? term) (or (has-anon? (car term)) (has-anon? (cdr term))))
-;       (else #f)))
-;   (define (rebuild-without-anon term)
-;     (cond
-;       ((eq? term _) (logical-variable '*anon))
-;       ((pair? term) (cons (rebuild-without-anon (car term))
-; 		          (rebuild-without-anon (cdr term))))
-;       (else term)))
-;   (lambda (t-var u-value subst)
-;     (if (has-anon? u-value)
-;       (extend-subst t-var (rebuild-without-anon u-value) subst)
-;       (extend-subst t-var u-value subst)))))
-; (define lv-elim
-;   (lambda (vars in-subst subst)
-;     subst))
-; (define lv-elim-1
-;   (lambda (var in-subst subst)
-;     subst))
-
+    (if (ufl-contains-anon? u-value)
+      (extend-subst t-var (ufl-rebuild-without-anons u-value) subst)
+      (extend-subst t-var u-value subst))))
 
 
 ;------------------------------------------------------------------------
@@ -3092,7 +3009,8 @@
 	    (subst (unify x `(1 . ,y) subst))
 	    (subst (unify z 42 subst)))
       (concretize-subst subst)))
-  '((z.0 . 42) (y.0 2 3 4 5 a*.0) (a*.0 . z.0) (x.0 1 2 3 4 5 a*.0)))
+  '((z.0 . 42) (y.0 2 3 4 5 z.0) (x.0 1 2 3 4 5 z.0)))
+  ;'((z.0 . 42) (y.0 2 3 4 5 a*.0) (a*.0 . z.0) (x.0 1 2 3 4 5 a*.0)))
 
 (define concat
   (lambda (xs ys)
@@ -3179,7 +3097,8 @@
 	(lambda@ (fk subst) subst)
 	initial-fk
 	(unit-subst dummy 'dummy))))
-  '((z.0 . 9) (x.0 . 5) (dummy.0 . dummy)))
+  '((y.0 . 5) (z.0 . 9) (x.0 . 5) (dummy.0 . dummy)))
+  ;'((z.0 . 9) (x.0 . 5) (dummy.0 . dummy)))
 
 (test-check 'lv-elim-2
   (concretize
@@ -3190,7 +3109,8 @@
 	(lambda@ (fk subst) subst)
 	initial-fk
 	(unit-subst dummy 'dummy))))
-  '((a*.0 . 7) (x.0 5 a*.0) (dummy.0 . dummy)))
+  '((y.0 . 7) (x.0 5 y.0) (dummy.0 . dummy)))
+  ;'((a*.0 . 7) (x.0 5 a*.0) (dummy.0 . dummy)))
 
 ; verifying corollary 2 of proposition 10
 (test-check 'lv-elim-3
@@ -3202,7 +3122,8 @@
 	(lambda@ (fk subst) subst)
 	initial-fk
 	(unit-subst dummy 'dummy))))
-  '((a*.0 . v.0) (x.0 a b c a*.0 d) (dummy.0 . dummy)))
+  '((x.0 a b c v.0 d) (dummy.0 . dummy)))
+  ;'((a*.0 . v.0) (x.0 a b c a*.0 d) (dummy.0 . dummy)))
 
 ; pruning several variables sequentially and in parallel
 (test-check 'lv-elim-4-1
@@ -3216,29 +3137,29 @@
 	(unit-subst dummy 'dummy))))
   '((y.0 . 1) (x.0 . y.0) (b.0 . x.0) (dummy.0 . dummy)))
 
-(test-check 'lv-elim-4-2
-  (concretize
-    (let-lv (v b dummy)
-      (@ 
-	(exists (x)
-	  (exists (y)
-	    (== `(,b ,x ,y) `(,x ,y 1))))
-	  (lambda@ (fk subst) subst)
-	  initial-fk
-	  (unit-subst dummy 'dummy))))
-    '((b.0 . 1) (dummy.0 . dummy)))
+; (test-check 'lv-elim-4-2
+;   (concretize
+;     (let-lv (v b dummy)
+;       (@ 
+; 	(exists (x)
+; 	  (exists (y)
+; 	    (== `(,b ,x ,y) `(,x ,y 1))))
+; 	  (lambda@ (fk subst) subst)
+; 	  initial-fk
+; 	  (unit-subst dummy 'dummy))))
+;     '((b.0 . 1) (dummy.0 . dummy)))
 
-(test-check 'lv-elim-4-3
-  (concretize
-    (let-lv (v b dummy)
-      (@ 
-	(exists (y)
-	  (exists (x)
-	    (== `(,b ,x ,y) `(,x ,y 1))))
-	  (lambda@ (fk subst) subst)
-	  initial-fk
-	  (unit-subst dummy 'dummy))))
-    '((b.0 . 1) (dummy.0 . dummy)))
+; (test-check 'lv-elim-4-3
+;   (concretize
+;     (let-lv (v b dummy)
+;       (@ 
+; 	(exists (y)
+; 	  (exists (x)
+; 	    (== `(,b ,x ,y) `(,x ,y 1))))
+; 	  (lambda@ (fk subst) subst)
+; 	  initial-fk
+; 	  (unit-subst dummy 'dummy))))
+;     '((b.0 . 1) (dummy.0 . dummy)))
 
 (test-check 'lv-elim-4-4
   (concretize
@@ -3249,7 +3170,8 @@
 	  (lambda@ (fk subst) subst)
 	  initial-fk
 	  (unit-subst dummy 'dummy))))
-    '((b.0 . 1) (dummy.0 . dummy)))
+  '((y.0 . 1) (x.0 . y.0) (b.0 . x.0) (dummy.0 . dummy)))
+  ;'((b.0 . 1) (dummy.0 . dummy)))
 
 ; pruning several variables sequentially and in parallel
 ; for indirect (cyclic) dependency
@@ -3262,31 +3184,32 @@
 	(lambda@ (fk subst) subst)
 	initial-fk
 	(unit-subst dummy 'dummy))))
-  '((x.0 1 a*.0) (a*.0 . x.0) (y.0 1 a*.0) (b.0 . x.0) (dummy.0 . dummy)))
+  '((x.0 1 x.0) (y.0 1 x.0) (b.0 . x.0) (dummy.0 . dummy)))
+  ;'((x.0 1 a*.0) (a*.0 . x.0) (y.0 1 a*.0) (b.0 . x.0) (dummy.0 . dummy)))
 
-(test-check 'lv-elim-5-2
-  (concretize
-    (let-lv (v b dummy)
-      (@ 
-	(exists (x)
-	  (exists (y)
-	  (== `(,b ,y ,x) `(,x (1 ,x) ,y))))
-	(lambda@ (fk subst) subst)
-	initial-fk
-	(unit-subst dummy 'dummy))))
-  '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
+; (test-check 'lv-elim-5-2
+;   (concretize
+;     (let-lv (v b dummy)
+;       (@ 
+; 	(exists (x)
+; 	  (exists (y)
+; 	  (== `(,b ,y ,x) `(,x (1 ,x) ,y))))
+; 	(lambda@ (fk subst) subst)
+; 	initial-fk
+; 	(unit-subst dummy 'dummy))))
+;   '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
 
-(test-check 'lv-elim-5-3
-  (concretize
-    (let-lv (v b dummy)
-      (@ 
-	(exists (y)
-	  (exists (x)
-	  (== `(,b ,y ,x) `(,x (1 ,x) ,y))))
-	(lambda@ (fk subst) subst)
-	initial-fk
-	(unit-subst dummy 'dummy))))
-  '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
+; (test-check 'lv-elim-5-3
+;   (concretize
+;     (let-lv (v b dummy)
+;       (@ 
+; 	(exists (y)
+; 	  (exists (x)
+; 	  (== `(,b ,y ,x) `(,x (1 ,x) ,y))))
+; 	(lambda@ (fk subst) subst)
+; 	initial-fk
+; 	(unit-subst dummy 'dummy))))
+;   '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
 
 (test-check 'lv-elim-5-4
   (concretize
@@ -3297,7 +3220,8 @@
 	(lambda@ (fk subst) subst)
 	initial-fk
 	(unit-subst dummy 'dummy))))
-  '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
+  '((x.0 1 x.0) (y.0 1 x.0) (b.0 . x.0) (dummy.0 . dummy)))
+ ;'((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
 
 ; We should only be concerned about a direct dependency:
 ;  ((x . y) (y . (1 t)) (t . x) (a . x))
