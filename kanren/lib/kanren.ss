@@ -254,61 +254,73 @@
                (@ sk fk subst))]
          [else (lambda (cutk-ign) (fk))]))]))
 
-; bind-env env vars body
-; env is a list or a prefix of (ske fke subste cutke)
-; where each component is an expression (although it may be
-; an identifier)
-; vars is a list of 0-4 identifiers, to be bound to
-; sk, fk, subst, cutk
-; and used in the body.
-; These identifiers are bound to nullary macros -- getters
-; 
-; bind-env binds the needed identifiers (via lambda@)
-; and expands into the body.
+
+; partially-reduce args vars body
+; is semantically equivalent to a curried applications of args
+; to (lambda (vars) body)
+; that is
+;   (partially-reduce (arg ...) (var ...) body)
+; is semantically the same as
+;  (@ (lambda@ (var ...) body) arg ...)
+; In particular,
+;  (partially-reduce (arg ...) () body)
+; is the same as
+;  (@ body arg ...)
+; and
+; (partially-reduce () (var ...) body)
+; is the same as
+;  (lambda@ (var ...) body)
+; and
+; (partially-reduce () () body)
+; is just the same as body.
+; It goes without saying that variables in vars are generally free in body.
+;
+; The purpose of partially-reduce is to perform some of the beta-redexes
+; at the macro-expand time.
+;
 ; examples
-; (bind-env () (sk fk) (list (sk) (fk)))
+; (partially-reduce () (sk fk) (list sk fk))
 ; ==> (lambda@ (sk fk) (list sk fk))
-; (bind-env (e1) (sk fk) (list (sk) (fk)))
+; (partially-reduce (e1) (sk fk) (list sk fk))
 ; ==> (lambda@ (fk) (list e1 fk))
-; (bind-env (e1 e2) (sk fk) (list (sk) (fk)))
+; (partially-reduce (e1 e2) (sk fk) (list sk fk))
 ; ==> (list e1 e2)
+; (partially-reduce (e1 e2) (sk) sk)
+; ==> (e1 e2)
 
-
-; actually, it should be called bind-partially-apply
-
-(define-syntax bind-env
+(define-syntax partially-reduce
   (syntax-rules ()
-    ;((_ x () body) body) 		; nop
     ((_ () () body) body) 		; nop
     ((_ (e ...) () body) (@ body e ...)) 		; apply the rest
-    ((_ () (var ...) body) 		; bind everything
-      (lambda@ (var ...)
-	(let-syntax ((var (syntax-rules () ((_) var))) ...) body)))
-    ((_ (e1 . erest) (var . vrest) body)
-      (let-syntax ((var (syntax-rules () ((_) e1))))
-	(bind-env erest vrest body)))))
+    ((_ () (var ...) body) 		; just lambda, no application
+      (lambda@ (var ...) body))
+    ((_ (e1 . erest) (var . vrest) body) ; do the macroexpand-time beta
+      (let-syntax
+	((beta 
+	   (syntax-rules ()
+	     ((_ var _erest)
+	       (partially-reduce _erest vrest body)))))
+	(beta e1 erest)))))
 
-'(pretty-print (expand '(bind-env () (sk fk) (list (sk) (fk)))))
-'(pretty-print (expand '(bind-env (e1) (sk fk) (list (sk) (fk)))))
-'(pretty-print (expand '(bind-env (e1 e2) (sk fk) (list (sk) (fk)))))
-'(pretty-print (expand '(bind-env (e1 e2) (sk) (list (sk)))))
+(pretty-print (expand '(partially-reduce () (sk fk) (list sk fk))))
+(pretty-print (expand '(partially-reduce (e1) (sk fk) (list sk fk))))
+(pretty-print (expand '(partially-reduce (e1 e2) (sk fk) (list sk fk))))
+(pretty-print (expand '(partially-reduce (e1 e2) (sk) sk)))
 
 
-
-
-(define-syntax ==/env
+(define-syntax ==/args
   (syntax-rules ()
-    [(_ env t u)
-     (bind-env env (sk fk subst)
+    [(_ args t u)
+     (partially-reduce args (sk fk subst)
        (cond
-         [(unify t u (subst))
+         [(unify t u subst)
           => (lambda (s)
-               (@ (sk) (fk) s))]
-         [else (lambda (cutk-ign) ((fk)))]))]))
+               (@ sk fk s))]
+         [else (lambda (cutk-ign) (fk))]))]))
 
 (define-syntax ==
   (syntax-rules ()
-    [(_ t u) (==/env () t u)]))
+    [(_ t u) (==/args () t u)]))
 
       
 
@@ -482,23 +494,24 @@
     [(_ sk ant0 ant1 ...)
      (ant0 (splice-in-ants/all sk ant1 ...))]))
 
-(define-syntax all/env
+(define-syntax all/args
   (syntax-rules ()
-    ((_ env ant) (bind-env env () ant))
-    ((_ env ant0 ant1 ant2 ...)
-      (bind-env env (sk)
-	(ant0 (splice-in-ants/all (sk) ant1 ant2 ...))))))
+    ((_ () ant) ant)
+    ((_ args ant) (partially-reduce args () ant))
+    ((_ args ant0 ant1 ant2 ...)
+      (partially-reduce args (sk)
+	(ant0 (splice-in-ants/all sk ant1 ant2 ...))))))
 
 
 (define-syntax @    
   (syntax-rules (== all all!)
     [(@ (== args ...) rand ...)
       ;it-happens
-      (==/env (rand ...) args ...)
+      (==/args (rand ...) args ...)
       ]
     [(@ (all! args ...) rand ...)
       ;it-happens
-      (all!/env (rand ...) args ...)
+      (all!/args (rand ...) args ...)
       ]
     [(@ (all ant) rand ...)
       ;it-happens
@@ -510,7 +523,7 @@
 ;       ]
     [(@ (all args ...) rand ...)
       ;it-happens
-      (all/env (rand ...) args ...)
+      (all/args (rand ...) args ...)
       ]
     [(_ rator rand) (rator rand)]
     [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
@@ -536,19 +549,12 @@
      (lambda@ (sk fk)
        (@ ant0 (splice-in-ants/all! sk fk ant1 ant2 ...) fk))]))
 
-(define-syntax all/env
+(define-syntax all!/args
   (syntax-rules ()
-    ((_ env ant) (bind-env env () ant))
-    ((_ env ant0 ant1 ant2 ...)
-      (bind-env env (sk)
-	(ant0 (splice-in-ants/all (sk) ant1 ant2 ...))))))
-
-(define-syntax all!/env
-  (syntax-rules ()
-    ((_ env ant) (bind-env env () ant))
-    ((_ env ant0 ant1 ant2 ...)
-      (bind-env env (sk fk)
-	(@ ant0 (splice-in-ants/all! (sk) (fk) ant1 ant2 ...) (fk))))))
+    ((_ args ant) (partially-reduce args () ant))
+    ((_ args ant0 ant1 ant2 ...)
+      (partially-reduce args (sk fk)
+	(@ ant0 (splice-in-ants/all! sk fk ant1 ant2 ...) fk)))))
 
 (define-syntax splice-in-ants/all!
   (syntax-rules ()
@@ -639,22 +645,28 @@
   (lambda (ant subst)
     (not (null? (@ ant initial-sk initial-fk subst initial-fk)))))
 
+; make extend-relation behave as a CBV function, that is,
+; evaluate rel-exp early.
+; Otherwise, things like
+; (define father (extend-relation father xxx))
+; loop.
 (define-syntax extend-relation
   (syntax-rules ()
     [(_ (id ...) rel-exp) rel-exp]
-    [(_ (id ...) rel-exp0 rel-exp1 ...)
-      (lambda (id ...)
-	(extend-relation-aux (id ...) () rel-exp0 rel-exp1 ...))]))
+    [(_ ids rel-exp0 rel-exp1 ...)
+      (extend-relation-aux ids () rel-exp0 rel-exp1 ...)]))
 
 
 (define-syntax extend-relation-aux
   (syntax-rules ()
-    [(_ ids (rel-var ...))
-      (lambda@ (sk fk subst cutk)
-	  (extend-ant/bound (sk fk subst cutk) rel-var ...))]
-    [(_ (id ...) (var ...) rel-exp0 rel-exp1 ...)
-      (let ((rel-var (rel-exp0 id ...)))
-	(extend-relation-aux (id ...) (var ... rel-var) rel-exp1 ...))]))
+    [(_ (id ...) (rel-var ...))
+      (lambda (id ...)
+	(lambda@ (sk fk subst cutk)
+	  (extend-ant/bound (sk fk subst cutk) 
+	    (rel-var id ...) ...)))]
+    [(_ ids (var ...) rel-exp0 rel-exp1 ...)
+      (let ((rel-var rel-exp0))
+	(extend-relation-aux ids (var ... rel-var) rel-exp1 ...))]))
 
 
 (define-syntax relation
