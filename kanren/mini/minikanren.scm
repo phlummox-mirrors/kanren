@@ -1,7 +1,8 @@
 (def-syntax (run (fk subst id ...) ant expr expr* ...)
   (exists (id ...)
     (@ ant (lambda@ (fk subst)
-	     (apply (lambda (id ...) expr expr* ...)
+	     (apply
+	       (lambda (id ...) expr expr* ...)
 	       (concretize `(,(subst-in id subst) ...))))
       (lambda () '())
       empty-subst)))
@@ -55,7 +56,10 @@
       (newline)
       (all))))
 
+(define succeed (all))
+(define fail (any))
 
+
 (define-syntax relation
   (syntax-rules (to-show)
     [(_ (ex-id* ...) (to-show Term* ...) ant)
@@ -87,4 +91,4 @@
 
 (def-syntax (intersect-relation (arity-id* ...) rel* ...)
   (construct-relation all (arity-id* ...) () rel* ...))
-  
+
