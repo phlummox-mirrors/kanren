@@ -397,75 +397,6 @@
 		     ;(pretty-print subst)
 		     (cons subst fk)))
 
-(define-syntax binary-extend-relation-interleave
-  (syntax-rules ()
-    [(_ (id ...) rel-exp1 rel-exp2)
-     (let ([rel1 rel-exp1] [rel2 rel-exp2])
-       (lambda (id ...)
-         (lambda@ (sk fk subst)
-           ((interleave sk fk (finish-interleave sk fk))
-            (@ (rel1 id ...) initial-sk initial-fk subst)
-            (@ (rel2 id ...) initial-sk initial-fk subst)))))]))
-
-(define finish-interleave
-  (lambda (sk fk)
-    (letrec
-      ([finish
-         (lambda (q)
-           (cond
-             [(null? q) (fk)]
-             [else (let ([fk (cdr q)] [subst (car q)])
-                     (@ sk (lambda () (finish (fk))) subst))]))])
-      finish)))
-
-(define interleave
-  (lambda (sk fk finish)
-    (letrec
-      ([interleave
-         (lambda (q1 q2)
-           (cond
-             [(null? q1) (if (null? q2) (fk) (finish q2))]
-             [else (let ([fk (cdr q1)] [subst (car q1)])
-                     (@ sk (lambda () (interleave q2 (fk))) subst))]))])
-      interleave)))
-
-(define-syntax binary-extend-relation-interleave-non-overlap
-  (syntax-rules ()
-    [(_ (id ...) rel-exp1 rel-exp2)
-     (let ([rel1 rel-exp1] [rel2 rel-exp2])
-       (lambda (id ...)
-         (lambda@ (sk fk subst)
-           (let ([ant2 (rel2 id ...)])
-             ((interleave-non-overlap sk fk)
-              (@ (rel1 id ...) initial-sk initial-fk subst)
-              (@ ant2 initial-sk initial-fk subst)
-              ; means in case of overlap, prefer (rel2 ...) over (rel1 ...)
-              fail
-              ant2)))))]))
-
-(define interleave-non-overlap
-  (lambda (sk fk)
-    (letrec
-      ([finish
-         (lambda (q)
-           (cond
-             [(null? q) (fk)]
-             [else (let ([fk (cdr q)] [subst (car q)])
-                     (@ sk (lambda () (finish (fk))) subst))]))]
-       [interleave
-         (lambda (q1 q2 ant1 ant2)
-           (cond
-             [(null? q1) (if (null? q2) (fk) (finish q2))]
-             [else (let ([fk (cdr q1)] [subst (car q1)])
-		(if (satisfied? ant2 subst) ; the solution of q1
-   					    ; satisfies ant2. Skip it
-		  (interleave q2 (fk) ant2 ant1)
-		  (@ sk (lambda () (interleave q2 (fk) ant2 ant1)) subst)))]))])
-      interleave)))
-
-(define satisfied?
-  (lambda (ant subst)
-    (not (null? (@ ant initial-sk initial-fk subst)))))
 
 ;-----------------------------------------------------------
 ; Sequencing of relations
@@ -544,7 +475,7 @@
 
 (define-syntax all!
   (syntax-rules (promise-one-answer)
-    [(_) (all)]
+    [(_) (promise-one-answer (all))]
     [(_ (promise-one-answer ant)) (promise-one-answer ant)] ; keep the mark
     [(_ ant0 ant1 ...)
      (promise-one-answer
@@ -740,6 +671,9 @@
 ; that produces infinitely many answers (such as repeat) starve the others.
 ; any-interleave introduces a breadth-first-like traversal of the
 ; decision tree.
+; I seem to have seen a theorem that says that a _fair_ scheduling
+; (like that provided by any-interleave) entails a minumal or well-founded
+; semantics of a Prolog program.
 
 (define-syntax any-interleave
   (syntax-rules ()
@@ -772,15 +706,130 @@
 	  ; (car curr) is finished - drop it, and try next
 	  (lambda () (loop (cdr curr) residuals))))))))
 
-; Soft-cuts: ?- help(*->).
-; We can implement it with partially-eval-sant. Given an ant, we
-; peel of one answer, if possible. If it is, we then execute the action
-; passing it the answer and the fk from ant so that if the action fails,
-; it can obtain another answer. If ant has no answers, we execute the
-; 'else' part. Again, we can do all that purely declaratively, without
+; An interleaving disjunction removing duplicates: any-union
+; This is a true union of the constituent antecedents: it is fair, and
+; it removes overlap in the antecedents to union, if any. Therefore,
+;    (any-union ant ant) ===> ant
+; whereas (any ant ant) =/=> ant
+; because the latter has twice as many answers as ant.
+;
+; Any-union (or interleave-non-overlap, to be precise) is quite similar
+; to the function interleave above. But now, the order of antecedents
+; matters. Given antecedents ant1 ant2 ... antk ... antn,
+; at the k-th step we try to partially-eval antk. If it yields an answer,
+; we check if ant_{k+1} ... antn can be satisfied with that answer.
+; If any of them does, we disregard the current answer and ask antk for
+; another one. We maintain the invariant that
+;  ans is an answer of (any-union ant1 ... antn) 
+;  ===> exists i. ans is an answer of ant_i
+;       && forall j>i. ans is not an answer of ant_j
+; The latter property guarantees the true union.
+; Note the code below does not check if answers of each individual
+; antecedent are unique. It is trivial to modify the code so that
+; any-union removes the duplicates not only among the antecedents but
+; also within an antecedent. That change entails a run-time cost. More
+; importantly, it breaks the property
+; (any-union ant ant) ===> ant
+; Only a weaker version, (any-union' ant ant) ===> (any-union' ant)
+; would hold. Therefore, we do not do that change.
+
+(define-syntax any-union
+  (syntax-rules ()
+    [(_) fail]
+    [(_ ant) ant]
+    [(_ ant ...)
+      (lambda@ (sk fk subst)
+	(interleave-non-overlap sk fk
+	  (list (cons (ant->sant ant subst) ant) ...)))]))
+
+; we treat saants as a sort of a circular list
+; Each element of saants is a pair (sant . ant)
+; where ant is the original antecedent (needed for the satisfiability testing)
+; and sant is the corresponding semi-antecedent or a 
+; residual thereof.
+(define (interleave-non-overlap sk fk saants)
+  (let outer ((saants saants))
+    (cond
+      ((null? saants) (fk))		; all of the saants are finished
+      ((null? (cdr saants))
+        ; only one ant is left -- run it through the end
+	(@ (caar saants) sk fk))
+      (else
+	(let loop ((curr saants) (residuals '()))
+	  ; check if the current round is finished
+	  (if (null? curr) (outer (reverse residuals))
+	  (@
+	    partially-eval-sant (caar curr)
+	    ; (caar curr) had an answer
+	    (lambda@ (subst residual)
+	      ; let us see now if the answer, subst, satisfies any of the
+	      ; ants down the curr.
+	      (let check ((to-check (cdr curr)))
+		(if (null? to-check) ; OK, subst is unique, give it to user
+		  (@ sk
+	           ; re-entrance cont
+		    (lambda () (loop (cdr curr) 
+				 (cons (cons residual (cdar curr)) residuals)))
+		    subst)
+		  (@ (cdar to-check)
+		    ; subst was the answer to some other ant: check failed
+		    (lambda@ (fk1 subst1) 
+		      (loop (cdr curr) 
+			(cons (cons residual (cdar curr)) residuals)))
+		    ; subst was not the answer: continue check
+		    (lambda () (check (cdr to-check)))
+		    subst))))
+	  ; (car curr) is finished - drop it, and try next
+	  (lambda () (loop (cdr curr) residuals)))))))))
+
+; Another if-then-else
+; (if-some COND THEN)
+; (if-some COND THEN ELSE)
+; Here COND, THEN, ELSE are antecedents.
+; If COND succeeds at least once, the result is equivalent to
+;      (all COND TNEN)
+; If COND fails, the result is the same as ELSE.
+; If ELSE is omitted, it is assumed fail. That is, (if-some COND THEN)
+; fails if the condition fails.  "This  unusual semantics
+; is part of the ISO and all de-facto Prolog standards."
+; Thus, declaratively,
+;   (if-some COND THEN ELSE) ==> (any (all COND THEN)
+;                                     (all (fails COND) ELSE))
+; from which follows
+;   (if-some COND THEN)              ==> (all COND THEN)
+;   (if-some COND THEN fail)         ==> (all COND THEN)
+; but
+;   (if-some COND succeed ELSE)     =/=> (any COND ELSE)
+;
+; Other corollary:
+;   (if-some COND THEN ELSE) ==> (if-only (fails COND) ELSE (all COND THEN))
+;
+; Operationally, we try to generate a good code.
+;
+; In Prolog, if-some is called a soft-cut (aka *->). In Mercury,
+; if-some is the regular IF-THEN-ELSE.
+;
+; We can implement if-some with partially-eval-sant. Given a COND, we
+; peel of one answer, if possible. If it is, we then execute THEN
+; passing it the answer and the fk from COND so that if THEN fails,
+; it can obtain another answer. If COND has no answers, we execute
+; ELSE. Again, we can do all that purely declaratively, without
 ; talking about introducing and destroying choice points.
-; Incidentally, soft-cuts seem to corresponds precisely to Mercury's
-; IF-THEN-ELSE.
+
+(define-syntax if-some
+  (syntax-rules ()
+    ((_ condition then) (all condition then))
+    ((_ condition then else)
+      (lambda@ (sk fk subst)
+	(@ partially-eval-sant (ant->sant condition subst)
+	  (lambda@ (ans residual)
+	    (@ then sk
+	      ; then failed. Check to see if condition has another answer
+	      (lambda () (@ residual (@ then sk) fk))
+	      ans))
+	  ; condition failed
+	  (lambda () (@ else sk fk subst)))))
+))
 
 
 ; Relations...........................
@@ -791,18 +840,18 @@
      (relation (ex-id ...) () (x ...) (x ...) ant ...)]
     [(_ (ex-id ...) (var ...) (x0 x1 ...) xs ant ...)
      (relation (ex-id ...) (var ... g) (x1 ...) xs ant ...)]
-;     [(_ (ex-id ...) () () () ant ...)
-;      (lambda ()
-;        (exists (ex-id ...)
-;          (all ant ...)))]
-;     [(_ (ex-id ...) (g ...) () (x ...))
-;      (lambda (g ...)
-;        (exists (ex-id ...)
-;  	 (all!! (promise-one-answer (== g x)) ...)))]
-;     [(_ (ex-id ...) (g ...) () (x ...) ant)
-;      (lambda (g ...)
-;        (exists (ex-id ...)
-;  	 (if-all! ((promise-one-answer (== g x)) ...) ant)))]
+    [(_ (ex-id ...) () () () ant ...)
+     (lambda ()
+       (exists (ex-id ...)
+         (all ant ...)))]
+    [(_ (ex-id ...) (g ...) () (x ...))
+     (lambda (g ...)
+       (exists (ex-id ...)
+ 	 (all!! (promise-one-answer (== g x)) ...)))]
+    [(_ (ex-id ...) (g ...) () (x ...) ant)
+     (lambda (g ...)
+       (exists (ex-id ...)
+ 	 (if-all! ((promise-one-answer (== g x)) ...) ant)))]
     [(_ (ex-id ...) (g ...) () (x ...) ant ...)
      (lambda (g ...)
        (exists (ex-id ...)
@@ -1375,6 +1424,19 @@
     (if-only (succeeds grandpa/father) grandpa/father grandpa/mother)))
 
 (test-check 'test-grandpa-10
+  (solve 10 (x y) (grandpa x y))
+  '(((x.0 jon) (y.0 rob))
+    ((x.0 jon) (y.0 roz))
+    ((x.0 sam) (y.0 sal))
+    ((x.0 sam) (y.0 pat))))
+
+; Now do it with soft-cuts
+(define grandpa
+  (let-ants (a1 a2) ((grandpa/father grandpa/father)
+		     (grandpa/mother grandpa/mother))
+    (if-some grandpa/father succeed grandpa/mother)))
+
+(test-check 'test-grandpa-10-soft-cut
   (solve 10 (x y) (grandpa x y))
   '(((x.0 jon) (y.0 rob))
     ((x.0 jon) (y.0 roz))
@@ -3349,24 +3411,30 @@
 
 ;;; Test for nonoverlapping.
 
-(printf "~%binary-extend-relation-interleave-non-overlap~%")
+(printf "~%any-union~%")
 (test-check "R1+R2"
   (solve 10 (x y)
-    ((binary-extend-relation-interleave-non-overlap (a1 a2) R1 R2) x y))
+    (any-union (R1 x y) (R2 x y)))
   '(((x.0 x1) (y.0 y1))
     ((x.0 x2) (y.0 y2))
     ((x.0 x3) (y.0 y3))))
 
 (test-check "R2+R1"
   (solve 10 (x y)
-    ((binary-extend-relation-interleave-non-overlap (a1 a2) R2 R1) x y))
+    (any-union (R2 x y) (R1 x y)))
   '(((x.0 x1) (y.0 y1))
     ((x.0 x3) (y.0 y3))
     ((x.0 x2) (y.0 y2))))
 
+(test-check "R1+R1"
+  (solve 10 (x y)
+    (any-union (R1 x y) (R1 x y)))
+  '(((x.0 x1) (y.0 y1))
+    ((x.0 x2) (y.0 y2))))
+
 (test-check "Rinf+R1"
   (solve 7 (x y)
-    ((binary-extend-relation-interleave-non-overlap (a1 a2) Rinf R1) x y))
+    (any-union (Rinf x y) (R1 x y)))
   '(((x.0 z) (y.0 z))
     ((x.0 x1) (y.0 y1))
     ((x.0 (s z)) (y.0 (s z)))
@@ -3377,7 +3445,7 @@
 
 (test-check "R1+RInf"
   (solve 7 (x y)
-    ((binary-extend-relation-interleave-non-overlap (a1 a2) R1 Rinf) x y))
+    (any-union (R1 x y) (Rinf x y)))
   '(((x.0 x1) (y.0 y1))
     ((x.0 z) (y.0 z))
     ((x.0 x2) (y.0 y2))
@@ -3413,8 +3481,7 @@
 
 (test-check "Rinf+Rinf2"
   (solve 9 (x y)
-    ((binary-extend-relation-interleave-non-overlap 
-       (a1 a2) Rinf Rinf2) x y))
+    (any-union (Rinf x y) (Rinf2 x y)))
   '(((x.0 z) (y.0 z))
     ((x.0 (s z)) (y.0 (s z)))
     ((x.0 (s (s z))) (y.0 (s (s z))))
@@ -3430,8 +3497,7 @@
 
 (test-check "Rinf2+Rinf"
   (solve 9 (x y)
-    ((binary-extend-relation-interleave-non-overlap 
-       (a1 a2) Rinf2 Rinf) x y))
+    (any-union (Rinf2 x y) (Rinf x y)))
   '(((x.0 z) (y.0 z))
     ((x.0 (s z)) (y.0 (s z)))
     ((x.0 (s (s z))) (y.0 (s (s z))))
