@@ -1222,6 +1222,17 @@
 	  `(((n1.0 ,(build n)) (m1.0 ,(build m))
 	     (q1.0 ,(build q)) (r1.0 ,(build r))))))))))
 
+
+; quite dubious tests. The problem is actually in =ol and <ol
+; (solve 1 (q)
+;     (poso q)
+;     (divo `(0 . ,q) `(1 1 . ,q) '() `(0 . ,q))))
+;
+; (solve 1 (q)
+;     (poso q)
+;     (divo `(0 . ,q) `(1 . ,q) '() `(0 . ,q))))
+
+
 (test-check 'exp2-1
   (solve 10 (q) (exp2 '(1 1 1 1) '() q))
   '(((q.0 (1 1)))))
