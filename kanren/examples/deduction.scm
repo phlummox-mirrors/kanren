@@ -108,7 +108,7 @@
 ; relation 'prf' in a very special knowledge database. The knowledge base
 ; assumes reports the success of every relation in it. It also
 ; binds all the free variables in the asked relation to some distinguished
-; symbols (we chose the explanation mark to distinguish such names).
+; symbols (we chose the exclamation mark to distinguish such names).
 ; Thus we replace free variables with eigen-variables.
 ; We thus generate _universal_ induction hypotheses.
 ; Note that this special 'kb' is only used inductively in prf.
