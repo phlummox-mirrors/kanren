@@ -768,8 +768,12 @@
 	    (repeated-mul n q1 nq1)
 	    (**o nq1 n nq)))))))
 
-
-(define expo
+; We call this predicate logo rather than expo due to its close similarity
+; to divo. As the tests at the end show, logo can be used for determining
+; the exact discrete logarithm, logarithm with a residual, exponentiation,
+; and even operations (such as determining the base) that are not
+; commonly discussed in high school.
+(define logo
   (relation (head-let n b q r)
     (any-interleave
       (all (== n '(1)) (pos b) (== q '()) (== r '())) ; 1 = b^0 + 0, b >0
@@ -1249,56 +1253,56 @@
     ((n.0 (1 1)) (q.0 (1)))))
 
 
-(test-check 'expo-15-1
-  (solve 10 (q r) (expo (build 15) (build 2) q r))
+(test-check 'logo-15-1
+  (solve 10 (q r) (logo (build 15) (build 2) q r))
   '(((q.0 (1 1)) (r.0 (1 1 1)))))
 
-(test-check 'expo-15-3
-  (solve 10 (q r) (expo (build 15) (build 3) q r))
+(test-check 'logo-15-3
+  (solve 10 (q r) (logo (build 15) (build 3) q r))
   '(((q.0 (0 1)) (r.0 (0 1 1)))))
 
-(test-check 'expo-15-4
-  (solve 10 (q r) (expo (build 15) (build 4) q r))
+(test-check 'logo-15-4
+  (solve 10 (q r) (logo (build 15) (build 4) q r))
   '(((q.0 (1)) (r.0 (1 1 0 1)))))
 
-(test-check 'expo-15-5
-  (solve 10 (q r) (expo (build 15) (build 5) q r))
+(test-check 'logo-15-5
+  (solve 10 (q r) (logo (build 15) (build 5) q r))
   '(((q.0 (1)) (r.0 (0 1 0 1)))))
 
-(test-check 'expo-15-15
-  (solve 10 (q r) (expo (build 15) (build 15) q r))
+(test-check 'logo-15-15
+  (solve 10 (q r) (logo (build 15) (build 15) q r))
   '(((q.0 (1)) (r.0 ()))))
 
-(test-check 'expo-15-16
-  (solve 10 (q r) (expo (build 15) (build 16) q r))
+(test-check 'logo-15-16
+  (solve 10 (q r) (logo (build 15) (build 16) q r))
   '(((q.0 ()) (r.0 (0 1 1 1)))))
 
-(test-check 'expo-15--3
-  (solve 10 (b r) (expo (build 15) b (build 3) r))
+(test-check 'logo-15--3
+  (solve 10 (b r) (logo (build 15) b (build 3) r))
   '(((b.0 (0 1)) (r.0 (1 1 1)))))
 
-(test-check 'expo-32--4
-  (solve 10 (b r) (expo (build 32) b (build 4) r))
+(test-check 'logo-32--4
+  (solve 10 (b r) (logo (build 32) b (build 4) r))
   '())
 
-(test-check 'expo-33--5
-  (solve 10 (b r) (expo (build 33) b (build 5) r))
+(test-check 'logo-33--5
+  (solve 10 (b r) (logo (build 33) b (build 5) r))
   '(((b.0 (0 1)) (r.0 (1)))))
 
-(test-check 'expo-2-5
-  (solve 10 (n) (expo n (build 2) (build 5) '(1)))
+(test-check 'logo-2-5
+  (solve 10 (n) (logo n (build 2) (build 5) '(1)))
   '(((n.0 (1 0 0 0 0 1)))))
 
-(test-check 'expo-3-2
-  (solve 10 (n) (expo n (build 3) (build 2) '(1)))
+(test-check 'logo-3-2
+  (solve 10 (n) (logo n (build 3) (build 2) '(1)))
   '(((n.0 (0 1 0 1)))))
 
-(test-check 'expo-3-3
-  (solve 10 (n) (expo n (build 3) (build 3) '(1)))
+(test-check 'logo-3-3
+  (solve 10 (n) (logo n (build 3) (build 3) '(1)))
   '(((n.0 (0 0 1 1 1)))))
 
 (test-check 'powers-of-3
-  (solve 10 (n q r) (expo n (build 3) q r))
+  (solve 10 (n q r) (logo n (build 3) q r))
   '(((n.0 (1)) (q.0 ()) (r.0 ()))
     ((n.0 (0 1)) (q.0 ()) (r.0 (1)))
     ((n.0 (1 1)) (q.0 (1)) (r.0 ()))
@@ -1312,7 +1316,7 @@
 )
 
 (test-check 'powers-of-exp-3
-  (solve 3 (n b r) (expo n b (build 3) r))
+  (solve 3 (n b r) (logo n b (build 3) r))
   '(((n.0 (0 0 0 1)) (b.0 (0 1)) (r.0 ()))
     ((n.0 (1 1 0 1 1)) (b.0 (1 1)) (r.0 ()))
     ((n.0 (1 0 0 1)) (b.0 (0 1)) (r.0 (1))))
