@@ -14,8 +14,7 @@
     (relation (low high rest)
       (to-show low high `(,low . ,rest))
       (all!!
-	(predicate (low high)
-	  (<= low high))
+	(project (low high) (predicate (<= low high)))
 	(exists (m)
 	  (all!!
 	    (project (low)
@@ -39,8 +38,8 @@
     (relation (p i is (once nis0))
       (to-show p `(,i . ,is) nis0)
       (all!!
-        (predicate (i p)
-	  (not (zero? (modulo i p))))
+        (project (i p)
+	  (predicate (not (zero? (modulo i p)))))
 	(exists (nis)
 	  (all!!
 	    (project/no-check (i nis)
