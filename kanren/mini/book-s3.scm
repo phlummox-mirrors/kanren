@@ -95,27 +95,45 @@
   (syntax-rules ()
     ((_ (x) g0 g ...)
      (let ((x (var 'x)))
-       (runner prefix* x (all g0 g ...))))))
-
-(define runner
-  (lambda (fn x g)
-    (fn (lambda () (rn x (g empty-s))))))
+       (rn x (all g0 g ...) prefix*)))))
 
 (define rn
-  (lambda (x r)
-    (case-ans r
-      (quote ())
-      ((s) (cons (reify x s)
-             (lambda () (quote ()))))
-      ((s f) (cons (reify x s)
-               (lambda () (rn x (f))))))))
-
+  (lambda (x g filter)
+    (map (lambda (s) (reify x s)) 
+      (filter (g empty-s)))))
 
 (define-syntax run
   (syntax-rules ()
-    ((_ n (x) g0 g ...)
-     (let ((x (var 'x)))
-       (runner (prefix n) x (all g0 g ...))))))
+    ((_ n^ (x) g0 g ...)
+     (let ((x (var 'x)) (n n^))
+       (cond
+         ((zero? n) (quote ()))
+         (else
+           (rn x (all g0 g ...) (prefix n))))))))
+
+; Converting streams to lists
+
+(define prefix*
+  (lambda (r)
+    (case-ans r
+      (quote ())
+      ((v) (cons v (quote ())))
+      ((v f) (cons v (prefix* (f)))))))
+
+(define prefix                   
+  (lambda (n)
+    (lambda (r)
+      (case-ans r                       
+        (quote ())
+        ((s) (cons s (quote ())))
+        ((s f)
+         (cons s
+           (cond 
+             ((= n 1) (quote ()))
+             (else 
+               ((prefix (- n 1)) (f))))))))))
+
+; Kanren combinators
 
 (define-syntax all
   (syntax-rules ()
@@ -142,7 +160,7 @@
 (define-syntax project
   (syntax-rules ()
     ((_ (x ...) g0 g ...)  
-     (lambda (s)
+     (lambdag@ (s)
        (let ((x (walk-strongly x s)) ...)
          ((all g0 g ...) s))))))
 
@@ -223,22 +241,3 @@
           ((< v n)  (g (ext-s x (+ v 1) s)))
           (else (fail s)))))))
 
-; Converting streams to lists
-
-(define prefix*
-  (lambda (f)
-    (let ((p (f)))
-      (cond
-    	((null? p) (quote ()))
-	    (else (cons (car p) (prefix* (cdr p))))))))
-
-(define prefix
-  (lambda (n)
-    (lambda (f)
-      (cond
-        ((zero? n) (quote ()))
-        (else
-         (let ((p (f)))
-           (cond
-             ((null? p) (quote ()))
-             (else (cons (car p) ((prefix (- n 1)) (cdr p)))))))))))

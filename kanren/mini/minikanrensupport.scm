@@ -179,11 +179,11 @@
   (lambda (v s)
     (let ((t (walk-strongly v s)))
       (let ((fv (free-vars t)))
-	(walk-strongly t (find-pretty-names fv 0))))))
+    	(walk-strongly t (find-pretty-names fv 0))))))
 
 ; Given the list of free variables and the initial index,
 ; create a subst { v -> pretty-name-indexed }
-; where pretty-name-indexed is the combination of "x" (indicating
+; where pretty-name-indexed is the combination of "_" (indicating
 ; a free variable) and the index ".0", ".1", etc.
 (define find-pretty-names
   (lambda (fv index)
@@ -196,14 +196,14 @@
   (lambda (index)
     (string->symbol
       (string-append
-        "$x_{"
+        "_$_{_{"
         (number->string index)
-        "}$"))))
+        "}}$"))))
 
 (define reify-id      ;;;; NEW
   (lambda (index)
     (string->symbol
-      (string-append "x" (string #\.) (number->string index)))))
+      (string-append "_" (string #\.) (number->string index)))))
 
 
 (define unify-check
