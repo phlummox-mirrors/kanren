@@ -393,6 +393,13 @@
 (define-syntax exists
   (syntax-rules ()
     [(_ () ant) ant]
+    [(_ (id) ant)			; Handle one id in a special way
+     (let-lv (id)
+       (lambda@ (sk fk in-subst)
+	 (@ ant
+	   (lambda@ (fk out-subst)
+	     (@ sk fk (prune-subst-1 id in-subst out-subst)))
+            fk in-subst)))]
     [(_ (id ...) ant)
      (let-lv (id ...)
        (lambda@ (sk fk in-subst)
@@ -413,20 +420,98 @@
       [(null? ls1) ls2]
       [else (rev-append (cdr ls1) (cons (car ls1) ls2))])))
 
+
+; prune-subst-1 VAR IN-SUBST SUBST
+; VAR is a logical variable, SUBST is a substitution, and IN-SUBST
+; is a tail of SUBST (which may be '()).
+; VAR is supposed to have non-complex binding in SUBST
+; (see Definition 3 in the document "Properties of Substitutions").
+; If VAR is bound in SUBST, the corresponding commitment 
+; is supposed to occur in SUBST up to but not including IN-SUBST.
+; According to Proposition 10, if VAR freely occurs in SUBST, all such
+; terms are VAR itself.
+; The result is a substitution with the commitment to VAR removed
+; and the other commitments composed with the removed commitment.
+; The order of commitments is preserved.
+
+(define prune-subst-1
+  (lambda (var in-subst subst)
+    (if (eq? subst in-subst) subst
+      ; if VAR is not bound, there is nothing to prune
+      (let*-and subst ((var-binding (assq var subst))
+		       (tv (commitment->term var-binding)))
+        (let loop ([current subst])
+          (cond
+            [(null? current) current]
+            [(eq? current in-subst) current]
+	    [(eq? (car current) var-binding)
+	      (loop (cdr current))]
+	    [(eq? (commitment->term (car current)) var)
+	      (cons (commitment (commitment->var (car current)) tv)
+		(loop (cdr current)))]
+	    [else (cons (car current) (loop (cdr current)))]
+	    ))))))
+
+; The same but for multiple vars
+; To prune multiple-vars, we can prune them one-by-one
+; We can attempt to be more efficient and prune them in parallel.
+; But we encounter a problem:
+; If we have a substitution
+;  ((x . y) (y . 1) (a . x))
+; Then pruning 'x' first and 'y' second will give us ((a . 1))
+; Pruning 'y' first and 'x' second will give us ((a . 1))
+; But naively attempting to prune 'x' and 'y' in parallel
+; disregarding dependency between them results in ((a . y))
+; which is not correct.
+; We should only be concerned about a direct dependency:
+;  ((x . y) (y . (1 t)) (t . x) (a . x))
+; pruning x and y in sequence or in parallel gives the same result:
+;  ((t . (1 t)) (a . (1 t)))
+; We should also note that the unifier will never return a substitution
+; that contains a cycle ((x1 . x2) (x2 . x3) ... (xn . x1))
+
 (define prune-subst
   (lambda (vars in-subst subst)
     (if (eq? subst in-subst)
         subst
-        (let loop ([current subst] [to-remove '()] [clean '()] [to-subst '()])
-          (cond
-            [(null? current) (compose-subst/own-survivors to-subst to-remove clean)]
-            [(eq? current in-subst)
-             (compose-subst/own-survivors to-subst to-remove (rev-append clean current))]
-            [(memq (commitment->var (car current)) vars)
-             (loop (cdr current) (cons (car current) to-remove) clean to-subst)]
-            [(relatively-ground? (commitment->term (car current)) vars)
-             (loop (cdr current) to-remove (cons (car current) clean) to-subst)]
-            [else (loop (cdr current) to-remove clean (cons (car current) to-subst))])))))
+      (let ((var-bindings ; the bindings of truly bound vars
+	      (let loop ((vars vars))
+		(if (null? vars) vars
+		  (let ((binding (assq (car vars) subst)))
+		    (if binding
+		      (cons binding (loop (cdr vars)))
+		      (loop (cdr vars))))))))
+	(cond
+	  [(null? var-bindings) subst] ; none of vars are bound
+	  [(null? (cdr var-bindings))
+	    ; only one variable to prune, use the faster version
+	    (prune-subst-1 (commitment->var (car var-bindings))
+	      in-subst subst)]
+	  [(let test ((vb var-bindings)) ; check multiple dependency
+	     (and (pair? vb)
+	       (or (let ((term (commitment->term (car vb))))
+		     (and (var? term) (assq term var-bindings)))
+		 (test (cdr vb)))))
+	    ; do pruning sequentially
+	    (let loop ((var-bindings var-bindings) (subst subst))
+	      (if (null? var-bindings) subst
+		(loop (cdr var-bindings)
+		  (prune-subst-1 (commitment->var (car var-bindings))
+		    in-subst subst))))]
+	  [else				; do it in parallel
+	    (let loop ([current subst])
+	      (cond
+		[(null? current) current]
+		[(eq? current in-subst) current]
+		[(memq (car current) var-bindings)
+		  (loop (cdr current))]
+		[(assq (commitment->term (car current)) var-bindings) =>
+		  (lambda (ct)
+		    (cons (commitment (commitment->var (car current)) 
+			    (commitment->term ct))
+		      (loop (cdr current))))]
+		[else (cons (car current) (loop (cdr current)))]))]
+		)))))
 
 ; when the unifier is moved up, move prune-subst test from below up...
 
@@ -2776,7 +2861,7 @@
 ; Using the properties of the unifier to do the proper garbage
 ; collection of logical vars
 
-'(test-check 'prune-subst-1
+(test-check 'prune-subst-1
   (concretize
     (let-lv (x z dummy)
       (@ 
@@ -2797,6 +2882,119 @@
 	initial-fk
 	(unit-subst dummy 'dummy))))
   '((a*.0 . 7) (x.0 5 a*.0) (dummy.0 . dummy)))
+
+; verifying corollary 2 of proposition 10
+(test-check 'prune-subst-3
+  (concretize
+    (let-lv (x v dummy)
+      (@ 
+	(exists (y)
+	  (== x `(a b c ,v d)))
+	(lambda@ (fk subst) subst)
+	initial-fk
+	(unit-subst dummy 'dummy))))
+  '((a*.0 . v.0) (x.0 a b c a*.0 d) (dummy.0 . dummy)))
+
+; pruning several variables sequentially and in parallel
+(test-check 'prune-subst-4-1
+  (concretize
+    (let-lv (x v b dummy)
+      (@ 
+	(let-lv (y)
+	  (== `(,b ,x ,y) `(,x ,y 1)))
+	(lambda@ (fk subst) subst)
+	initial-fk
+	(unit-subst dummy 'dummy))))
+  '((y.0 . 1) (x.0 . y.0) (b.0 . x.0) (dummy.0 . dummy)))
+
+(test-check 'prune-subst-4-2
+  (concretize
+    (let-lv (v b dummy)
+      (@ 
+	(exists (x)
+	  (exists (y)
+	    (== `(,b ,x ,y) `(,x ,y 1))))
+	  (lambda@ (fk subst) subst)
+	  initial-fk
+	  (unit-subst dummy 'dummy))))
+    '((b.0 . 1) (dummy.0 . dummy)))
+
+(test-check 'prune-subst-4-3
+  (concretize
+    (let-lv (v b dummy)
+      (@ 
+	(exists (y)
+	  (exists (x)
+	    (== `(,b ,x ,y) `(,x ,y 1))))
+	  (lambda@ (fk subst) subst)
+	  initial-fk
+	  (unit-subst dummy 'dummy))))
+    '((b.0 . 1) (dummy.0 . dummy)))
+
+(test-check 'prune-subst-4-4
+  (concretize
+    (let-lv (v b dummy)
+      (@ 
+	(exists (x y)
+	    (== `(,b ,x ,y) `(,x ,y 1)))
+	  (lambda@ (fk subst) subst)
+	  initial-fk
+	  (unit-subst dummy 'dummy))))
+    '((b.0 . 1) (dummy.0 . dummy)))
+
+; pruning several variables sequentially and in parallel
+; for indirect (cyclic) dependency
+(test-check 'prune-subst-5-1
+  (concretize
+    (let-lv (x v b dummy)
+      (@ 
+	(let-lv (y)
+	  (== `(,b ,y ,x) `(,x (1 ,x) ,y)))
+	(lambda@ (fk subst) subst)
+	initial-fk
+	(unit-subst dummy 'dummy))))
+  '((x.0 1 a*.0) (a*.0 . x.0) (y.0 1 a*.0) (b.0 . x.0) (dummy.0 . dummy)))
+
+(test-check 'prune-subst-5-2
+  (concretize
+    (let-lv (v b dummy)
+      (@ 
+	(exists (x)
+	  (exists (y)
+	  (== `(,b ,y ,x) `(,x (1 ,x) ,y))))
+	(lambda@ (fk subst) subst)
+	initial-fk
+	(unit-subst dummy 'dummy))))
+  '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
+
+(test-check 'prune-subst-5-3
+  (concretize
+    (let-lv (v b dummy)
+      (@ 
+	(exists (y)
+	  (exists (x)
+	  (== `(,b ,y ,x) `(,x (1 ,x) ,y))))
+	(lambda@ (fk subst) subst)
+	initial-fk
+	(unit-subst dummy 'dummy))))
+  '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
+
+(test-check 'prune-subst-5-4
+  (concretize
+    (let-lv (v b dummy)
+      (@ 
+	(exists (x y)
+	  (== `(,b ,y ,x) `(,x (1 ,x) ,y)))
+	(lambda@ (fk subst) subst)
+	initial-fk
+	(unit-subst dummy 'dummy))))
+  '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
+
+; We should only be concerned about a direct dependency:
+;  ((x . y) (y . (1 t)) (t . x) (a . x))
+; pruning x and y in sequence or in parallel gives the same result:
+;  ((t . (1 t)) (a . (1 t)))
+
 
 ;;;; *****************************************************************
 ;;;; This is the start of a different perspective on logic programming.

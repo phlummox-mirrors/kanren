@@ -10,7 +10,7 @@ _ is called anonymous variable.  A term without logical variables is called
 ground.  When it is not confusing, in the present document we will use
 low-case roman letters to represent variables, uppercase letters to denote
 terms. We will use the common Scheme notation for pairs and lists.  The
-notes give more details.
+notes on Kanren give more details.
 
 A substitution: a list of _ordered_ associations (also called bindings or
 commitments) of logical variables to terms. Substitutions are represented
@@ -211,11 +211,12 @@ variable on the path from u to tv.  Therefore, the identity holds.
 Oleg conjectures that Proposition 3 can be extended to cyclic substitutions
 if only we define even weaker equivalence of substitutions appropriately.
 
-Proposition 4. Let v be a fresh logical variable and let A be a term. Then
-(unify v A subst) always succeeds, and v becomes bound, with the sole
-exception of the case when A is _.  Furthermore, the resulting substitution
-does not contain a binding whose term includes v (that is, v never 
-freely occurs in the resulting subst).
+Proposition 4. Let v be a fresh logical variable and let A be a
+term. Then (unify v A subst) always succeeds. Unless A is the
+anonymous variable _, v becomes bound in the resulting
+substitution. Furthermore, the resulting substitution does not contain
+a binding whose term includes v (that is, v never freely occurs in the
+resulting subst).
 
 The following enumerates all possible cases for A, and the result of
 the unification:
@@ -256,14 +257,14 @@ well-formed substitutions:
 If subst is well-formed, (unify T1 T2 subst) is also well-formed
 provided that it succeeds.
 
-Proposition 7. If v is a variable committed to a term tv in a
+Proposition 7. If v is a variable committed to a term Tv in a
 substitution subst, which is the result of unification, then subst
 can be partitioned as follows:
-	subst-after (commitment v tv) subst-before
-Then if v does not freely occur in tv nor in subst-before then it does 
+	subst-after (commitment v Tv) subst-before
+Then if v does not freely occur in Tv nor in subst-before then it does 
 not freely occur in subst-after.
 Proof: examining all occurrences of extend-subst, and induction
-in unify-free/bound and unify-free/value (These are undefined words)
+in unify-free/bound and unify-free/list in the kanren.ss code.
 
 Corollary: (prune-subst v subst) should check if v freely occurs on or
 before (to the right of) its associated commitment. If it does not,
@@ -280,14 +281,14 @@ resulted from unification or pruning only if in the history of subst
 there was a unification (unify free-var v some-subst) where v is not
 committed in some-subst.
 
-Proposition 8. Let v be a variable committed to a term tv
+Proposition 8. Let v be a variable committed to a term Tv
 in a substitution subst that resulted from unification/pruning. subst
 can be partitioned as
-	subst-after (commitment v tv) subst-before
+	subst-after (commitment v Tv) subst-before
 
-Assume that v neither freely occurs in tv nor in subst-before.
+Assume that v neither freely occurs in Tv nor in subst-before.
 Let B1 and B2 be two arbitrary terms. Let
-        substv = (unit-subst v tv)
+        substv = (unit-subst v Tv)
 	sb  = (unify B1 B2 subst)
 	sb' = (unify (subst-in B1 substv)
 		     (subst-in B2 substv)
@@ -298,7 +299,7 @@ The proof is simple. By definition of unification, if sb is not #f,
 then
 	(subst-in B1 sb) === (subst-in B2 sb)
 By Proposition 7, sb can be factored just as well into
-	subst-after' (commitment v tv) subst-before
+	subst-after' (commitment v Tv) subst-before
 
 Let us prove a commitment commutation lemma: given subst as in
 Proposition 7, 
@@ -307,7 +308,7 @@ Proposition 7,
 for any term T. By Proposition 7, v does not freely occur in subst
 (and also is not bound in (del-binding v subst)). If v does not
 freely occur in T, (subst-in T subst) === (subst-in T (del-binding v subst))
-and (subst-in T (unit-subst v tv)) === T
+and (subst-in T (unit-subst v Tv)) === T
 If v does occur in T, the lemma holds just by the construction of
 subst.
 
@@ -363,4 +364,155 @@ when these variables are mentioned in A, Scheme will replace
 the occurrence of x, for example, with (binding-of x subst') rather
 than with a logical variable, whose binding should be looked up in the
 current subst later. So, we get "normalization by evaluation'.
+
+
+Definition 3. A variable v is non-complex in a
+substitution subst if either:
+	- v does not occur freely in subst
+	- if it occurs freely, it is in a commitment of the form
+           (commitment x v) where x is some variable.
+That is, if v freely occurs in subst, all terms that contain v are
+'v' itself.
+
+Proposition 10. Let B1 and B2 be arbitrary terms and subst be a
+well-formed substitution. Let
+	    substo = (unify B1 B2 subst)
+be non-#f. Any variable v that is free in (B1 or B2) and
+is non-complex in subst, is also non-complex in substo.
+
+That is, unification preserves the non-complex property
+of logical variables that are present in the terms being unified.
+
+Proof: by induction and examining all instances of a function
+'extend-subst' in the unifier. These are the instances:
+
+in the function unify:
+   (extend-subst u t subst)
+      where t is atomic (i.e., ground) and u is free. 
+      The added binding does not add a free occurrence of any variable.	 
+
+In the function unify-free/any:
+   (extend-subst t-var u subst)
+      where both t-var and u are variables are unbound in subst.
+      The added commitment does not create a free occurrence of t-var.
+      The added commitment creates a free occurrence of 'u',
+      but that occurrence has the form described in Definition 3.
+
+   (extend-subst t-var u subst)
+      where u is atomic (i.e., ground)
+      The added binding does not add a free occurrence of any variable.	 
+
+In the function unify-free/bound:
+   (extend-subst t-var u-term s)
+      where both t-var and u-term are variables unbound in 's'.
+      The added commitment does not create a free occurrence of t-var.
+      The added commitment creates a free occurrence of 'u-term',
+      but that occurrence has the form described in Definition 3.
+
+   (extend-subst t-var u-term s)
+      where t-var is unbound in 's' and u-term is not a variable.
+      u-term is bound to some variable in s. u-term may be an unground
+      term. If t-var has a non-complex occurrence in 's', t-var
+      is not free in u-term, so t-var will have a non-complex
+      occurrence in the result. The added binding does not add any
+      new free occurrence of any variable.
+
+
+In the function unify-free/list:
+   (extend-subst t-var u-value subst)
+      where u-value is ground. No free occurrences are created.
+
+   (extend-subst t-var (ufl-rebuild-with-vars to-unify u-value)
+	      subst)
+   (extend-subst t-var (ufl-rebuild-with-vars to-unify u-value)
+			   subst)
+
+If u-value had non-ground components, they will be replaced with
+fresh variables. Thus (ufl-rebuild-with-vars to-unify u-value) will
+not contain free occurrences of t-var nor any other variable that
+has freely occurred in subst or the terms to unify.
+
+As we have seen, the only complex occurrences in substitutions created
+in unifications involve fresh variables introduced by unify itself
+(i.e., by the function ufl-analyze-list).
+
+Corollary 1: A substitution that is an answer of the antecedent
+(let-lv (v) A) maintains the property of definition 3.
+
+Proof: trivial, keeping in mind that let-lv creates a fresh logical
+variable, which is guaranteed not to occur freely in any substitution
+that is given to the antecedent (let-lv (v) A).
+
+Corollary 2. If v has a non-complex occurrence in subst, then
+(prune-subst v subst) can be written as
+
+(define prune-subst
+  (lambda (v subst)
+    (cond
+      [(asssq v subst cons)
+       => (lambda (c/substr)
+	    (let ([tv (commitment->term (car c/substr))]
+		  [substr (cdr c/substr)])
+	      (map (lambda (c)
+		     (commitment (commitment->var c)
+		       (if (eq? (commitment->term c) v) tv
+			   (commitment->term c))))
+		substr)))]
+      [else subst])))
+
+That is, we can avoid the traversal of terms bound to variables and
+replace subst-in with a single eq? check.
+
+Proposition 11. Let subst be a result of a sequence of unifications
+of some terms and let variables 'v' and 'u' have non-complex
+occurrence in subst. Then 'v' has non-complex occurrence in
+(prune-subst u subst).
+
+That is, pruning out variables with non-complex occurrences 
+does not destroy that property for the other variables.
+
+Proof. The proof on Proposition 10 analyzed all occurrences of
+extend-subst in the unifier. We can see from that proof that if v
+is a variable free in one of the terms to unify, the substitution
+resulting from the successful unification will have only these four kinds
+of bindings:
+   (commitment v atom)
+   (commitment v some-var) ; some-var was unbound at that point
+   (commitment v non-var-term-that-occurred-before-in-subst)
+   (commitment v non-ground-term-with-temp-vars)
+
+As we have seen in the proof of Proposition 10, the only complex
+occurrences, called non-ground-term-with-temp-vars above, in
+substitutions created in unifications involve fresh variables
+introduced by unify itself. Therefore, the third case is either the
+first or the fourth one.
+
+For two variables, 'u' and 'v', we have
+
+   (commitment v atom)
+   (commitment u atom)
+   (commitment v u)
+   (commitment u v)
+   (commitment v some-var)
+   (commitment u some-var)
+   (commitment v non-ground-term-with-temp-vars)
+   (commitment u non-ground-term-with-temp-vars)
+
+Commitments (commitment v u) and (commitment u v) cannot occur at the
+same time: the function unify-free/bound makes sure of that.
+Therefore, the result of (prune-subst u subst) can have the bindings
+of v of the following form:
+
+   (commitment v atom)
+   (commitment v some-var)
+   (commitment v non-ground-term-with-temp-vars)
+
+which are exactly the same kinds of bindings that v had in the
+original subst.
+
+Corollary. Corollary 2 of Proposition 10 (a simplified form of
+prune-subst) is justified for substitutions that result from an
+arbitrary sequence of unifications and prunings applied to the empty
+subst.
+
 
