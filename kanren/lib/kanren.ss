@@ -1,7 +1,7 @@
 ;(load "plshared.ss")
 
 ; $Id$
-v
+
 (define-syntax let-values
   (syntax-rules ()
     [(_ (x ...) vs body0 body1 ...)
@@ -12,7 +12,7 @@ v
     [(_ () body) body]
     [(_ () body0 body1 body2 ...) (begin body0 body1 body2 ...)]
     [(_ (id ...) body0 body1 ...)
-     (let ([id (var 'id)] ...) body0 body1 ...)]))
+     (let ([id (logical-variable 'id)] ...) body0 body1 ...)]))
 
 (define-syntax lambda@
   (syntax-rules ()
@@ -70,19 +70,21 @@ v
 ;------------------------------------------------------------------------
 ; Logical variables, substitutions, and commitments (aka bindings)
    
-(define-record var (id) ())
-(define var make-var)
+(define-record logical-variable (id) ())
+(define logical-variable make-logical-variable)
+(define var? logical-variable?)
 
 (print-gensym #f)
-; (define var
+; (define logical-variable
 ;   (lambda (id)
 ;     (cons 'var id)))
 ; (define var?
 ;   (lambda (x)
 ;     (and (pair? x) (eqv? (car x) 'var))))
-; (define var-id
+; (define logical-variable-id
 ;   (lambda (x)
-;     (if (var? x) (cdr x) (error 'var-id "Invalid Logic Variable: ~s" x))))
+;     (if (var? x) (cdr x) 
+;           (error 'logical-variable-id "Invalid Logic Variable: ~s" x))))
 ;;; ------------------------------------------------------
 
 (define commitment cons)             ;;; change to list
@@ -248,11 +250,12 @@ v
       [(assq var env)
        => (lambda (var-c)
             (values (artificial-id var-c) env))]
-      [else (let ([var-c `(,var . ,(cond
-                                     [(assq/var-id (var-id var) env)
-                                      => (lambda (var-c) (+ (cdr var-c) 1))]
-                                     [else 0]))])
-              (values (artificial-id var-c) (cons var-c env)))])))
+      [else
+	(let ([var-c `(,var . ,(cond
+				 [(assq/var-id (logical-variable-id var) env)
+				   => (lambda (var-c) (+ (cdr var-c) 1))]
+				 [else 0]))])
+	  (values (artificial-id var-c) (cons var-c env)))])))
 
 (define concretize-term ;;; assumes no pairs; returns two values.
   (lambda (t env)
@@ -281,13 +284,14 @@ v
   (lambda (var-c)
     (string->symbol
       (string-append
-        (symbol->string (var-id (car var-c))) "." (number->string (cdr var-c))))))
+        (symbol->string (logical-variable-id (car var-c)))
+	"." (number->string (cdr var-c))))))
 
 (define assq/var-id
   (lambda (id env)
     (cond
       [(null? env) #f]
-      [(eq? (var-id (caar env)) id) (car env)]
+      [(eq? (logical-variable-id (caar env)) id) (car env)]
       [else (assq/var-id id (cdr env))])))
 
 (define-syntax trace-lambda@
@@ -436,54 +440,6 @@ v
 	       (cons (commitment (commitment->var (car current)) tv)
 		 (loop (cdr current)))]
 	      [else (cons (car current) (loop (cdr current)))])))))))
-
-; The same but for multiple vars
-; To prune multiple-vars, we can prune them one-by-one
-; We can attempt to be more efficient and prune them in parallel.
-; But we encounter a problem:
-; If we have a substitution
-;  ((x . y) (y . 1) (a . x))
-; Then pruning 'x' first and 'y' second will give us ((a . 1))
-; Pruning 'y' first and 'x' second will give us ((a . 1))
-; But naively attempting to prune 'x' and 'y' in parallel
-; disregarding dependency between them results in ((a . y))
-; which is not correct.
-; We should only be concerned about a direct dependency:
-;  ((x . y) (y . (1 t)) (t . x) (a . x))
-; pruning x and y in sequence or in parallel gives the same result:
-;  ((t . (1 t)) (a . (1 t)))
-; We should also note that the unifier will never return a substitution
-; that contains a cycle ((x1 . x2) (x2 . x3) ... (xn . x1))
-
-; prune-subst-1 VAR IN-SUBST SUBST
-; VAR is a logical variable, SUBST is a substitution, and IN-SUBST
-; is a tail of SUBST (which may be '()).
-; VAR is supposed to have non-complex binding in SUBST
-; (see Definition 3 in the document "Properties of Substitutions").
-; If VAR is bound in SUBST, the corresponding commitment 
-; is supposed to occur in SUBST up to but not including IN-SUBST.
-; According to Proposition 10, if VAR freely occurs in SUBST, all such
-; terms are VAR itself.
-; The result is a substitution with the commitment to VAR removed
-; and the other commitments composed with the removed commitment.
-; The order of commitments is preserved.
-
-(define prune-subst-1
-  (lambda (var in-subst subst)
-    (if (eq? subst in-subst) subst
-        ; if VAR is not bound, there is nothing to prune
-        (let*-and subst ([var-binding (assq var subst)])
-          (let ([tv (commitment->term var-binding)])
-            (let loop ([current subst])
-              (cond
-                [(null? current) current]
-                [(eq? current in-subst) current]
-                [(eq? (car current) var-binding)
-                 (loop (cdr current))]
-                [(eq? (commitment->term (car current)) var)
-                 (cons (commitment (commitment->var (car current)) tv)
-                   (loop (cdr current)))]
-                [else (cons (car current) (loop (cdr current)))])))))))
 
 ; The same but for multiple vars
 ; To prune multiple-vars, we can prune them one-by-one
@@ -1070,7 +1026,7 @@ v
      (lambda gvs
        (lambda@ (sk fk subst)			; first unify the constants
 	 (let*-and (fk) ([subst (unify gvo term subst)] ...)
-	   (let ([var0 (if (eq? gvv0 _) (var '?) gvv0)] ...)
+	   (let ([var0 (if (eq? gvv0 _) (logical-variable '?) gvv0)] ...)
 	     (@ ant sk fk subst)))))]))
 
 ; (define-syntax relation/cut
@@ -2515,13 +2471,13 @@ v
     (if (pair? lst-src)
       (if (ground? (car lst-src))
 	(ufl-analyze-list (cdr lst-src))
-	(let ((fresh-var (var 'a*)))
+	(let ((fresh-var (logical-variable 'a*)))
 	  (cons (cons fresh-var (car lst-src))
 	    (ufl-analyze-list (cdr lst-src)))))
       ; lst-src is either null? or the end of an improper list
       (if (or (null? lst-src) (ground? lst-src))
 	'()
-	(cons (cons (var 'd*) lst-src) '())))))
+	(cons (cons (logical-variable 'd*) lst-src) '())))))
 
       ; Given a proper or improper list lst,
       ; return a list in which some of the cells are replaced with

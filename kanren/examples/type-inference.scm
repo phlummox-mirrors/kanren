@@ -89,7 +89,7 @@
                 [(assq t env)
                  => (lambda (pr)
                       (values (cdr pr) env))]
-                [else (let ([new-var (var (var-id t))])
+                [else (let ([new-var (logical-variable (logical-variable-id t))])
                         (values new-var (cons `(,t . ,new-var) env)))])]
              [(pair? t)
               (let-values (a-t env) (instantiate-term (car t) env)

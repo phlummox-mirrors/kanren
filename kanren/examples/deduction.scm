@@ -133,7 +133,7 @@
               (map
                 (lambda (v)
                   (commitment v
-                    (symbol-append '! (var-id v) ': (gensym))))
+                    (symbol-append '! (logical-variable-id v) ': (gensym))))
                 fv)])
         (subst-in term subst)))))
 
