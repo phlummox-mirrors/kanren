@@ -2947,6 +2947,72 @@
 
 
 
+(printf "~%Overloading resolution in Haskell.~%")
+; Suppose we have the following Haskell class and instance declarations
+;	class F a b | a->b where f :: a->b->Bool
+;	instance F a b => F [a] [b]
+;
+; we need to typecheck
+;   g x = f [x] x
+; which says that f:: [a] -> a -> Bool
+; In general, we need to figure out which instance to choose for f.
+; In other words, we need to find out which subset of F to use.
+; Here's only one instance. So we need to figure out if it applies.
+
+(define typeclass-F-instance-1
+  (relation _ (a b)
+    (to-show `(list ,a) `(list ,b))
+    (typeclass-F a b)))
+
+; This is a closed-world assumption
+(define typeclass-F
+  (lambda (a b)
+    (with-depth 10
+      (any
+	(typeclass-F-instance-1 a b)
+	))))
+
+(printf "~%Typechecking (closed world): ~s~%" 
+  (exists (a) (solve 4
+			(typeclass-F-instance-1 `(list ,a) a))))
+
+; This is an open-world assumption
+(define typeclass-F
+  (lambda (a b)
+    (with-depth 2
+      (any
+	(typeclass-F-instance-1 a b)
+	((relation cut (a b1 b2)	; a relation under constraint a->b
+	   (to-show a b1)
+	   (fails
+	     (all
+	       (typeclass-F a b2)
+	       (fails
+	; equality predicate: X == Y in Prolog
+	; if X is a var, then X == Y holds only if Y
+	; is the same var
+		 (pred-call/no-check 
+		   (lambda (x y)
+		     (cond
+		       ((and (var? x) (var? y)) (eq? x y))
+		       ((var? x) #f)  ; y is not a var
+		       ((var? y) #f)  ; x is not a var
+		       (else (equal? x y))))
+		   b1 b2))
+	      cut))) a b)
+	))))
+
+(printf "~%Typechecking (open world): ~s~%" 
+  (exists (a) (solve 4
+			(typeclass-F-instance-1 `(list ,a) a))))
+
+(printf "~%Typechecking (open world) f [x] int: ~s~%" 
+  (exists (a) (solve 4
+			(typeclass-F-instance-1 `(list ,a) 'int))))
+
+(exit 0)
+;
+
 
 (printf "~%Append with limited depth%")
 
