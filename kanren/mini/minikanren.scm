@@ -2,8 +2,9 @@
   (exists (id ...)
     (@ ant (lambda@ (fk subst)
 	     (apply (lambda (id ...) expr expr* ...)
-	       (concretize `(,(subst-in id subst) ...) )))
-      (lambda () '()) empty-subst)))
+	       (concretize `(,(subst-in id subst) ...))))
+      (lambda () '())
+      empty-subst)))
 
 (def-syntax (project (id ...) ant)
   (lambda@ (sk fk subst)
