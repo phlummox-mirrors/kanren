@@ -1,30 +1,31 @@
 ; Load everything (for interactive use: SCM Scheme)
 ; $Id$
 
-; For historical reasons, KANREN code uses square brackets, which
-; SCM does not understand, natively. So, we have to modify load
-; to cope with them.
-
-(define load
-  (let ((original-load load)
-	(translated-fname
-	  (string-append "/tmp/translated-"
-	    (number->string (current-time))
-	    ".scm")))
-    (lambda (file-name)
-      (call-with-output-file translated-fname
-	(lambda (oport)
-	  (call-with-input-file file-name
-	    (lambda (iport)
-	      (do ((c (read-char iport) (read-char iport)))
-		((eof-object? c))
-		(write-char
-		  (case c
-		    ((#\[) #\( )
-		    ((#\]) #\) )
-		    (else c))
-		  oport))))))
-      (original-load translated-fname))))
+;---- No longer needed. KANREN now uses round parentheses only
+; ; For historical reasons, KANREN code uses square brackets, which
+; ; SCM does not understand, natively. So, we have to modify load
+; ; to cope with them.
+;
+; (define load
+;   (let ((original-load load)
+; 	(translated-fname
+; 	  (string-append "/tmp/translated-"
+; 	    (number->string (current-time))
+; 	    ".scm")))
+;     (lambda (file-name)
+;       (call-with-output-file translated-fname
+; 	(lambda (oport)
+; 	  (call-with-input-file file-name
+; 	    (lambda (iport)
+; 	      (do ((c (read-char iport) (read-char iport)))
+; 		((eof-object? c))
+; 		(write-char
+; 		  (case c
+; 		    ((#\[) #\( )
+; 		    ((#\]) #\) )
+; 		    (else c))
+; 		  oport))))))
+;       (original-load translated-fname))))
 
 
 (load "lib/scm-specific.scm")

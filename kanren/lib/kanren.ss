@@ -6,15 +6,15 @@
 
 (define-syntax lambda@
   (syntax-rules ()
-    [(_ (formal) body0 body1 ...) (lambda (formal) body0 body1 ...)]
-    [(_ (formal0 formal1 formal2 ...) body0 body1 ...)
+    ((_ (formal) body0 body1 ...) (lambda (formal) body0 body1 ...))
+    ((_ (formal0 formal1 formal2 ...) body0 body1 ...)
      (lambda (formal0)
-       (lambda@ (formal1 formal2 ...) body0 body1 ...))]))
+       (lambda@ (formal1 formal2 ...) body0 body1 ...)))))
 
 (define-syntax @  
   (syntax-rules ()
-    [(_ rator rand) (rator rand)]
-    [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
+    ((_ rator rand) (rator rand))
+    ((_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...))))
 
 (test-check 'test-@-lambda@
   (@ (lambda@ (x y z) (+ x (+ y z))) 1 2 3)
@@ -32,12 +32,12 @@
 ; An attempt to do a limited beta-substitution at macro-expand time
 ; (define-syntax @    
 ;   (syntax-rules (syntax-rules)
-;     [(_ (syntax-rules sdata ...) rand0 ...)
+;     ((_ (syntax-rules sdata ...) rand0 ...)
 ;       (let-syntax 
 ; 	((tempname (syntax-rules sdata ...)))
-; 	(tempname rand0 ...))]
-;     [(_ rator rand0 rand1 ...)
-;      (@-simple rator rand0 rand1 ...)]))
+; 	(tempname rand0 ...)))
+;     ((_ rator rand0 rand1 ...)
+;      (@-simple rator rand0 rand1 ...))))
 
 
 ;  Fk  = () -> Ans
@@ -92,18 +92,18 @@
   (lambda (var in-subst subst)
     (if (eq? subst in-subst) subst
       ; if VAR is not bound, there is nothing to prune
-      (let*-and subst ([var-binding (assq var subst)])
-	(let ([tv (commitment->term var-binding)])
-	  (let loop ([current subst])
+      (let*-and subst ((var-binding (assq var subst)))
+	(let ((tv (commitment->term var-binding)))
+	  (let loop ((current subst))
 	    (cond
-	      [(null? current) current]
-	      [(eq? current in-subst) current]
-	      [(eq? (car current) var-binding)
-	       (loop (cdr current))]
-	      [(eq? (commitment->term (car current)) var)
+	      ((null? current) current)
+	      ((eq? current in-subst) current)
+	      ((eq? (car current) var-binding)
+	       (loop (cdr current)))
+	      ((eq? (commitment->term (car current)) var)
 	       (cons (commitment (commitment->var (car current)) tv)
-		 (loop (cdr current)))]
-	      [else (cons (car current) (loop (cdr current)))])))))))
+		 (loop (cdr current))))
+	      (else (cons (car current) (loop (cdr current)))))))))))
 
 ; The same but for multiple vars
 ; To prune multiple-vars, we can prune them one-by-one
@@ -127,64 +127,64 @@
   (lambda (vars in-subst subst)
     (if (eq? subst in-subst)
       subst
-      (let ([var-bindings ; the bindings of truly bound vars
-	      (let loop ([vars vars])
+      (let ((var-bindings ; the bindings of truly bound vars
+	      (let loop ((vars vars))
 		(if (null? vars) vars
-		  (let ([binding (assq (car vars) subst)])
+		  (let ((binding (assq (car vars) subst)))
 		    (if binding
 		      (cons binding (loop (cdr vars)))
-		      (loop (cdr vars))))))])
+		      (loop (cdr vars))))))))
 	(cond
-	  [(null? var-bindings) subst] ; none of vars are bound
-	  [(null? (cdr var-bindings))
+	  ((null? var-bindings) subst) ; none of vars are bound
+	  ((null? (cdr var-bindings))
 	    ; only one variable to prune, use the faster version
 	   (lv-elim-1 (commitment->var (car var-bindings))
-	     in-subst subst)]
-	  [(let test ([vb var-bindings]) ; check multiple dependency
+	     in-subst subst))
+	  ((let test ((vb var-bindings)) ; check multiple dependency
 	     (and (pair? vb)
-	       (or (let ([term (commitment->term (car vb))])
+	       (or (let ((term (commitment->term (car vb))))
 		     (and (var? term) (assq term var-bindings)))
 		 (test (cdr vb)))))
 	    ; do pruning sequentially
-	   (let loop ([var-bindings var-bindings] [subst subst])
+	   (let loop ((var-bindings var-bindings) (subst subst))
 	     (if (null? var-bindings) subst
 	       (loop (cdr var-bindings)
 		 (lv-elim-1 (commitment->var (car var-bindings))
-		   in-subst subst))))]
-	  [else				; do it in parallel
-	    (let loop ([current subst])
+		   in-subst subst)))))
+	  (else				; do it in parallel
+	    (let loop ((current subst))
 	      (cond
-		[(null? current) current]
-		[(eq? current in-subst) current]
-		[(memq (car current) var-bindings)
-		 (loop (cdr current))]
-		[(assq (commitment->term (car current)) var-bindings) =>
+		((null? current) current)
+		((eq? current in-subst) current)
+		((memq (car current) var-bindings)
+		 (loop (cdr current)))
+		((assq (commitment->term (car current)) var-bindings) =>
 		 (lambda (ct)
 		   (cons (commitment (commitment->var (car current)) 
 			   (commitment->term ct))
-		     (loop (cdr current))))]
-		[else (cons (car current) (loop (cdr current)))]))])))))
+		     (loop (cdr current)))))
+		(else (cons (car current) (loop (cdr current))))))))))))
 
 ; when the unifier is moved up, move lv-elim test from below up...
 
 ; That was the code for the unifier that introduced temp variables
 ; (define-syntax exists
 ;   (syntax-rules ()
-;     [(_ () ant) ant]
-;     [(_ (ex-id) ant)
+;     ((_ () ant) ant)
+;     ((_ (ex-id) ant)
 ;      (let-lv (ex-id)
 ;        (lambda@ (sk fk in-subst)
 ;          (@ ant
 ;            (lambda@ (fk out-subst)
 ;              (@ sk fk (lv-elim-1 ex-id in-subst out-subst)))
-;            fk in-subst)))]
-;     [(_ (ex-id ...) ant)
+;            fk in-subst))))
+;     ((_ (ex-id ...) ant)
 ;      (let-lv (ex-id ...) 
 ;        (lambda@ (sk fk in-subst)
 ;          (@ ant
 ;            (lambda@ (fk out-subst)
 ;              (@ sk fk (lv-elim (list ex-id ...) in-subst out-subst)))
-;            fk in-subst)))]))
+;            fk in-subst))))))
 
 ; For the unifier that doesn't introduce temp variables,
 ; exists is essentially let-lv
@@ -208,9 +208,9 @@
 
 (define-syntax exists
   (syntax-rules ()
-    [(_ () ant) ant]
-    [(_ (ex-id ...) ant)
-     (let-lv (ex-id ...) ant)]
+    ((_ () ant) ant)
+    ((_ (ex-id ...) ant)
+     (let-lv (ex-id ...) ant))
     ))
 
 ;-----------------------------------------------------------
@@ -264,17 +264,17 @@
 
 (define-syntax all
   (syntax-rules ()
-    [(_) (lambda@ (sk) sk)]
-    [(_ ant) ant]
-    [(_ ant0 ant1 ...)
+    ((_) (lambda@ (sk) sk))
+    ((_ ant) ant)
+    ((_ ant0 ant1 ...)
      (lambda@ (sk)
-       (splice-in-ants/all sk ant0 ant1 ...))]))
+       (splice-in-ants/all sk ant0 ant1 ...)))))
 
 (define-syntax splice-in-ants/all
   (syntax-rules ()
-    [(_ sk ant) (@ ant sk)]
-    [(_ sk ant0 ant1 ...)
-     (@ ant0 (splice-in-ants/all sk ant1 ...))]))
+    ((_ sk ant) (@ ant sk))
+    ((_ sk ant0 ant1 ...)
+     (@ ant0 (splice-in-ants/all sk ant1 ...)))))
 
 (define succeed (all))
 
@@ -286,7 +286,7 @@
 
 (define-syntax promise-one-answer
   (syntax-rules ()
-    [(_ ant) ant]))
+    ((_ ant) ant)))
 
 ; (all! ant1 ant2 ...)
 ; A committed choice nondeterminism conjunction
@@ -312,14 +312,14 @@
 
 (define-syntax all!
   (syntax-rules (promise-one-answer)
-    [(_) (promise-one-answer (all))]
-    [(_ (promise-one-answer ant)) (promise-one-answer ant)] ; keep the mark
-    [(_ ant0 ant1 ...)
+    ((_) (promise-one-answer (all)))
+    ((_ (promise-one-answer ant)) (promise-one-answer ant)) ; keep the mark
+    ((_ ant0 ant1 ...)
      (promise-one-answer
        (lambda@ (sk fk)
 	 (@
 	   (splice-in-ants/all (lambda@ (fk-ign) (@ sk fk)) ant0 ant1 ...)
-	   fk)))]))
+	   fk))))))
 
 ; (all!! ant1 ant2 ...)
 ; Even more committed choice nondeterministic conjunction
@@ -332,21 +332,21 @@
 
 (define-syntax all!!
   (syntax-rules ()
-    [(_) (all!)]
-    [(_ ant) (all! ant)]
-    [(_ ant0 ant1 ...)
+    ((_) (all!))
+    ((_ ant) (all! ant))
+    ((_ ant0 ant1 ...)
      (promise-one-answer 
        (lambda@ (sk fk)
-         (splice-in-ants/all!! sk fk ant0 ant1 ...)))]))
+         (splice-in-ants/all!! sk fk ant0 ant1 ...))))))
 
 (define-syntax splice-in-ants/all!!
   (syntax-rules (promise-one-answer)
-    [(_ sk fk)
-      (@ sk fk)]
-    [(_ sk fk (promise-one-answer ant))
-      (@ ant sk fk)]
-    [(_ sk fk ant0 ant1 ...)
-      (@ ant0 (lambda (fk-ign) (splice-in-ants/all!! sk fk ant1 ...)) fk)]))
+    ((_ sk fk)
+      (@ sk fk))
+    ((_ sk fk (promise-one-answer ant))
+      (@ ant sk fk))
+    ((_ sk fk ant0 ant1 ...)
+      (@ ant0 (lambda (fk-ign) (splice-in-ants/all!! sk fk ant1 ...)) fk))))
 
 ; (if-only COND THEN)
 ; (if-only COND THEN ELSE)
@@ -374,19 +374,19 @@
 
 (define-syntax if-only
   (syntax-rules ()
-    [(_ condition then)
+    ((_ condition then)
      (lambda@ (sk fk)
        (@ condition
          ; sk from cond
          (lambda@ (fk-ign) (@ then sk fk))
          ; failure from cond
-         fk))]
-    [(_ condition then else)
+         fk)))
+    ((_ condition then else)
      (lambda@ (sk fk subst)
        (@ condition
          (lambda@ (fk-ign) (@ then sk fk))
          (lambda () (@ else sk fk subst))
-         subst))]))
+         subst)))))
 
 ; (if-all! (COND1 ... CONDN) THEN)
 ; (if-all! (COND1 ... CONDN) THEN ELSE)
@@ -400,23 +400,23 @@
 
 ; (define-syntax if-all!
 ;   (syntax-rules ()
-;     [(_ (condition) then) (if-only condition then)]
-;     [(_ (condition) then else) (if-only condition then else)]
-;     [(_ (condition1 condition2 ...) then)
+;     ((_ (condition) then) (if-only condition then))
+;     ((_ (condition) then else) (if-only condition then else))
+;     ((_ (condition1 condition2 ...) then)
 ;      (lambda@ (sk fk)
 ;        (@ (splice-in-ants/all
 ;             (lambda@ (fk-ign)
 ;               (@ then sk fk))
 ;             condition1 condition2 ...)
-;           fk))]
-;     [(_ (condition1 condition2 ...) then else)
+;           fk)))
+;     ((_ (condition1 condition2 ...) then else)
 ;      (lambda@ (sk fk subst)
 ;        (@ (splice-in-ants/all
 ;             (lambda@ (fk-ign)
 ;               (@ then sk fk)) condition1 condition2 ...)
 ;           (lambda ()
 ;             (@ else sk fk subst))
-; 	 subst))]))
+; 	 subst)))))
 
 ; Disjunction of antecedents
 ; All disjunctions below satisfy properties
@@ -434,19 +434,19 @@
 
 (define-syntax any
   (syntax-rules ()
-    [(_) (lambda@ (sk fk subst) (fk))]
-    [(_ ant) ant]
-    [(_ ant ...)
+    ((_) (lambda@ (sk fk subst) (fk)))
+    ((_ ant) ant)
+    ((_ ant ...)
       (lambda@ (sk fk subst)
-	(splice-in-ants/any sk fk subst ant ...))]))
+	(splice-in-ants/any sk fk subst ant ...)))))
 
 (define-syntax splice-in-ants/any
   (syntax-rules ()
-    [(_ sk fk subst ant1) (@ ant1 sk fk subst)]
-    [(_ sk fk subst ant1 ant2 ...)
+    ((_ sk fk subst ant1) (@ ant1 sk fk subst))
+    ((_ sk fk subst ant1 ant2 ...)
      (@ ant1 sk (lambda ()
                   (splice-in-ants/any sk fk subst ant2 ...))
-       subst)]))
+       subst))))
 
 (define fail (any))
 
@@ -524,23 +524,23 @@
 
 (define-syntax any-interleave
   (syntax-rules ()
-    [(_) fail]
-    [(_ ant) ant]
-    [(_ ant ...)
+    ((_) fail)
+    ((_ ant) ant)
+    ((_ ant ...)
      (lambda@ (sk fk subst)
        (interleave sk fk
-         (list (ant->sant ant subst) ...)))]))
+         (list (ant->sant ant subst) ...))))))
 
 ; we treat sants as a sort of a circular list
 (define interleave
   (lambda (sk fk sants)
     (cond
-      [(null? sants) (fk)]		; all of the sants are finished
-      [(null? (cdr sants))
+      ((null? sants) (fk))		; all of the sants are finished
+      ((null? (cdr sants))
       ; only one sants left -- run it through the end
-       (@ (car sants) sk fk)]
-      [else
-        (let loop ([curr sants] [residuals '()])
+       (@ (car sants) sk fk))
+      (else
+        (let loop ((curr sants) (residuals '()))
 	  ; check if the current round is finished
 	  (if (null? curr) (interleave sk fk (reverse residuals))
 	    (@
@@ -552,7 +552,7 @@
 		  (lambda () (loop (cdr curr) (cons residual residuals)))
 		  subst))
 	    ; (car curr) is finished - drop it, and try next
-	    (lambda () (loop (cdr curr) residuals)))))])))
+	    (lambda () (loop (cdr curr) residuals)))))))))
 
 ; An interleaving disjunction removing duplicates: any-union
 ; This is a true union of the constituent antecedents: it is fair, and
@@ -583,12 +583,12 @@
 
 (define-syntax any-union
   (syntax-rules ()
-    [(_) fail]
-    [(_ ant) ant]
-    [(_ ant ...)
+    ((_) fail)
+    ((_ ant) ant)
+    ((_ ant ...)
      (lambda@ (sk fk subst)
        (interleave-non-overlap sk fk
-         (list (cons (ant->sant ant subst) ant) ...)))]))
+         (list (cons (ant->sant ant subst) ant) ...))))))
 
 ; we treat saants as a sort of a circular list
 ; Each element of saants is a pair (sant . ant)
@@ -597,14 +597,14 @@
 ; residual thereof.
 (define interleave-non-overlap
   (lambda (sk fk saants)
-    (let outer ([saants saants])
+    (let outer ((saants saants))
       (cond
-        [(null? saants) (fk)]  ; all of the saants are finished
-        [(null? (cdr saants))  ; only one ant is left -- run it through the end
-	 (@ (caar saants) sk fk)]
-        [else
-	  (let loop ([curr saants]
-                     [residuals '()])
+        ((null? saants) (fk))  ; all of the saants are finished
+        ((null? (cdr saants))  ; only one ant is left -- run it through the end
+	 (@ (caar saants) sk fk))
+        (else
+	  (let loop ((curr saants)
+                     (residuals '()))
             ; check if the current round is finished
 	    (if (null? curr) (outer (reverse residuals))
                 (@
@@ -613,7 +613,7 @@
                  (lambda@ (subst residual)
                   ; let us see now if the answer, subst, satisfies any of the
                   ; ants down the curr.
-                   (let check ([to-check (cdr curr)])
+                   (let check ((to-check (cdr curr)))
                      (if (null? to-check) ; OK, subst is unique, give it to user
                          (@ sk
                            ; re-entrance cont
@@ -630,7 +630,7 @@
                             (lambda () (check (cdr to-check)))
                             subst))))
                  ; (car curr) is finished - drop it, and try next
-                 (lambda () (loop (cdr curr) residuals)))))]))))
+                 (lambda () (loop (cdr curr) residuals))))))))))
 
 
 ; Another if-then-else
@@ -669,8 +669,8 @@
 
 (define-syntax if-some
   (syntax-rules ()
-    [(_ condition then) (all condition then)]
-    [(_ condition then else)
+    ((_ condition then) (all condition then))
+    ((_ condition then else)
      (lambda@ (sk fk subst)
        (@ partially-eval-sant (ant->sant condition subst)
          (lambda@ (ans residual)
@@ -679,7 +679,7 @@
              (lambda () (@ residual (@ then sk) fk))
              ans))
              ; condition failed
-         (lambda () (@ else sk fk subst))))]))
+         (lambda () (@ else sk fk subst)))))))
 
 
 ; An interleaving conjunction: all-interleave
@@ -763,13 +763,13 @@
 
 (define-syntax all-interleave
   (syntax-rules ()
-    [(_) (all)]
-    [(_ ant) ant]
-    [(_ ant0 ant1 ...)
+    ((_) (all))
+    ((_ ant) ant)
+    ((_ ant0 ant1 ...)
       (lambda@ (sk fk subst)
 	(all-interleave-bin
 	  sk fk
-	  (ant->sant ant0 subst) (all-interleave ant1 ...)))]))
+	  (ant->sant ant0 subst) (all-interleave ant1 ...))))))
 
 (define all-interleave-bin
   (lambda (sk fk sant1 ant2)
@@ -866,25 +866,25 @@
 
 (define-syntax relation
   (syntax-rules (to-show head-let once _)
-    [(_ (head-let head-term ...) ant)
-     (relation-head-let (head-term ...) ant)]
-    [(_ (head-let head-term ...))	; not particularly useful without body
-     (relation-head-let (head-term ...))]
-    [(_ () (to-show term ...) ant)	; pattern with no vars _is_ linear
-     (relation-head-let (`,term ...) ant)]
-    [(_ () (to-show term ...))		; the same without body: not too useful
-     (relation-head-let (`,term ...))]
-    [(_ (ex-id ...) (to-show term ...) ant)  ; body present
-     (relation "a" () () (ex-id ...) (term ...) ant)]
-    [(_ (ex-id ...) (to-show term ...))      ; no body
-     (relation "a" () () (ex-id ...) (term ...))]
+    ((_ (head-let head-term ...) ant)
+     (relation-head-let (head-term ...) ant))
+    ((_ (head-let head-term ...))	; not particularly useful without body
+     (relation-head-let (head-term ...)))
+    ((_ () (to-show term ...) ant)	; pattern with no vars _is_ linear
+     (relation-head-let (`,term ...) ant))
+    ((_ () (to-show term ...))		; the same without body: not too useful
+     (relation-head-let (`,term ...)))
+    ((_ (ex-id ...) (to-show term ...) ant)  ; body present
+     (relation "a" () () (ex-id ...) (term ...) ant))
+    ((_ (ex-id ...) (to-show term ...))      ; no body
+     (relation "a" () () (ex-id ...) (term ...)))
     ; process the list of variables and handle annotations
-    [(_ "a" vars once-vars ((once id) . ids) terms . ant)
-     (relation "a" vars (id . once-vars) ids terms . ant)]
-    [(_ "a" vars once-vars (id . ids) terms . ant)
-     (relation "a" (id . vars) once-vars ids terms . ant)]
-    [(_ "a" vars once-vars () terms . ant)
-     (relation "g" vars once-vars () () () (subst) terms . ant)]
+    ((_ "a" vars once-vars ((once id) . ids) terms . ant)
+     (relation "a" vars (id . once-vars) ids terms . ant))
+    ((_ "a" vars once-vars (id . ids) terms . ant)
+     (relation "a" (id . vars) once-vars ids terms . ant))
+    ((_ "a" vars once-vars () terms . ant)
+     (relation "g" vars once-vars () () () (subst) terms . ant))
     ; generating temp names for each term in the head
     ; don't generate if the term is a variable that occurs in
     ; once-vars
@@ -892,10 +892,10 @@
     ; parameters, and forget them
     ; also, note and keep track of the first occurrence of a term
     ; that is just a var (bare-var) 
-    [(_ "g" vars once-vars (gs ...) gunis bvars bvar-cl (_ . terms) . ant)
+    ((_ "g" vars once-vars (gs ...) gunis bvars bvar-cl (_ . terms) . ant)
      (relation "g" vars once-vars (gs ... anon) gunis
-       bvars bvar-cl terms . ant)]
-    [(_ "g" vars once-vars (gs ...) gunis bvars (subst . cls)
+       bvars bvar-cl terms . ant))
+    ((_ "g" vars once-vars (gs ...) gunis bvars (subst . cls)
            (term . terms) . ant)
      (id-memv?? term once-vars 
        ; success continuation: term is a once-var
@@ -921,27 +921,27 @@
 	     terms . ant))
 	 ; term is not a bare var
 	 (relation "g" vars once-vars  (gs ... g) ((g . term) . gunis) 
-	   bvars (subst . cls) terms . ant)))]
-    [(_ "g" vars once-vars gs gunis bvars bvar-cl () . ant)
-     (relation "f" vars once-vars gs gunis bvar-cl . ant)]
+	   bvars (subst . cls) terms . ant))))
+    ((_ "g" vars once-vars gs gunis bvars bvar-cl () . ant)
+     (relation "f" vars once-vars gs gunis bvar-cl . ant))
 
     ; Final: writing the code
-    [(_ "f" vars () () () (subst) ant)   ; no arguments (no head-tests)
+    ((_ "f" vars () () () (subst) ant)   ; no arguments (no head-tests)
       (lambda ()
-	(exists vars ant))]
+	(exists vars ant)))
                                     ; no tests but pure binding
-    [(_ "f" (ex-id ...) once-vars (g ...) () (subst) ant)
+    ((_ "f" (ex-id ...) once-vars (g ...) () (subst) ant)
      (lambda (g ...)
-       (exists (ex-id ...) ant))]
+       (exists (ex-id ...) ant)))
 				    ; the most general
-    [(_ "f" (ex-id ...) once-vars (g ...) ((gv . term) ...) 
+    ((_ "f" (ex-id ...) once-vars (g ...) ((gv . term) ...) 
        (subst let*-clause ...) ant ...)
      (lambda (g ...)
        (exists (ex-id ...)
 	 (lambda@ (sk fk subst)
 	   (let* (let*-clause ...)
 	     (let*-and (fk) ((subst (unify gv term subst)) ...)
-	       (@ ant ... sk fk subst))))))]))
+	       (@ ant ... sk fk subst)))))))))
 
 ; A macro-expand-time memv function for identifiers
 ;	id-memv?? FORM (ID ...) KT KF
@@ -1021,58 +1021,58 @@
 
 (define-syntax relation-head-let
   (syntax-rules ()
-    [(_ (head-term ...) . ants)
-     (relation-head-let "g" () (head-term ...) (head-term ...) . ants)]
+    ((_ (head-term ...) . ants)
+     (relation-head-let "g" () (head-term ...) (head-term ...) . ants))
     ; generate names of formal parameters
-    [(_ "g" (genvar ...) ((head-term . tail-term) . ht-rest)
+    ((_ "g" (genvar ...) ((head-term . tail-term) . ht-rest)
        head-terms . ants)
-     (relation-head-let "g" (genvar ... g) ht-rest head-terms . ants)]
-    [(_ "g" (genvar ...) (head-term . ht-rest) head-terms . ants)
-     (relation-head-let "g" (genvar ... head-term) ht-rest head-terms . ants)]
-    [(_ "g" genvars  () head-terms . ants)
-     (relation-head-let "d" () () genvars head-terms genvars . ants)]
+     (relation-head-let "g" (genvar ... g) ht-rest head-terms . ants))
+    ((_ "g" (genvar ...) (head-term . ht-rest) head-terms . ants)
+     (relation-head-let "g" (genvar ... head-term) ht-rest head-terms . ants))
+    ((_ "g" genvars  () head-terms . ants)
+     (relation-head-let "d" () () genvars head-terms genvars . ants))
     ; partition head-terms into vars and others
-    [(_ "d" vars others (gv . gv-rest) ((hth . htt) . ht-rest) gvs . ants)
+    ((_ "d" vars others (gv . gv-rest) ((hth . htt) . ht-rest) gvs . ants)
      (relation-head-let "d" vars ((gv (hth . htt)) . others)
-       gv-rest ht-rest gvs . ants)]
-    [(_ "d" vars others (gv . gv-rest) (htv . ht-rest) gvs . ants)
+       gv-rest ht-rest gvs . ants))
+    ((_ "d" vars others (gv . gv-rest) (htv . ht-rest) gvs . ants)
      (relation-head-let "d" (htv . vars) others
-       gv-rest ht-rest gvs . ants)]
-    [(_ "d" vars others () () gvs . ants)
-     (relation-head-let "f" vars others gvs . ants)]
+       gv-rest ht-rest gvs . ants))
+    ((_ "d" vars others () () gvs . ants)
+     (relation-head-let "f" vars others gvs . ants))
  
     ; final generation
-    [(_ "f" vars ((gv term) ...) gvs) ; no body
+    ((_ "f" vars ((gv term) ...) gvs) ; no body
      (lambda gvs                                     ; don't bother bind vars
        (lambda@ (sk fk subst)
-	 (let*-and (fk) ([subst (unify gv term subst)] ...)
-	   (@ sk fk subst))))]
+	 (let*-and (fk) ((subst (unify gv term subst)) ...)
+	   (@ sk fk subst)))))
 
-    [(_ "f" (var0 ...) ((gvo term) ...) gvs ant)
+    ((_ "f" (var0 ...) ((gvo term) ...) gvs ant)
      (lambda gvs
        (lambda@ (sk fk subst)			; first unify the constants
-	 (let*-and (fk) ([subst (unify gvo term subst)] ...)
-           (let ([var0 (if (eq? var0 _) (logical-variable '?) var0)] ...)
-             (@ ant sk fk subst)))))]))
+	 (let*-and (fk) ((subst (unify gvo term subst)) ...)
+           (let ((var0 (if (eq? var0 _) (logical-variable '?) var0)) ...)
+             (@ ant sk fk subst))))))))
 
 ; (define-syntax relation/cut
 ;   (syntax-rules (to-show)
-;     [(_ cut-id (ex-id ...) (to-show x ...) ant ...)
-;      (relation/cut cut-id (ex-id ...) () (x ...) (x ...) ant ...)]
-;     [(_ cut-id ex-ids (var ...) (x0 x1 ...) xs ant ...)
-;      (relation/cut cut-id ex-ids (var ... g) (x1 ...) xs ant ...)]
-;     [(_ cut-id (ex-id ...) (g ...) () (x ...) ant ...)
+;     ((_ cut-id (ex-id ...) (to-show x ...) ant ...)
+;      (relation/cut cut-id (ex-id ...) () (x ...) (x ...) ant ...))
+;     ((_ cut-id ex-ids (var ...) (x0 x1 ...) xs ant ...)
+;      (relation/cut cut-id ex-ids (var ... g) (x1 ...) xs ant ...))
+;     ((_ cut-id (ex-id ...) (g ...) () (x ...) ant ...)
 ;      (lambda (g ...)
 ;        (exists (ex-id ...)
 ;          (all! (== g x) ...
 ;            (lambda@ (sk fk subst cutk)
-;              (let ([cut-id (!! cutk)])
-;                (@ (all ant ...) sk fk subst cutk))))))]))
+;              (let ((cut-id (!! cutk)))
+;                (@ (all ant ...) sk fk subst cutk)))))))))
 
 (define-syntax fact
   (syntax-rules ()
-    [(_ (ex-id ...) term ...)
-     (relation (ex-id ...) (to-show term ...))]))
+    ((_ (ex-id ...) term ...)
+     (relation (ex-id ...) (to-show term ...)))))
 
 ; Lifting from antecedents to relations
 ; (define-rel-lifted-comb rel-syntax ant-proc-or-syntax)
@@ -1087,36 +1087,36 @@
 
 ; (define-syntax extend-relation
 ;   (syntax-rules ()
-;     [(_ (id ...) rel-exp ...)
-;      (extend-relation-aux (id ...) () rel-exp ...)]))
+;     ((_ (id ...) rel-exp ...)
+;      (extend-relation-aux (id ...) () rel-exp ...))))
 
 ; (define-syntax extend-relation-aux
 ;   (syntax-rules ()
-;     [(_ (id ...) ([g rel-exp] ...))
-;      (let ([g rel-exp] ...)
+;     ((_ (id ...) ((g rel-exp) ...))
+;      (let ((g rel-exp) ...)
 ;        (lambda (id ...)
-;          (any (g id ...) ...)))]
-;     [(_ (id ...) (let-pair ...) rel-exp0 rel-exp1 ...)
+;          (any (g id ...) ...))))
+;     ((_ (id ...) (let-pair ...) rel-exp0 rel-exp1 ...)
 ;      (extend-relation-aux (id ...)
-;        (let-pair ... [g rel-exp0]) rel-exp1 ...)]))
+;        (let-pair ... (g rel-exp0)) rel-exp1 ...))))
 
 (define-syntax define-rel-lifted-comb
   (syntax-rules ()
-    [(_ rel-syntax-name ant-proc-or-syntax)
+    ((_ rel-syntax-name ant-proc-or-syntax)
      (define-syntax rel-syntax-name
        (syntax-rules ()
-         [(_ ids . rel-exps)
-          (lift-ant-to-rel-aux ant-proc-or-syntax ids () . rel-exps)]))]))
+         ((_ ids . rel-exps)
+          (lift-ant-to-rel-aux ant-proc-or-syntax ids () . rel-exps)))))))
 
 (define-syntax lift-ant-to-rel-aux
   (syntax-rules ()
-    [(_ ant-handler ids ([g rel-var] ...))
-     (let ([g rel-var] ...)
+    ((_ ant-handler ids ((g rel-var) ...))
+     (let ((g rel-var) ...)
        (lambda ids
-         (ant-handler (g . ids) ...)))]
-    [(_ ant-handler ids (let-pair ...) rel-exp0 rel-exp1 ...)
+         (ant-handler (g . ids) ...))))
+    ((_ ant-handler ids (let-pair ...) rel-exp0 rel-exp1 ...)
      (lift-ant-to-rel-aux ant-handler ids 
-       (let-pair ... [g rel-exp0]) rel-exp1 ...)]))
+       (let-pair ... (g rel-exp0)) rel-exp1 ...))))
 
 (define-rel-lifted-comb extend-relation any)
 
@@ -1127,29 +1127,29 @@
 ; (lift-to-relations ids (ant-comb rel rel ...))
 (define-syntax lift-to-relations
   (syntax-rules ()
-    [(_ ids (ant-comb rel ...))
-     (lift-ant-to-rel-aux ant-comb ids () rel ...)]))
+    ((_ ids (ant-comb rel ...))
+     (lift-ant-to-rel-aux ant-comb ids () rel ...))))
 
 ; (let-ants ids ((name rel) ...) body)
 ; NB: some macro systems do not like if 'ids' below is replaced by (id ...)
 (define-syntax let-ants
   (syntax-rules ()
-    [(_ ids ((ant-name rel-exp) ...) body)
+    ((_ ids ((ant-name rel-exp) ...) body)
      (lambda ids
        (let ((ant-name (rel-exp . ids)) ...)
-         body))]))
+         body)))))
 
 ; Unify lifted to be a binary relation
 (define-syntax ==
   (syntax-rules (_)
-    [(_ _ u)
-     (lambda@ (sk) sk)]
-    [(_ t _)
-     (lambda@ (sk) sk)]
-    [(_ t u)
+    ((_ _ u)
+     (lambda@ (sk) sk))
+    ((_ t _)
+     (lambda@ (sk) sk))
+    ((_ t u)
      (lambda@ (sk fk subst)
-       (let*-and (fk) ([subst (unify t u subst)])
-         (@ sk fk subst)))]))
+       (let*-and (fk) ((subst (unify t u subst)))
+         (@ sk fk subst))))))
 
 
 ;	query (redo-k subst id ...) A SE ... -> result or '()
@@ -1185,40 +1185,40 @@
 
 (define-syntax solve
   (syntax-rules ()
-    [(_ n (var0 ...) ant)
+    ((_ n (var0 ...) ant)
       (if (<= n 0) '()
 	(stream-prefix (- n 1)
 	  (query (redo-k subst var0 ...)
 	    ant
-	    (cons (reify-subst (list var0 ...) subst) redo-k))))]))
+	    (cons (reify-subst (list var0 ...) subst) redo-k)))))))
 
 
 (define-syntax solution
   (syntax-rules ()
-    [(_ (var0 ...) x)
-     (let ([ls (solve 1 (var0 ...) x)])
-       (if (null? ls) #f (car ls)))]))
+    ((_ (var0 ...) x)
+     (let ((ls (solve 1 (var0 ...) x)))
+       (if (null? ls) #f (car ls))))))
 
 
 (define-syntax project
   (syntax-rules ()
-    [(_ (var ...) ant)
+    ((_ (var ...) ant)
      (lambda@ (sk fk subst)
-       (let ([var (nonvar! (subst-in var subst))] ...)
-	 (@ ant sk fk subst)))]))
+       (let ((var (nonvar! (subst-in var subst))) ...)
+	 (@ ant sk fk subst))))))
 
 (define-syntax project/no-check
   (syntax-rules ()
-    [(_ (var ...) ant)
+    ((_ (var ...) ant)
      (lambda@ (sk fk subst)
-       (let ([var (subst-in var subst)] ...)
-	 (@ ant sk fk subst)))]))
+       (let ((var (subst-in var subst)) ...)
+	 (@ ant sk fk subst))))))
 
 (define-syntax predicate
   (syntax-rules ()
-    [(_ scheme-expression)
+    ((_ scheme-expression)
      (lambda@ (sk fk subst)
-       (if scheme-expression (@ sk fk subst) (fk)))]))
+       (if scheme-expression (@ sk fk subst) (fk))))))
 
 (define nonvar!
   (lambda (t)
@@ -1233,16 +1233,16 @@
 
 ; (define-syntax trace-vars
 ;   (syntax-rules ()
-;     [(trace-vars title (var0 ...))
+;     ((trace-vars title (var0 ...))
 ;      (promise-one-answer
 ;        (predicate/no-check (var0 ...)
 ;          (begin (display title) (display " ")
 ;                 (display '(var0 ...)) (display " ") (display (list var0 ...))
-;                 (newline))))]))
+;                 (newline)))))))
 
 (define-syntax trace-vars
   (syntax-rules ()
-    [(_ title (var0 ...))
+    ((_ title (var0 ...))
      (promise-one-answer
        (project/no-check (var0 ...)
          (predicate
@@ -1250,7 +1250,7 @@
 	     (lambda (name val)
 	       (cout title " " name ": " val nl))
              '(var0 ...) (reify `(,var0 ...)))
-	   )))]))
+	   ))))))
 
 ;equality predicate: X == Y in Prolog
 ;if X is a var, then X == Y holds only if Y
@@ -1258,10 +1258,10 @@
 (define *equal?
   (lambda (x y)
     (cond
-      [(and (var? x) (var? y)) (eq? x y)]
-      [(var? x) #f]                     ; y is not a var
-      [(var? y) #f]                     ; x is not a var
-      [else (equal? x y)])))
+      ((and (var? x) (var? y)) (eq? x y))
+      ((var? x) #f)                     ; y is not a var
+      ((var? y) #f)                     ; x is not a var
+      (else (equal? x y)))))
 
 ; extend-relation-with-recur-limit LIMIT VARS RELS -> REL
 ; This is a variation of 'extend-relation' that makes sure
@@ -1281,17 +1281,17 @@
 	  (let ((ant (any (rel . ids) ...)))
 	    (lambda@ (sk fk subst)
 	      (cond
-		[(assq depth-counter-var subst)
+		((assq depth-counter-var subst)
 		  => (lambda (cmt)
-		       (let ([counter (commitment->term cmt)])
+		       (let ((counter (commitment->term cmt)))
 			 (if (>= counter limit)
 			   (fk)
-			   (let ([s (extend-subst depth-counter-var
-				      (+ counter 1) subst)])
-			     (@ ant sk fk s)))))]
-		[else
-		  (let ([s (extend-subst depth-counter-var 1 subst)])
-		    (@ ant sk fk s))]))))))
+			   (let ((s (extend-subst depth-counter-var
+				      (+ counter 1) subst)))
+			     (@ ant sk fk s))))))
+		(else
+		  (let ((s (extend-subst depth-counter-var 1 subst)))
+		    (@ ant sk fk s)))))))))
     ))
 
 ; ?- help(call_with_depth_limit/3).
@@ -1338,9 +1338,9 @@
 	   (child-of-male dad child)))
        )
   (test-check 'test-father0
-    (let ([result
+    (let ((result
 	    (@ (father 'jon 'sam)
-	      initial-sk initial-fk empty-subst)])
+	      initial-sk initial-fk empty-subst)))
       (and
 	(equal? (car result) '())
 	(equal? ((cdr result)) '())))
@@ -1379,9 +1379,9 @@
 
 	)
   (test-check 'test-father-1
-    (let ([result
+    (let ((result
 	    (@ (new-father 'rob 'sal)
-	      initial-sk initial-fk empty-subst)])
+	      initial-sk initial-fk empty-subst)))
       (and
 	(equal? (car result) '())
 	(equal? ((cdr result)) '())))
@@ -1446,10 +1446,10 @@
 
 ; (define-syntax intersect-relation
 ;   (syntax-rules ()
-;     [(_ (id ...) rel-exp) rel-exp]
-;     [(_ (id ...) rel-exp0 rel-exp1 rel-exp2 ...)
+;     ((_ (id ...) rel-exp) rel-exp)
+;     ((_ (id ...) rel-exp0 rel-exp1 rel-exp2 ...)
 ;      (binary-intersect-relation (id ...) rel-exp0
-;        (intersect-relation (id ...) rel-exp1 rel-exp2 ...))]))
+;        (intersect-relation (id ...) rel-exp1 rel-exp2 ...)))))
 
 (define-rel-lifted-comb intersect-relation all)
 
@@ -1594,12 +1594,12 @@
   ; A relation is just a function
   (let
     ((grandpa-sam
-       (let ([r (relation (child)
+       (let ((r (relation (child)
 		  (to-show child)
 		  (exists (parent)
 		    (all
 		      (father 'sam parent)
-		      (father parent child))))])
+		      (father parent child))))))
 	 (relation (child)
 	   (to-show child)
 	   (r child)))))
@@ -1683,8 +1683,8 @@
 ; if-then-else. But we emulate it...
     (let
       ((grandpa
-	 (let-ants (a1 a2) ([grandpa/father grandpa/father]
-			    [grandpa/mother grandpa/mother])
+	 (let-ants (a1 a2) ((grandpa/father grandpa/father)
+			    (grandpa/mother grandpa/mother))
 	   (if-only (succeeds grandpa/father) grandpa/father grandpa/mother)))
 	)
       (test-check 'test-grandpa-10
@@ -1701,8 +1701,8 @@
 ; The same as above, with if-all! -- just to test the latter.
     (let
       ((grandpa
-	 (let-ants (a1 a2) ([grandpa/father grandpa/father]
-			    [grandpa/mother grandpa/mother])
+	 (let-ants (a1 a2) ((grandpa/father grandpa/father)
+			    (grandpa/mother grandpa/mother))
 	   (if-only (all! (succeeds grandpa/father) (succeeds grandpa/father))
 	     grandpa/father grandpa/mother))))
 
@@ -1722,8 +1722,8 @@
 ; Now do it with soft-cuts
     (let
       ((grandpa
-	 (let-ants (a1 a2) ([grandpa/father grandpa/father]
-			    [grandpa/mother grandpa/mother])
+	 (let-ants (a1 a2) ((grandpa/father grandpa/father)
+			    (grandpa/mother grandpa/mother))
 	   (if-some grandpa/father succeed grandpa/mother)))
 	)
       (test-check 'test-grandpa-10-soft-cut
@@ -1741,11 +1741,11 @@
 	   (exists (parent)
 	     (all! (mother grandad parent)))))
 	(no-grandma-grandpa
-	  (let-ants (a1 a2) ([a-grandma a-grandma]
-			     [grandpa (lift-to-relations (a1 a2)
+	  (let-ants (a1 a2) ((a-grandma a-grandma)
+			     (grandpa (lift-to-relations (a1 a2)
 					(all!
 					  (extend-relation (a1 a2) 
-					    grandpa/father grandpa/mother)))])
+					    grandpa/father grandpa/mother)))))
 	    (if-only a-grandma fail grandpa)))
 	)
       (test-check 'test-no-grandma-grandpa-1
@@ -1768,19 +1768,19 @@
 
   (test-check 'test-partially-eval-sant
    (let-lv (p1 p2)
-    (let* ([parents-of-scouts-sant
-	     (ant->sant (parents-of-scouts p1 p2) empty-subst)]
-           [cons@ (lambda@ (x y) (cons x y))]
-           [split1 (@ 
+    (let* ((parents-of-scouts-sant
+	     (ant->sant (parents-of-scouts p1 p2) empty-subst))
+           (cons@ (lambda@ (x y) (cons x y)))
+           (split1 (@ 
                     partially-eval-sant parents-of-scouts-sant
-                    cons@ (lambda () '()))]
-           [a1 (car split1)]
-           [split2 (@ partially-eval-sant (cdr split1) cons@
-                     (lambda () '()))]
-           [a2 (car split2)]
-           [split3 (@ partially-eval-sant (cdr split2) cons@
-                     (lambda () '()))]
-           [a3 (car split3)])
+                    cons@ (lambda () '())))
+           (a1 (car split1))
+           (split2 (@ partially-eval-sant (cdr split1) cons@
+                     (lambda () '())))
+           (a2 (car split2))
+           (split3 (@ partially-eval-sant (cdr split2) cons@
+                     (lambda () '())))
+           (a3 (car split3)))
       (map (lambda (subst)
              (reify-subst (list p1 p2) subst))
 	(list a1 a2 a3))))
@@ -1814,7 +1814,7 @@
   `((x.0 #f) (y.0 _.0)))
 
 (test-check 'test-Seres-Spivey
-  (let ([father
+  (let ((father
 	  (lambda (dad child)
 	    (any
 	      (all (== dad 'jon) (== child 'sam))
@@ -1824,16 +1824,16 @@
 	      (all (== dad 'rob) (== child 'pat))
 	      (all (== dad 'jon) (== child 'hal))
 	      (all (== dad 'hal) (== child 'ted))
-	      (all (== dad 'sam) (== child 'jay))))])
+	      (all (== dad 'sam) (== child 'jay))))))
     (letrec
-        ([ancestor
+        ((ancestor
            (lambda (old young)
              (any
                (father old young)
                (exists (not-so-old)
                  (all
                    (father old not-so-old)
-                   (ancestor not-so-old young)))))])
+                   (ancestor not-so-old young)))))))
       (solve 20 (x) (ancestor 'jon x))))
   '(((x.0 sam))
     ((x.0 hal))
@@ -1846,20 +1846,20 @@
 
 (define towers-of-hanoi
   (letrec
-      ([move
+      ((move
          (extend-relation (a1 a2 a3 a4)
            (fact () 0 _ _ _)
            (relation (n a b c)
              (to-show n a b c)
              (project (n)
                (if-only (predicate (positive? n))
-                 (let ([m (- n 1)])
+                 (let ((m (- n 1)))
                    (all 
                      (move m a c b)
                      (project (a b)
                        (begin
                          (cout "Move a disk from " a " to " b nl)
-                         (move m c b a)))))))))])
+                         (move m c b a)))))))))))
     (relation (n)
       (to-show n)
       (move n 'left 'middle 'right))))
@@ -1872,32 +1872,32 @@
 
 (test-check 'test-fun-resubst
   (reify
-    (let ([j (relation (x w z)
+    (let ((j (relation (x w z)
 	       (to-show z)
-	       (let ([x 4]
-                     [w 3])
-                 (== z (cons x w))))])
+	       (let ((x 4)
+                     (w 3))
+                 (== z (cons x w))))))
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
 
 (define towers-of-hanoi-path
-  (let ([steps '()])
-    (let ([push-step (lambda (x y) (set! steps (cons `(,x ,y) steps)))])
+  (let ((steps '()))
+    (let ((push-step (lambda (x y) (set! steps (cons `(,x ,y) steps)))))
       (letrec
-          ([move
+          ((move
              (extend-relation (a1 a2 a3 a4)
                (fact () 0 _ _ _)
                (relation (n a b c)
                  (to-show n a b c)
                  (project (n)
                    (if-only (predicate (positive? n))
-                     (let ([m (- n 1)])
+                     (let ((m (- n 1)))
                        (all
                          (move m a c b)
                          (project (a b)
                            (begin
                              (push-step a b)
-                             (move m c b a)))))))))])
+                             (move m c b a)))))))))))
         (relation (n path)
           (to-show n path)
           (begin
@@ -1948,8 +1948,8 @@
   ((concat
      (lambda (xs ys)
        (cond
-	 [(null? xs) ys]
-	 [else (cons (car xs) (concat (cdr xs) ys))]))))
+	 ((null? xs) ys)
+	 (else (cons (car xs) (concat (cdr xs) ys)))))))
 
   (test-check 'test-concat-as-function
     (concat '(a b c) '(u v))

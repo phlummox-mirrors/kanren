@@ -70,12 +70,12 @@
 
 (define-syntax let*-and
   (syntax-rules ()
-    [(_ false-exp () body0 body1 ...) (begin body0 body1 ...)]
-    [(_ false-exp ([var0 exp0] [var1 exp1] ...) body0 body1 ...)
-     (let ([var0 exp0])
+    ((_ false-exp () body0 body1 ...) (begin body0 body1 ...))
+    ((_ false-exp ((var0 exp0) (var1 exp1) ...) body0 body1 ...)
+     (let ((var0 exp0))
        (if var0
-         (let*-and false-exp ([var1 exp1] ...) body0 body1 ...)
-         false-exp))]))
+         (let*-and false-exp ((var1 exp1) ...) body0 body1 ...)
+         false-exp)))))
 
 ; Regression testing framework
 ; test-check TITLE TESTED-EXPRESSION EXPECTED-RESULT 
@@ -88,15 +88,15 @@
 ; the both results.
 (define-syntax test-check
   (syntax-rules ()
-    [(_ title tested-expression expected-result)
+    ((_ title tested-expression expected-result)
      (begin
        (cout "Testing " title nl)
-       (let* ([expected expected-result]
-              [produced tested-expression])
+       (let* ((expected expected-result)
+              (produced tested-expression))
          (or (equal? expected produced)
              (errorf 'test-check
                "Failed: ~a~%Expected: ~a~%Computed: ~a~%"
-               'tested-expression expected produced))))]))
+               'tested-expression expected produced)))))))
 
 (define symbol-append
   (lambda symbs
@@ -197,27 +197,27 @@
 ; get the free vars of a term (a list without duplicates)
 (define vars-of
   (lambda (term)
-    (let loop ([term term] [fv '()])
+    (let loop ((term term) (fv '()))
       (cond
-        [(var? term) (if (memq term fv) fv (cons term fv))]
-        [(pair? term) (loop (cdr term) (loop (car term) fv))]
-        [else fv]))))
+        ((var? term) (if (memq term fv) fv (cons term fv)))
+        ((pair? term) (loop (cdr term) (loop (car term) fv)))
+        (else fv)))))
 
 ; Check to see if a var occurs in a term
 (define occurs?
   (lambda (var term)
     (cond
-      [(var? term) (eq? term var)]
-      [(pair? term) (or (occurs? var (car term)) (occurs? var (cdr term)))]
-      [else #f])))
+      ((var? term) (eq? term var))
+      ((pair? term) (or (occurs? var (car term)) (occurs? var (cdr term))))
+      (else #f))))
 
 ; A ground term contains no variables
 (define ground?
   (lambda (t)
     (cond
-      [(var? t) #f]
-      [(pair? t) (and (ground? (car t)) (ground? (cdr t)))]
-      [else #t])))
+      ((var? t) #f)
+      ((pair? t) (and (ground? (car t)) (ground? (cdr t))))
+      (else #t))))
 
 ; Given a term v and a subst s, return v', the weak normal form of v:
 ; v -->w! v' with respect to s
@@ -236,14 +236,14 @@
 (define subst-in
   (lambda (t subst)
     (cond
-      [(var? t)
-       (let ([c (assq t subst)])
-         (if c (subst-in (commitment->term c) subst) t))]
-      [(pair? t)
+      ((var? t)
+       (let ((c (assq t subst)))
+         (if c (subst-in (commitment->term c) subst) t)))
+      ((pair? t)
        (cons
          (subst-in (car t) subst)
-         (subst-in (cdr t) subst))]
-      [else t])))
+         (subst-in (cdr t) subst)))
+      (else t))))
 
 
 ; ; Given a term v and a subst s, return v', the strong normal form of v:
@@ -251,18 +251,18 @@
 ; (define subst-vars-recursively
 ;   (lambda (t subst)
 ;     (cond
-;       [(var? t)
+;       ((var? t)
 ;        (cond
-;          [(assq t subst) =>
+;          ((assq t subst) =>
 ;           (lambda (c)
 ;             (subst-vars-recursively
-;               (commitment->term c) (remq c subst)))]
-;          [else t])]
-;       [(pair? t)
+;               (commitment->term c) (remq c subst))))
+;          (else t)))
+;       ((pair? t)
 ;        (cons
 ;          (subst-vars-recursively (car t) subst)
-;          (subst-vars-recursively (cdr t) subst))]
-;       [else t])))
+;          (subst-vars-recursively (cdr t) subst)))
+;       (else t))))
 
 ; (define normalize-subst
 ;   (lambda (subst)
@@ -325,7 +325,7 @@
 
 ; (define compose-subst/own-survivors
 ;   (lambda (base refining survivors)
-;     (let refine ([b* base])
+;     (let refine ((b* base))
 ;       (if (null? b*) survivors
 ;           (cons-if-real-commitment
 ;             (commitment->var (car b*))
@@ -335,15 +335,15 @@
 ; (define compose-subst
 ;   (lambda (base refining)
 ;     (cond
-;       [(null? base) refining]
-;       [(null? refining) base]
-;       [else
+;       ((null? base) refining)
+;       ((null? refining) base)
+;       (else
 ;         (compose-subst/own-survivors base refining
-;           (let survive ([r* refining])
+;           (let survive ((r* refining))
 ;             (cond
-;               [(null? r*) '()]
-;               [(assq (commitment->var (car r*)) base) (survive (cdr r*))]
-;               [else (cons (car r*) (survive (cdr r*)))])))])))
+;               ((null? r*) '())
+;               ((assq (commitment->var (car r*)) base) (survive (cdr r*)))
+;               (else (cons (car r*) (survive (cdr r*)))))))))))
 
 ; Replace a logical variable with the corresponding eigen-variable
 ; Note: to be really right, universalize should be a scoping predicate,
@@ -356,12 +356,12 @@
 ; logical variables -- which by that time would surely be free.
 (define universalize
   (lambda (term)
-    (let ([fv (vars-of term)])
-      (let ([subst
+    (let ((fv (vars-of term)))
+      (let ((subst
               (map
                 (lambda (v)
                   (commitment v (eigen-variable (logical-variable-id v))))
-                fv)])
+                fv)))
         (subst-in term subst)))))
 
 
@@ -393,13 +393,13 @@
 ; (define concretize
 ;   (lambda (t)
 ;     (subst-in t
-;       (let loop ([fv (reverse (vars-of t))] [env '()])
+;       (let loop ((fv (reverse (vars-of t))) (env '()))
 ; 	(cond
-; 	  [(null? fv) empty-subst]
-; 	  [else (let ([id (logical-variable-id (car fv))])
-; 		  (let ([num (let*-and 0 ([pr (assq id env)]) (+ (cdr pr) 1))])
+; 	  ((null? fv) empty-subst)
+; 	  (else (let ((id (logical-variable-id (car fv))))
+; 		  (let ((num (let*-and 0 ((pr (assq id env))) (+ (cdr pr) 1))))
 ; 		    (cons (commitment (car fv) (artificial-id id num))
-; 		      (loop (cdr fv) (cons (cons id num) env)))))])))))
+; 		      (loop (cdr fv) (cons (cons id num) env)))))))))))
 ;  (define artificial-id
 ;   (lambda (t-id num)
 ;     (string->symbol
@@ -437,27 +437,27 @@
 (define unify
   (lambda (t u subst)
     (cond
-      [(eq? t u) subst]			; quick tests first
-      [(eq? t _) subst]
-      [(eq? u _) subst]
-      [(var? t)
-       (let*-and (unify-free/any t u subst) ([ct (assq t subst)])
+      ((eq? t u) subst)			; quick tests first
+      ((eq? t _) subst)
+      ((eq? u _) subst)
+      ((var? t)
+       (let*-and (unify-free/any t u subst) ((ct (assq t subst)))
 	 (if (var? u)			; ct is a bound var, u is a var
-	   (let*-and (unify-free/bound u ct subst) ([cu (assq u subst)])
+	   (let*-and (unify-free/bound u ct subst) ((cu (assq u subst)))
 	     (unify-bound/bound ct cu subst))
-	   (unify-bound/nonvar ct u subst)))]
-      [(var? u)				; t is not a variable...
+	   (unify-bound/nonvar ct u subst))))
+      ((var? u)				; t is not a variable...
        (let*-and
          (cond
-           [(pair? t) (unify-free/list u t subst)]
+           ((pair? t) (unify-free/list u t subst))
            ; t is not a var and is not a pair: it's atomic
-           [else (extend-subst u t subst)])
-         ([cu (assq u subst)])
-         (unify-bound/nonvar cu t subst))]
-      [(and (pair? t) (pair? u))
-       (let*-and #f ([subst (unify (car t) (car u) subst)])
-         (unify (cdr t) (cdr u) subst))]
-      [else (and (equal? t u) subst)])))
+           (else (extend-subst u t subst)))
+         ((cu (assq u subst)))
+         (unify-bound/nonvar cu t subst)))
+      ((and (pair? t) (pair? u))
+       (let*-and #f ((subst (unify (car t) (car u) subst)))
+         (unify (cdr t) (cdr u) subst)))
+      (else (and (equal? t u) subst)))))
 
 ; ct is a commitment to a bound variable, u is a atomic or a composite
 ; value -- but not a variable
@@ -465,20 +465,20 @@
   (lambda (ct u subst)
     (let ((t (commitment->term ct)))
       (cond				; search for the end of ct -> chain
-	[(eq? t u) subst]
-	[(var? t)
+	((eq? t u) subst)
+	((var? t)
 	  (let*-and 
 	    (cond
-	      [(pair? u) (unify-free/list t u subst)]
+	      ((pair? u) (unify-free/list t u subst))
               ; u is not a var and is not a pair: it's atomic
-	      [else (extend-subst t u subst)])
-	    ([ct (assq t subst)])
-	    (unify-bound/nonvar ct u subst))]
+	      (else (extend-subst t u subst)))
+	    ((ct (assq t subst)))
+	    (unify-bound/nonvar ct u subst)))
 	; t is some simple or composite value. So is u.
-      [(and (pair? t) (pair? u))
-	(let*-and #f ([subst (unify-internal/any (car t) (car u) subst)])
-	  (unify-internal/any (cdr t) (cdr u) subst))]
-      [else (and (equal? t u) subst)]))))
+      ((and (pair? t) (pair? u))
+	(let*-and #f ((subst (unify-internal/any (car t) (car u) subst)))
+	  (unify-internal/any (cdr t) (cdr u) subst)))
+      (else (and (equal? t u) subst))))))
 
 
 ; Just like unify. However, the first term, t, comes from
@@ -487,23 +487,23 @@
 (define unify-internal/any
   (lambda (t u subst)
     (cond
-      [(eq? t u) subst]			; quick tests first
-      [(eq? u _) subst]
-      [(var? t)
-       (let*-and (unify-free/any t u subst) ([ct (assq t subst)])
+      ((eq? t u) subst)			; quick tests first
+      ((eq? u _) subst)
+      ((var? t)
+       (let*-and (unify-free/any t u subst) ((ct (assq t subst)))
 	 (if (var? u)			; ct is a bound var, u is a var
-	   (let*-and (unify-free/bound u ct subst) ([cu (assq u subst)])
+	   (let*-and (unify-free/bound u ct subst) ((cu (assq u subst)))
 	     (unify-bound/bound ct cu subst))
-	   (unify-bound/nonvar ct u subst)))]
-      [(var? u)				; t is not a variable...
+	   (unify-bound/nonvar ct u subst))))
+      ((var? u)				; t is not a variable...
        (let*-and			; It's a part of an internal term
 	 (extend-subst u t subst)	; no further checks needed
-         ([cu (assq u subst)])
-         (unify-internals (commitment->term cu) t subst))]
-      [(and (pair? t) (pair? u))
-       (let*-and #f ([subst (unify-internal/any (car t) (car u) subst)])
-         (unify-internal/any (cdr t) (cdr u) subst))]
-      [else (and (equal? t u) subst)])))
+         ((cu (assq u subst)))
+         (unify-internals (commitment->term cu) t subst)))
+      ((and (pair? t) (pair? u))
+       (let*-and #f ((subst (unify-internal/any (car t) (car u) subst)))
+         (unify-internal/any (cdr t) (cdr u) subst)))
+      (else (and (equal? t u) subst)))))
 
 
 ; Unify two already bound variables represented by their commitments
@@ -524,28 +524,28 @@
 (define unify-internals
   (lambda (t u subst)
       (cond
-	[(eq? t u) subst]               ; quick tests first
-	[(var? t)
+	((eq? t u) subst)               ; quick tests first
+	((var? t)
          (let*-and (cond                ; t is a free variable
-                     [(var? u)
-                      (let*-and (extend-subst t u subst) ([cu (assq u subst)])
-                        (unify-free/bound t cu subst))]
-                     [else              ; t is free, u is not a var: done
-                       (extend-subst t u subst)])
-           ([ct (assq t subst)])
+                     ((var? u)
+                      (let*-and (extend-subst t u subst) ((cu (assq u subst)))
+                        (unify-free/bound t cu subst)))
+                     (else              ; t is free, u is not a var: done
+                       (extend-subst t u subst)))
+           ((ct (assq t subst)))
            (cond			; t is a bound variable
-             [(var? u) 
-              (let*-and (unify-free/bound u ct subst) ([cu (assq u subst)])
-                (unify-bound/bound ct cu subst))]
-             [else                      ; unify bound and a value
-               (unify-internals (commitment->term ct) u subst)]))]
-	[(var? u)                       ; t is not a variable...
-         (let*-and (extend-subst u t subst) ([cu (assq u subst)])
-           (unify-internals (commitment->term cu) t subst))]
-        [(and (pair? t) (pair? u))
-         (let*-and #f ([subst (unify-internals (car t) (car u) subst)])
-           (unify-internals (cdr t) (cdr u) subst))]
-        [else (and (equal? t u) subst)])))
+             ((var? u) 
+              (let*-and (unify-free/bound u ct subst) ((cu (assq u subst)))
+                (unify-bound/bound ct cu subst)))
+             (else                      ; unify bound and a value
+               (unify-internals (commitment->term ct) u subst)))))
+	((var? u)                       ; t is not a variable...
+         (let*-and (extend-subst u t subst) ((cu (assq u subst)))
+           (unify-internals (commitment->term cu) t subst)))
+        ((and (pair? t) (pair? u))
+         (let*-and #f ((subst (unify-internals (car t) (car u) subst)))
+           (unify-internals (cdr t) (cdr u) subst)))
+        (else (and (equal? t u) subst)))))
 
 (define unify-bound/bound
   (lambda (ct cu subst)
@@ -560,13 +560,13 @@
 (define unify-free/any
   (lambda (t-var u subst)
     (cond
-      [(eq? u _) subst]
-      [(var? u)
-       (let*-and (extend-subst t-var u subst) ([cu (assq u subst)])
-         (unify-free/bound t-var cu subst))]
-      [(pair? u) (unify-free/list t-var u subst)]
-      [else ; u is not a var and is not a pair: it's atomic
-	(extend-subst t-var u subst)])))
+      ((eq? u _) subst)
+      ((var? u)
+       (let*-and (extend-subst t-var u subst) ((cu (assq u subst)))
+         (unify-free/bound t-var cu subst)))
+      ((pair? u) (unify-free/list t-var u subst))
+      (else ; u is not a var and is not a pair: it's atomic
+	(extend-subst t-var u subst)))))
 
 ; On entrance: t-var is free.
 ; we are trying to unify it with a bound variable (commitment->var cu)
@@ -583,15 +583,15 @@
 
 (define unify-free/bound
   (lambda (t-var cu s)
-    (let loop ([cm cu])
-      (let ([u-term (commitment->term cm)])
+    (let loop ((cm cu))
+      (let ((u-term (commitment->term cm)))
 	(cond
-	  [(eq? u-term t-var) s]
-	  [(var? u-term)
+	  ((eq? u-term t-var) s)
+	  ((var? u-term)
 	    (cond
-	      [(assq u-term s) => loop]
-	      [else (extend-subst t-var u-term s)])] ; u-term is free here
-	  [else (extend-subst t-var u-term s)])))))
+	      ((assq u-term s) => loop)
+	      (else (extend-subst t-var u-term s)))) ; u-term is free here
+	  (else (extend-subst t-var u-term s)))))))
 
 ; ((and (pattern-var? tree2) (assq tree2 env)) => ; tree2 is a bound var
 ;        ; binding a free variable to a bound. Search for a substantial binding
@@ -624,17 +624,17 @@
 (define ufl-rebuild-without-anons
   (lambda (lst)
     (cond
-      [(eq? lst _) (logical-variable '*anon)]
-      [(not (pair? lst)) #f]
-      [(null? (cdr lst))
-	(let [(new-car (ufl-rebuild-without-anons (car lst)))]
-	  (and new-car (cons new-car '())))]
-      [else
-	(let [(new-car (ufl-rebuild-without-anons (car lst)))
-              (new-cdr (ufl-rebuild-without-anons (cdr lst)))]
+      ((eq? lst _) (logical-variable '*anon))
+      ((not (pair? lst)) #f)
+      ((null? (cdr lst))
+	(let ((new-car (ufl-rebuild-without-anons (car lst))))
+	  (and new-car (cons new-car '()))))
+      (else
+	(let ((new-car (ufl-rebuild-without-anons (car lst)))
+              (new-cdr (ufl-rebuild-without-anons (cdr lst))))
 	  (if new-car
 	    (cons new-car (or new-cdr (cdr lst)))
-	    (and new-cdr (cons (car lst) new-cdr))))])))
+	    (and new-cdr (cons (car lst) new-cdr))))))))
 
 (define unify-free/list
   (lambda (t-var u-value subst)
@@ -662,7 +662,7 @@
 ; (test-check 'test-compose-subst-2
 ;   (let-lv (w x y)
 ;     (equal?
-;       (let ([s (compose-subst (unit-subst y w) (unit-subst w 52))])
+;       (let ((s (compose-subst (unit-subst y w) (unit-subst w 52))))
 ; 	(compose-subst (unit-subst x y) s))
 ;       `(,(commitment x 52) ,(commitment y 52) ,(commitment w 52))))
 ;   #t)
@@ -670,7 +670,7 @@
 ; (test-check 'test-compose-subst-3
 ;   (let-lv (w x y)
 ;     (equal?
-;       (let ([s (compose-subst (unit-subst w 52) (unit-subst y w))])
+;       (let ((s (compose-subst (unit-subst w 52) (unit-subst y w))))
 ; 	(compose-subst (unit-subst x y) s))
 ;       `(,(commitment x w) ,(commitment w 52) ,(commitment y w))))
 ;   #t)
@@ -678,10 +678,10 @@
 ; (test-check 'test-compose-subst-4
 ;   (let-lv (x y z)
 ;     (equal?
-;       (let ([s (compose-subst (unit-subst y z) (unit-subst x y))]
-; 	    [r (compose-subst
+;       (let ((s (compose-subst (unit-subst y z) (unit-subst x y)))
+; 	    (r (compose-subst
 ; 		 (compose-subst (unit-subst x 'a) (unit-subst y 'b))
-; 		 (unit-subst z y))])
+; 		 (unit-subst z y))))
 ; 	(compose-subst s r))
 ;       `(,(commitment x 'b) ,(commitment z y))))
 ;   #t)
@@ -697,16 +697,16 @@
 ; (test-check 'test-compose-subst-5
 ;   (let-lv (x y z)
 ;     (equal?
-;       (let ([term `(p ,x ,y (g ,z))])
-; 	(let ([s (compose-subst (unit-subst y z) (unit-subst x `(f ,y)))]
-; 	      [r (compose-subst (unit-subst x 'a) (unit-subst z 'b))])
-; 	  (let ([term1 (subst-in term s)])
+;       (let ((term `(p ,x ,y (g ,z))))
+; 	(let ((s (compose-subst (unit-subst y z) (unit-subst x `(f ,y))))
+; 	      (r (compose-subst (unit-subst x 'a) (unit-subst z 'b))))
+; 	  (let ((term1 (subst-in term s)))
 ; 	    (write term1)
 ; 	    (newline)
-; 	    (let ([term2 (subst-in term1 r)])
+; 	    (let ((term2 (subst-in term1 r)))
 ; 	      (write term2)
 ; 	      (newline)
-; 	      (let ([sr (compose-subst s r)])
+; 	      (let ((sr (compose-subst s r)))
 ; 		(write sr)
 ; 		(newline)
 ; 		(subst-in term sr))))))
@@ -796,8 +796,8 @@
 ; (let-lv (x y w z u)
 ;   (test-check 'test-unify/pairs-oleg12
 ;     (concretize-subst ;;; was #f
-;       (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
-; 	(let ([var (map commitment->var s)])
+;       (let ((s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)))
+; 	(let ((var (map commitment->var s)))
 ; 	  (map commitment
 ; 	    var
 ; 	    (subst-vars-recursively var s)))))
@@ -813,8 +813,8 @@
 ; (let-lv (x y w z u)
 ;   (test-check 'test-unify/pairs-oleg13
 ;     (concretize-subst ;;; was #f
-;       (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
-; 	(let ([var (map commitment->var s)])
+;       (let ((s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)))
+; 	(let ((var (map commitment->var s)))
 ; 	  (map commitment
 ; 	    var
 ; 	    (subst-vars-recursively var s)))))

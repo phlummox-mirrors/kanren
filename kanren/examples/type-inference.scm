@@ -26,37 +26,37 @@
 (define parse
   (lambda (e)
     (cond
-      [(symbol? e) `(var ,e)]
-      [(number? e) `(intc ,e)]
-      [(boolean? e) `(boolc ,e)]
-      [else (case (car e)
-              [(zero?) `(zero? ,(parse (cadr e)))]
-              [(sub1) `(sub1 ,(parse (cadr e)))]
-              [(+) `(+ ,(parse (cadr e)) ,(parse (caddr e)))]
-              [(if) `(if ,(parse (cadr e)) ,(parse (caddr e)) ,(parse (cadddr e)))]
-              [(fix) `(fix ,(parse (cadr e)))]
-              [(lambda) `(lambda ,(cadr e) ,(parse (caddr e)))]
-              [(let) `(let ([,(car (car (cadr e))) ,(parse (cadr (car (cadr e))))])
-                        ,(parse (caddr e)))]
-              [else `(app ,(parse (car e)) ,(parse (cadr e)))])])))
+      ((symbol? e) `(var ,e))
+      ((number? e) `(intc ,e))
+      ((boolean? e) `(boolc ,e))
+      (else (case (car e)
+              ((zero?) `(zero? ,(parse (cadr e))))
+              ((sub1) `(sub1 ,(parse (cadr e))))
+              ((+) `(+ ,(parse (cadr e)) ,(parse (caddr e))))
+              ((if) `(if ,(parse (cadr e)) ,(parse (caddr e)) ,(parse (cadddr e))))
+              ((fix) `(fix ,(parse (cadr e))))
+              ((lambda) `(lambda ,(cadr e) ,(parse (caddr e))))
+              ((let) `(let ((,(car (car (cadr e))) ,(parse (cadr (car (cadr e))))))
+                        ,(parse (caddr e))))
+              (else `(app ,(parse (car e)) ,(parse (cadr e)))))))))
 
 (define unparse
   (lambda (e)
     (case (car e)
-      [(var) (cadr e)]
-      [(intc) (cadr e)]
-      [(boolc) (cadr e)]
-      [(zero?) `(zero? ,(unparse (cadr e)))]
-      [(sub1) `(sub1 ,(unparse (cadr e)))]
-      [(+) `(+ ,(unparse (cadr e)) ,(unparse (caddr e)))]
-      [(if) `(if ,(unparse (cadr e)) ,(unparse (caddr e)) ,(unparse (cadddr e)))]
-      [(fix) `(fix ,(unparse (cadr e)))]
-      [(lambda) `(lambda (,(car (cadr e))) ,(unparse (caddr e)))]
-      [(let) 
-       `(let ([,(car (car (cadr e)))
-               ,(unparse (cadr (car (cadr e))))])
-          ,(unparse (caddr e)))]
-      [(app) `(,(unparse (cadr e)) ,(unparse (caddr e)))])))
+      ((var) (cadr e))
+      ((intc) (cadr e))
+      ((boolc) (cadr e))
+      ((zero?) `(zero? ,(unparse (cadr e))))
+      ((sub1) `(sub1 ,(unparse (cadr e))))
+      ((+) `(+ ,(unparse (cadr e)) ,(unparse (caddr e))))
+      ((if) `(if ,(unparse (cadr e)) ,(unparse (caddr e)) ,(unparse (cadddr e))))
+      ((fix) `(fix ,(unparse (cadr e))))
+      ((lambda) `(lambda (,(car (cadr e))) ,(unparse (caddr e))))
+      ((let) 
+       `(let ((,(car (car (cadr e)))
+               ,(unparse (cadr (car (cadr e))))))
+          ,(unparse (caddr e))))
+      ((app) `(,(unparse (cadr e)) ,(unparse (caddr e)))))))
 
 ; Type environments
 ;
@@ -203,7 +203,7 @@
 
 (define polylet-rel
   (relation (g v rand body t)
-    (to-show g `(let ([,v ,rand]) ,body) t)
+    (to-show g `(let ((,v ,rand)) ,body) t)
     (all!!
       (exists (some-type) (!- g rand some-type))
       (!- `((,v generic ,(relation (head-let t-rand)
@@ -352,7 +352,7 @@
   (solution (?)
     (!- '()
         (parse
-          '(let ([f (lambda (x) x)])
+          '(let ((f (lambda (x) x)))
              (if (f (zero? 5))
                  (+ (f 4) 8)
                  (+ (f 3) 7))))
@@ -376,7 +376,7 @@
 (test-check 'with-robust-syntax-but-long-jumps/poly-let
   (solution (?)
     (!- '()
-        '(let ([f (lambda (x) (var x))])
+        '(let ((f (lambda (x) (var x))))
            (if (app (var f) (zero? (intc 5)))
                (+ (app (var f) (intc 4)) (intc 8))
                (+ (app (var f) (intc 3)) (intc 7))))
@@ -426,7 +426,7 @@
 ; (define !-generator
 ;   (lambda (long-cut)
 ;     (letrec
-;       ([!- (extend-relation (a1 a2 a3)
+;       ((!- (extend-relation (a1 a2 a3)
 ;              (relation (g v t)
 ;                (to-show g `(var ,v) t)
 ;                (all long-cut (env g v t)))
@@ -459,12 +459,12 @@
 ;                (to-show g `(fix ,rand) t)
 ;                (all long-cut (!- g rand `(--> ,t ,t))))
 ;              (relation (g v rand body t)
-;                (to-show g `(let ([,v ,rand]) ,body) t)
+;                (to-show g `(let ((,v ,rand)) ,body) t)
 ;                (exists (t-rand)
 ;                  (all long-cut
 ; 		   (all!
 ;                      (!- g rand t-rand)
-;                      (!- `(generic ,v ,t-rand ,g) body t))))))])
+;                      (!- `(generic ,v ,t-rand ,g) body t))))))))
 ;       !-)))
 ;
 ; (define !-
@@ -524,7 +524,7 @@
 ; 	  (!- g rand t-rand))))
 ;     ((rand) ((== exp `(fix ,rand)))
 ;       (!- g rand `(--> ,t ,t)))
-;     ((v rand body) ((== exp `(let ([,v ,rand]) ,body)))
+;     ((v rand body) ((== exp `(let ((,v ,rand)) ,body)))
 ;       (!- `(generic ,v ,(relation (head-let t-rand)
 ; 			  (!- g rand t-rand))
 ; 	     ,g)
@@ -547,7 +547,7 @@
 ;   (solution (?)
 ;     (eigen (g)
 ;       (!- g
-;         '(let ([f (lambda (x) (var x))])
+;         '(let ((f (lambda (x) (var x))))
 ;            (if (app (var f) (zero? (intc 5)))
 ;                (+ (app (var f) (intc 4)) (intc 8))
 ;                (+ (app (var f) (intc 3)) (intc 7))))
@@ -637,7 +637,7 @@
 	 (to-show `(fix ,rand) t)
 	 (all! (!- rand `(--> ,t ,t)))))))
 
-; Type-checking polymorphic let: (let ([,v ,rand]) ,body)
+; Type-checking polymorphic let: (let ((,v ,rand)) ,body)
 ; There is obviously an inefficiency, because we typecheck `rand'
 ; every time the variable `v' occurs in the body (and once more). 
 ; We can fix it, with copy term. But for now, we leave this optimization out.
@@ -651,7 +651,7 @@
   (lambda (s!-)
     (let ((!- (s!- s!-)))
       (relation (v rand body t)
-	(to-show `(let ([,v ,rand]) ,body) t)
+	(to-show `(let ((,v ,rand)) ,body) t)
 	(all!! 
 	  (exists (some-type) (!- rand some-type))
 	  (let* ((snew-!-
@@ -813,7 +813,7 @@
 (test-check 'polymorphic-let
   (solution (?)
     (!- (parse
-          '(let ([f (lambda (x) x)])
+          '(let ((f (lambda (x) x)))
              (if (f (zero? 5))
                  (+ (f 4) 8)
                  (+ (f 3) 7))))
@@ -835,7 +835,7 @@
 
 (test-check 'with-robust-syntax-but-long-jumps/poly-let
   (solution (?)
-    (!- '(let ([f (lambda (x) (var x))])
+    (!- '(let ((f (lambda (x) (var x))))
            (if (app (var f) (zero? (intc 5)))
                (+ (app (var f) (intc 4)) (intc 8))
                (+ (app (var f) (intc 3)) (intc 7))))

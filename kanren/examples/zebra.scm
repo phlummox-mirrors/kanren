@@ -63,11 +63,11 @@
 	(memb `(,_ ,_ ,_ zebra ,_) h)))))
 
 '(pretty-print
-  (time (let loop ([n 100000])
+  (time (let loop ((n 100000))
               (cond
-                [(zero? n) 'done]
-                [else (solution (h) (zebra h))
-                  (loop (sub1 n))]))))
+                ((zero? n) 'done)
+                (else (solution (h) (zebra h))
+                  (loop (sub1 n)))))))
 
 (test-check "Zebra"
   (time (solution (h) (zebra h)))

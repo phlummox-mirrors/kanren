@@ -211,10 +211,10 @@
 (define verify-goal
   (lambda (preds kb)
     (cond
-      [(null? (cdr preds)) (kb (car preds))]
-      [else (all
+      ((null? (cdr preds)) (kb (car preds)))
+      (else (all
               (kb (car preds))
-              (verify-goal (cdr preds) kb))])))
+              (verify-goal (cdr preds) kb))))))
 
 ; extend the kb with the list of assumptions
 ; this is just like 'any' only it's a procedure rather than a syntax
@@ -235,9 +235,9 @@
 
 (define extend-kb
   (lambda (facts kb)
-    (let ([facts (universalize facts)])
+    (let ((facts (universalize facts)))
       (printf "Extending KB with ~s~%" facts)
-      (let loop ([facts facts])
+      (let loop ((facts facts))
         (if (null? facts) kb
             (extend-relation (t)
               (fact () (car facts))

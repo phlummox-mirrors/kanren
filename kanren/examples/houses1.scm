@@ -30,10 +30,10 @@
 (define no-dups
   (lambda (ls)
     (cond
-      [(null? ls) #t]
-      [(null? (cdr ls)) #t]
-      [(= (car ls) (cadr ls)) #f]
-      [else (no-dups (cdr ls))])))
+      ((null? ls) #t)
+      ((null? (cdr ls)) #t)
+      ((= (car ls) (cadr ls)) #f)
+      (else (no-dups (cdr ls))))))
 	    
 (define mapping
   (relation (n1 n2 n3 n4 n5 n6 n7 n8)

@@ -129,8 +129,8 @@
     (exists (ind)
       (all! (== t ind)
 	(lambda@ (sk fk subst)
-	  (let* ([indc (subst-in ind subst)]
-		 [indc1 (universalize indc)])
+	  (let* ((indc (subst-in ind subst))
+		 (indc1 (universalize indc)))
 	  (pretty-print indc1)
 	  (@ sk fk (unify indc1 t subst))
 	  ;(@ sk fk subst)
@@ -396,7 +396,7 @@
   nl)
 (cout nl "First check the base case: S, using goal-fwd: "
   (solution (foo)
-    (let ([kb0
+    (let ((kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
 		   (fact () '(wff !x))
@@ -407,14 +407,14 @@
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
-		   (justifies? kb))))])
-      (let ([kb1 (goal-fwd kb0)])
+		   (justifies? kb))))))
+      (let ((kb1 (goal-fwd kb0)))
 	(kb1 '(goal !h (S !x !y !z)))))) ; note, !x is an eigenvariable!
   nl)
 
 (cout nl "First check the base case: Cp, using goal-fwd: "
   (solution (foo)
-    (let ([kb0
+    (let ((kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
 		   (fact () '(wff !x))
@@ -424,14 +424,14 @@
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
-		   (justifies? kb))))])
-      (let ([kb1 (goal-fwd kb0)])
+		   (justifies? kb))))))
+      (let ((kb1 (goal-fwd kb0)))
 	(kb1 '(goal !h (Cp !x !y))))))
   nl)
 
 (cout "First check the base case: Hyp, using goal-fwd: "
   (solution (foo)
-    (let ([kb0
+    (let ((kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
 		   (fact () '(wff !x))
@@ -440,8 +440,8 @@
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
-		   (justifies? kb))))])
-      (let ([kb1 (goal-fwd kb0)])
+		   (justifies? kb))))))
+      (let ((kb1 (goal-fwd kb0)))
 	(kb1 '(goal !h (Hyp !x))))))
   nl)
 
@@ -449,7 +449,7 @@
 (cout nl "Some preliminary checks, using goal-rev: "
 ; (goal h p) => (MP p q) is a proof
   (solution (hs c)
-    (let ([kb
+    (let ((kb
 	    (Y (lambda (kb)
 		 (extend-relation (t)
 		   (fact () '(wff !x))
@@ -461,14 +461,14 @@
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
-		   (justifies? kb))))])
+		   (justifies? kb))))))
       (kb `(prf (MP !p !q) ,hs ,c))))
   nl)
 
 (cout nl "Some preliminary checks, using goal-rev: "
 ; (goal h p) => (ded h p _c)
   (solution (hs c)
-    (let ([kb
+    (let ((kb
 	    (Y (lambda (kb)
 		 (extend-relation (t)
 		   (fact () '(wff !x))
@@ -480,7 +480,7 @@
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
-		   (justifies? kb))))])
+		   (justifies? kb))))))
       (kb `(ded !h !p ,c))))
   nl)
 
@@ -490,59 +490,59 @@
 
     (define concretize-subst*  ;;; returns a single value.
       (letrec
-	([cs (lambda (subst env)
+	((cs (lambda (subst env)
 	       (cond
-		 [(null? subst) '()]
-		 [else
+		 ((null? subst) '())
+		 (else
 		   (let*-values
-		     ([(comm) (car subst)]
-		      [(cv new-env)
-			(concretize-var (commitment->var comm) env)]
-		      [(ct newer-env)
-			(concretize-term (commitment->term comm) new-env)])
+		     (((comm) (car subst))
+		      ((cv new-env)
+			(concretize-var (commitment->var comm) env))
+		      ((ct newer-env)
+			(concretize-term (commitment->term comm) new-env)))
 		     (cons
 		       (list cv ct)
-		       (cs (cdr subst) newer-env)))]))])
+		       (cs (cdr subst) newer-env))))))))
 	(lambda (subst)
 	  (cs (flatten-subst subst) '()))))
     
     (define flatten-subst
-      (let ([a*? (lambda (var)
-		   (let ([str (symbol->string (logical-variable-id var))])
-		     (let ([slen (string-length str)])
+      (let ((a*? (lambda (var)
+		   (let ((str (symbol->string (logical-variable-id var))))
+		     (let ((slen (string-length str)))
 		       (if (> slen 1)
 			 (char=? (string-ref str 1) #\*)
-			 #f))))])
+			 #f))))))
 	(lambda (subst)
-	  (let ([s (map (lambda (c)
+	  (let ((s (map (lambda (c)
 			  (commitment (commitment->var c) 
 			    (subst-in (commitment->term c) subst)))
-		     subst)])
-	    (let loop ([s s])
+		     subst)))
+	    (let loop ((s s))
 	      (cond
-		[(null? s) '()]
-		[else (let ([c (car s)])
+		((null? s) '())
+		(else (let ((c (car s)))
 			(if (a*? (commitment->var c))
 			  (loop (cdr s))
-			  (cons c (loop (cdr s)))))]))))))
+			  (cons c (loop (cdr s))))))))))))
     (define-syntax ==
       (syntax-rules ()
-	[(_ t u)
+	((_ t u)
 	  (lambda@ (sk fk subst)
 	    (cond
-	      [(unify t u subst)
+	      ((unify t u subst)
 		=> (lambda (subst)
 		     (set! cu (add1 cu))
 		     (pretty-print (concretize t))
 		     (pretty-print (concretize u))
 		     (pretty-print (concretize-subst* subst))
-		     (@ sk fk subst))]
-	      [else (fk)]))]))
+		     (@ sk fk subst)))
+	      (else (fk)))))))
     ))
 
  (cout nl "Check the inductive  case: MP, using goal-fwd: "
   (solution (foo)
-    (let ([kb0
+    (let ((kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
 		   (fact () '(wff !x)) ; inductive hypotheses ...
@@ -578,8 +578,8 @@
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
-		   (justifies? kb))))])
-      (let ([kb1 (goal-fwd kb0)])
+		   (justifies? kb))))))
+      (let ((kb1 (goal-fwd kb0)))
 	(kb1 '(goal !h (MP !p !q))))))
    nl)
 
@@ -587,8 +587,8 @@
 (deduction-trace
   (define-syntax ==
     (syntax-rules ()
-      [(_ t u)
+      ((_ t u)
 	(lambda@ (sk fk subst)
-	  (let ([subst (unify t u subst)])
-	    (if subst (@ sk fk subst) (fk))))]))
+	  (let ((subst (unify t u subst)))
+	    (if subst (@ sk fk subst) (fk)))))))
 )

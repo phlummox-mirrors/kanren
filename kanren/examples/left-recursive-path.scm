@@ -35,7 +35,7 @@
 (define path-maker
   (lambda (limit)
     (letrec  ;;; using letrec or Y is necessary.  Don't curry path!!!
-      ([path
+      ((path
 	 (extend-relation-with-recur-limit limit (a1 a2)
 	   (relation ((once x) (once y))
 	     (to-show x y)
@@ -43,7 +43,7 @@
 	       (all (path x z) (edge z y))))
 	   (relation ((once x) (once y))
 	     (to-show x y)
-	     (edge x y)))])
+	     (edge x y)))))
       path)))
 
 (test-check 'test-left-recursive-path-unfixed-limit
