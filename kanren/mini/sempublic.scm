@@ -1,4 +1,3 @@
-;;; all_2 succeed
 (load "minikanrensupport.scm")
 
 ;;; working version
@@ -187,14 +186,8 @@
 
 (define-syntax once
   (syntax-rules ()
-    ((_) succeed)
     ((_ a) (lambda@ (sk fk) (@ a (lambda (fk^) (@ sk fk)) fk)))
-    ((_ a a* ...) (lambda@ (sk fk) (once-aux sk fk a a* ...)))))
-
-(define-syntax once-aux
-  (syntax-rules ()
-    ((_ sk fk a) (@ a (lambda (fk^) (sk fk)) fk))
-    ((_ sk fk a a* ...) (@ a (lambda (fk^) (once-aux sk fk a* ...)) fk))))
+    ((_ a* ...) (once (all a* ...)))))
        
 ;;; This does not change
 
@@ -240,7 +233,7 @@
   (lambda (strm)
     (cond
       ((null? strm) #f)
-      (else (reify-fresh (nonfresh-answer (car strm)))))))
+      (else (reify-answer (car strm))))))
 
 (define-syntax run-stream ;;; okay
   (syntax-rules ()
@@ -251,6 +244,23 @@
             (cons (answer x s) fk))
           (lambda@ () '())
           empty-s)))))
+
+(define-syntax run-stream-with-subst ;;; okay
+  (syntax-rules ()
+    ((_ (x) s a* ...)
+     (let ((x (var 'x)))
+       (@ (all a* ...)
+          (lambda@ (fk s)
+            (cons (answer x s) fk))
+          (lambda@ () '())
+          s)))))
+
+;(define my-alli
+;  (lambda (a b n)
+;    (with-substitution
+;      (lambda (s)
+;        (let ((i* (run-stream-with-subst (r) s (alli a b))))
+;          (let ((ans (nth i* n)))
 
 (define answer
   (lambda (x s)
@@ -617,13 +627,13 @@
 
 (define-syntax fails 
    (syntax-rules () 
-     ((_ a* ...) 
-     (lambda@ (sk fk s) 
-       (@ (all a* ...) 
+     ((_ a)
+      (lambda@ (sk fk s) 
+        (@ a
           (lambda@ (_fk _s) (@ fk)) 
-           (lambda@ () (@ sk fk s)) 
-          s)))))
-
+          (lambda@ () (@ sk fk s)) 
+          s)))
+     ((_ a* ...) (fails (all a* ...)))))
 
 (define alli-like-sk
   (lambda@ (fk s)
@@ -1072,5 +1082,4 @@
     ((s (s (s z))) (s (s (s z))) z z)
     (z z (s (s (s (s z)))) (s (s (s (s z)))))
     ((s z) (s z) (s (s z)) (s (s z)))))
-
 
