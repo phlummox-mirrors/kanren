@@ -26,8 +26,7 @@
     (relation (x l y l1 (once l2))
       (to-show `(,x . ,l) y `(,x . ,l1) l2)
       (all!
-       (predicate (x y)
-         (<= x y))
+       (project (x y) (predicate (<= x y)))
        (partition l y l1 l2)))
     (relation (x l (once y) (once l1) l2)
       (to-show `(,x . ,l) y l1 `(,x . ,l2))
