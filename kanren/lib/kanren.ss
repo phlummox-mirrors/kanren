@@ -1,7 +1,7 @@
 ;(load "plshared.ss")
 
 ; $Id$
-
+v
 (define-syntax let-values
   (syntax-rules ()
     [(_ (x ...) vs body0 body1 ...)
@@ -407,6 +407,53 @@
       [(null? ls1) ls2]
       [else (rev-append (cdr ls1) (cons (car ls1) ls2))])))
 
+; prune-subst-1 VAR IN-SUBST SUBST
+; VAR is a logical variable, SUBST is a substitution, and IN-SUBST
+; is a tail of SUBST (which may be '()).
+; VAR is supposed to have non-complex binding in SUBST
+; (see Definition 3 in the document "Properties of Substitutions").
+; If VAR is bound in SUBST, the corresponding commitment 
+; is supposed to occur in SUBST up to but not including IN-SUBST.
+; According to Proposition 10, if VAR freely occurs in SUBST, all such
+; terms are VAR itself.
+; The result is a substitution with the commitment to VAR removed
+; and the other commitments composed with the removed commitment.
+; The order of commitments is preserved.
+
+(define prune-subst-1
+  (lambda (var in-subst subst)
+    (if (eq? subst in-subst) subst
+      ; if VAR is not bound, there is nothing to prune
+      (let*-and subst ([var-binding (assq var subst)])
+	(let ([tv (commitment->term var-binding)])
+	  (let loop ([current subst])
+	    (cond
+	      [(null? current) current]
+	      [(eq? current in-subst) current]
+	      [(eq? (car current) var-binding)
+	       (loop (cdr current))]
+	      [(eq? (commitment->term (car current)) var)
+	       (cons (commitment (commitment->var (car current)) tv)
+		 (loop (cdr current)))]
+	      [else (cons (car current) (loop (cdr current)))])))))))
+
+; The same but for multiple vars
+; To prune multiple-vars, we can prune them one-by-one
+; We can attempt to be more efficient and prune them in parallel.
+; But we encounter a problem:
+; If we have a substitution
+;  ((x . y) (y . 1) (a . x))
+; Then pruning 'x' first and 'y' second will give us ((a . 1))
+; Pruning 'y' first and 'x' second will give us ((a . 1))
+; But naively attempting to prune 'x' and 'y' in parallel
+; disregarding dependency between them results in ((a . y))
+; which is not correct.
+; We should only be concerned about a direct dependency:
+;  ((x . y) (y . (1 t)) (t . x) (a . x))
+; pruning x and y in sequence or in parallel gives the same result:
+;  ((t . (1 t)) (a . (1 t)))
+; We should also note that the unifier will never return a substitution
+; that contains a cycle ((x1 . x2) (x2 . x3) ... (xn . x1))
 
 ; prune-subst-1 VAR IN-SUBST SUBST
 ; VAR is a logical variable, SUBST is a substitution, and IN-SUBST
@@ -459,7 +506,7 @@
 (define prune-subst
   (lambda (vars in-subst subst)
     (if (eq? subst in-subst)
-        subst
+      subst
       (let ([var-bindings ; the bindings of truly bound vars
 	      (let loop ([vars vars])
 		(if (null? vars) vars
@@ -471,31 +518,31 @@
 	  [(null? var-bindings) subst] ; none of vars are bound
 	  [(null? (cdr var-bindings))
 	    ; only one variable to prune, use the faster version
-	    (prune-subst-1 (commitment->var (car var-bindings))
-	      in-subst subst)]
+	   (prune-subst-1 (commitment->var (car var-bindings))
+	     in-subst subst)]
 	  [(let test ([vb var-bindings]) ; check multiple dependency
 	     (and (pair? vb)
 	       (or (let ([term (commitment->term (car vb))])
 		     (and (var? term) (assq term var-bindings)))
 		 (test (cdr vb)))))
 	    ; do pruning sequentially
-	    (let loop ([var-bindings var-bindings] [subst subst])
-	      (if (null? var-bindings) subst
-		(loop (cdr var-bindings)
-		  (prune-subst-1 (commitment->var (car var-bindings))
-		    in-subst subst))))]
+	   (let loop ([var-bindings var-bindings] [subst subst])
+	     (if (null? var-bindings) subst
+	       (loop (cdr var-bindings)
+		 (prune-subst-1 (commitment->var (car var-bindings))
+		   in-subst subst))))]
 	  [else				; do it in parallel
 	    (let loop ([current subst])
 	      (cond
 		[(null? current) current]
 		[(eq? current in-subst) current]
 		[(memq (car current) var-bindings)
-		  (loop (cdr current))]
+		 (loop (cdr current))]
 		[(assq (commitment->term (car current)) var-bindings) =>
-		  (lambda (ct)
-		    (cons (commitment (commitment->var (car current)) 
-			    (commitment->term ct))
-		      (loop (cdr current))))]
+		 (lambda (ct)
+		   (cons (commitment (commitment->var (car current)) 
+			   (commitment->term ct))
+		     (loop (cdr current))))]
 		[else (cons (car current) (loop (cdr current)))]))])))))
 
 ; when the unifier is moved up, move prune-subst test from below up...
