@@ -598,8 +598,18 @@
 ;	(divo `(0 . ,x) (build 2) q '(1))
 ; (because no even number can give the remainder 1 upon the 
 ; division by two).
-
-
+;
+; We should note that if n1=0, we obtain that q1 must be zero
+; (because m>0) and q2*m + r = n2. The latter can be solved in finite
+; time.
+; We also note that (q2*m + r - n2)/2^(l+1) < m
+; because r - n2 < (2^(l+1) - q2)* m
+; because 2^(l+1) - q2 >=1 and m > r by construction. Therefore, to
+; solve the relation n1 = q1*m + (q2*m + r - n2)/2^(l+1) we use
+; divo itself: (divo n1 m q1 (q2*m + r - n2)/2^(l+1))
+; Thus our division algorithm is recursive. On each stage we determine at
+; least one bit of the quotient (if r=0, l=0 and q2 is either 0 or 1),
+; in finite time.
 
 (define divo
   (relation (head-let n m q r)
@@ -608,7 +618,7 @@
       (all (== r n) (== q '()) (<ol n m) (<o n m)) 
       ; n has the same number of digits than m
       (all (== q '(1)) (=ol n m) (++o r m n) (<o r m))
-      (all (== q '()) (== r n) (=ol n m) (<o n m))  ; if n < m, then q=0, n=r
+      (all (== r n) (== q '()) (=ol n m) (<o n m))  ; if n < m, then q=0, n=r
       (all
 	(<ol m n)			; n has more digits than m
 					; Note that m is L-instantiated here
@@ -618,11 +628,18 @@
 	  (all
 	    (split n r n1 n2)
 	    (split q r q1 q2)
-	    (**o q2 m q2m)
-	    (++o q2m r q2mr)
-	    (--o q2mr n2 rr)		; rr = q2*m + r - n2
-	    (split rr r r1 '())		; r1 = rr/2^(l+1), evenly
-	    (divo n1 m q1 r1)))
+	    (any
+	      (all
+		(== n1 '())
+		(== q1 '())
+		(--o n2 r q2m)
+		(**o q2 m q2m))			; provably terminates
+	      (all (pos n1) 
+		(**o q2 m q2m)
+		(++o q2m r q2mr)
+		(--o q2mr n2 rr)		; rr = q2*m + r - n2
+		(split rr r r1 '())		; r1 = rr/2^(l+1), evenly
+		(divo n1 m q1 r1)))))
 	)
       )))
 
@@ -638,11 +655,11 @@
 (define split
   (extend-relation (n r n1 n2)
     (fact () '() _ '() '())
-    (fact (n) `(0 . ,n) '() n '())
+    (fact (b n) `(0 ,b . ,n) '() `(,b . ,n) '())
     (fact (n) `(1 . ,n) '() n '(1))
-    (relation (n r n1)
-      (to-show `(0 . ,n) `(,_ . ,r) n1 '())
-      (split n r n1 '()))
+    (relation (b n r n1)
+      (to-show `(0 ,b . ,n) `(,_ . ,r) n1 '())
+      (split `(,b . ,n) r n1 '()))
     (relation (n r n1)
       (to-show `(1 . ,n) `(,_ . ,r) n1 '(1))
       (split n r n1 '()))
@@ -897,6 +914,9 @@
 (test-check 'split-5
   (solve 5 (x y) (split (build 5) '(1) x y))
   '(((x.0 (1)) (y.0 (1)))))
+(test-check 'split-6
+  (solve 5 (n) (split n (build 5) '() '(1)))
+  '(((n.0 (1)))))
 
 (cout nl "division, general" nl)
 
