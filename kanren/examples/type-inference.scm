@@ -63,6 +63,24 @@
   (lambda (e)
     (e (lambda (z) ((fix e) z)))))
 
+; When the variable has a generic type, it's type actually a relation
+; that is to unify with the given type. This is precisely the logical meaning
+; of generalization, as pointed out by Ken:
+; <blockquote>
+; A cleaner, but less efficient, formulation of HM type inference is to
+; use the following let rule instead:
+;
+;     Gamma |- M : t    Gamma |- N[M/x] : t'
+;     -------------------------------------- Let
+;          Gamma |- let x = M in N : t'
+;
+; Look ma, no FV!  In words, this rule treats let as a construct for
+; syntactic substitution.  This means storing either M, or a thunk
+; returning (a logical variable associated with a fresh copy of) the type
+; of M, under x in the environment.  This formulation avoids var? while
+; taking advantage of built-in unification (to some extent).
+; </blockquote>
+
 (define generic-base-env
   (relation (g v delayed-type-inf t)
     (to-show `(generic ,v ,delayed-type-inf ,g) v t)
@@ -142,12 +160,10 @@
 (define polylet-rel
   (relation (g v rand body t)
     (to-show g `(let ([,v ,rand]) ,body) t)
-      (!- `(generic ,v ,(lambda (t)
-			  (exists (t-rand)
+      (!- `(generic ,v ,(relation (head-let t-rand)
 			    (all!!
-			      (== t t-rand) ;takes care if t is _
 			      (!- g rand t-rand)
-			      (trace-vars 'poly-let (t-rand rand)))))
+			      (trace-vars 'poly-let (t-rand rand))))
 	     ,g)
 	body t)))
 
@@ -518,11 +534,8 @@
     ((rand) ((== exp `(fix ,rand)))
       (!- g rand `(--> ,t ,t)))
     ((v rand body) ((== exp `(let ([,v ,rand]) ,body)))
-      (!- `(generic ,v ,(lambda (t)
-			  (exists (t-rand)
-			    (all!!
-			      (== t t-rand) ;takes care if t is _
-			      (!- g rand t-rand))))
+      (!- `(generic ,v ,(relation (head-let t-rand)
+			  (!- g rand t-rand))
 	     ,g)
 	body t))))
 
