@@ -2091,11 +2091,6 @@
   (solve 10 (x y) (grandpa x y))
   '(((x.0 jon) (y.0 rob)) ((x.0 jon) (y.0 roz))))
 
-(define instantiated
-  (lambda (t)
-    (project/no-check (t)
-      (predicate (not (var? t))))))
-
 (define view-subst
   (lambda (t)
     (lambda@ (sk fk subst)

@@ -104,11 +104,15 @@
 ; as LST
 ; If var is not found, add a binding to a fresh variable and
 ; append to NEW-LST
+; The code below uses the low-level function var? Every use of var?
+; entails a proof obligation that such use is safe. In our case here,
+; the end-user-visible relation is copy-term-logical, 
+; which is logically sound.
 (define logical-assq
   (extend-relation (a b c d)
     (relation (var lst)			; non var map to themselves
-      (to-show var lst var lst)
-      (instantiated var))
+      (to-show var lst var lst)		; This is just an optimization and
+      (project/no-check (var) (predicate (not (var? var))))) ; is sound
     (relation (var lst var1 binding)
       (to-show var lst binding lst)
       (all!!
@@ -127,14 +131,15 @@
 
 (define copy-term-logical-raw
   (relation (head-let t tnew lst new-lst)
-    (exists (th tt)
-      (if-only (all!! (instantiated t) (== t `(,th . ,tt)))
-	(exists (th-new tt-new new-lst1)
-	  (all!!
-	    (copy-term-logical-raw th th-new lst new-lst1)
-	    (copy-term-logical-raw tt tt-new new-lst1 new-lst)
-	    (== tnew `(,th-new . ,tt-new))))
-	(logical-assq t lst tnew new-lst)))))
+    (project/no-check (t)
+      (exists (th tt)
+	(if-only (all!! (predicate (not (var? t))) (== t `(,th . ,tt)))
+	  (exists (th-new tt-new new-lst1)
+	    (all!!
+	      (copy-term-logical-raw th th-new lst new-lst1)
+	      (copy-term-logical-raw tt tt-new new-lst1 new-lst)
+	      (== tnew `(,th-new . ,tt-new))))
+	(logical-assq t lst tnew new-lst))))))
 
 (define generic-env
   (extend-relation (a1 a2 a3) generic-base-env generic-recursive-env))
@@ -598,28 +603,26 @@
   '((?.0 int)))
 
 
+; The code below uses the low-level function var? Every use of var?
+; entails a proof obligation that such use is safe. In our case here,
+; invertible-binary-function->ternary-relation and
+; invertible-unary-function->binary-relation are sound.
+
 (define invertible-binary-function->ternary-relation
   (lambda (op inverted-op)
-    (extend-relation (a1 a2 a3)
-      (relation (x y z)
-        (to-show x y z)
-        (all (fails (instantiated z))
-          (project (x y)
-            (== z (op x y)))))
-      (relation (x y z)
-        (to-show x y z)
-        (all (fails (instantiated y))
-          (project (z x)
-            (== y (inverted-op z x)))))
-      (relation (x y z)
-        (to-show x y z)
-        (all (fails (instantiated x))
-          (project (z y)
-            (== x (inverted-op z y)))))
-      (relation (x y z)
-        (to-show x y z)
-        (project (x y)
-          (== z (op x y)))))))
+    (relation (head-let x y z)
+      (project/no-check (z)
+	(if-only (predicate (var? z))
+          (project (x y) (== z (op x y))) ; z is free, x and y must not
+	  (project/no-check (y)
+	    (if-only (predicate (var? y)) ; y is free, z is not
+	      (project (x)
+		(== y (inverted-op z x)))
+	      (project/no-check (x)
+		(if-only (predicate (var? x)) ; x is free, y and z are not
+		  (== x (inverted-op z y))
+		  (== z (op x y)))))))))))
+
 
 (define ++ (invertible-binary-function->ternary-relation + -))
 (define -- (invertible-binary-function->ternary-relation - +))
@@ -649,23 +652,14 @@
 
 (define invertible-unary-function->binary-relation
   (lambda (op inverted-op)
-    (extend-relation (a1 a2)
-      (relation (x y)
-        (to-show x y)
-        (all (fails (instantiated y))
-          (project (x)
-            (== y (op x)))))
-      (relation (x y)
-        (to-show x y)
-        (all (fails (instantiated x))
-          (project (y)
-            (== x (inverted-op y)))))
-      (relation (x y)
-        (to-show x y)
-        (begin
-          (pretty-print "Third rule")
-          (project (x)
-            (== y (op x))))))))
+    (relation (head-let x y)
+      (project/no-check (y)
+	(if-only (predicate (var? y))
+	  (project (x) (== y (op x)))	; y is free, x must not
+	  (project/no-check (x)
+	    (if-only (predicate (var? x))
+	      (== x (inverted-op y))
+	      (== y (op x)))))))))
 
 (define name
   (invertible-unary-function->binary-relation symbol->lnum lnum->symbol))
