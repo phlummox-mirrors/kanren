@@ -18,16 +18,16 @@
 ;  14. The Japanese smokes Parliaments.
 ;  15. The Norwegian lives next to the blue house.
 
-; (define member 
+; (define memb 
 ;   (extend-relation (a1 a2)
 ;     (fact (item) item `(,item . ,_))
-;     (relation (item rest) (to-show item `(,_ . ,rest)) (member item rest))))
+;     (relation (item rest) (to-show item `(,_ . ,rest)) (memb item rest))))
 
-(define member 
+(define memb 
   (relation (head-let item lst) 
     (any (== lst `(,item . ,_))
       (exists (rest)
-	(if-only (== lst `(,_ . ,rest)) (member item rest))))))
+	(if-only (== lst `(,_ . ,rest)) (memb item rest))))))
 
 
 (define next-to
@@ -46,22 +46,28 @@
     (if-only
       (all!
         (== h `((norwegian ,_ ,_ ,_ ,_) ,_ (,_ ,_ milk ,_ ,_) ,_ ,_))
-        (member `(englishman ,_ ,_ ,_ red) h)
+        (memb `(englishman ,_ ,_ ,_ red) h)
         (on-right `(,_ ,_ ,_ ,_ ivory) `(,_ ,_ ,_ ,_ green) h)
         (next-to `(norwegian ,_ ,_ ,_ ,_) `(,_ ,_ ,_ ,_ blue) h)
-        (member `(,_ kools ,_ ,_ yellow) h)
-        (member `(spaniard ,_ ,_ dog ,_) h)
-        (member `(,_ ,_ coffee ,_ green) h) 
-        (member `(ukrainian ,_ tea ,_ ,_) h)
-        (member `(,_ luckystrikes oj ,_ ,_) h)
-        (member `(japanese parliaments ,_ ,_ ,_) h)
-        (member `(,_ oldgolds ,_ snails ,_) h)
+        (memb `(,_ kools ,_ ,_ yellow) h)
+        (memb `(spaniard ,_ ,_ dog ,_) h)
+        (memb `(,_ ,_ coffee ,_ green) h) 
+        (memb `(ukrainian ,_ tea ,_ ,_) h)
+        (memb `(,_ luckystrikes oj ,_ ,_) h)
+        (memb `(japanese parliaments ,_ ,_ ,_) h)
+        (memb `(,_ oldgolds ,_ snails ,_) h)
         (next-to `(,_ ,_ ,_ horse ,_) `(,_ kools ,_ ,_ ,_) h)
         (next-to `(,_ ,_ ,_ fox ,_) `(,_ chesterfields ,_ ,_ ,_) h)
         )
-      (all (member `(,_ ,_ water ,_ ,_) h)
-	(member `(,_ ,_ ,_ zebra ,_) h)))))
+      (all (memb `(,_ ,_ water ,_ ,_) h)
+	(memb `(,_ ,_ ,_ zebra ,_) h)))))
 
+'(pretty-print
+  (time (let loop ([n 100000])
+              (cond
+                [(zero? n) 'done]
+                [else (solution (h) (zebra h))
+                  (loop (sub1 n))]))))
 
 (test-check "Zebra"
   (time (solution (h) (zebra h)))
