@@ -2896,6 +2896,27 @@
   (exists (a b c1 c2) (solution 
 			(typeclass-counter-example-query a b c1 c2))))
 
+(define-syntax robust-binary-extend
+  (syntax-rules ()
+    ((_ vars rel1 rel2)
+     (binary-extend-relation-interleave-non-overlap vars
+        (lambda vars
+          (any (with-depth 5 (rel1 . vars))
+               (with-depth 10 (rel2 . vars))))
+        (lambda vars
+          (any (with-depth 15 (rel2 . vars))
+               (with-depth 20 (rel1 . vars))))
+))))
+
+(define typeclass-C
+  (robust-binary-extend (a b c)
+   typeclass-C-instance-1
+   typeclass-C-instance-2))
+
+(printf "~%Counter-example: ~s~%" 
+  (exists (a b c1 c2) (solve 5 
+			(typeclass-counter-example-query a b c1 c2))))
+
 (exit 0)
 
 ; Had I switched the order,
