@@ -1,4 +1,4 @@
-;; minikanrensupport.scm
+;; minikanrensupport8.scm
 
 (define-syntax def-syntax
   (syntax-rules ()
@@ -39,47 +39,68 @@
          (let*-and false-exp ([var1 exp1] ...) body0 body1 ...)
          false-exp))]))
 
+(define nonground?
+  (lambda (nf)
+    (not (ground? nf))))
+
+(define ground?
+  (lambda (v)
+    (cond
+      ((var? v) #f)
+      ((pair? v)
+       (and (ground? (car v)) (ground? (cdr v))))
+      (else #t))))
+
 (define prefix
   (lambda (n strm)
-    (prefix-aux (- n 1) strm)))
+    (pr (lambda (x) #t) (- n 1) strm)))
 
-(define prefix-aux
-  (lambda (n strm)
+(define pr
+  (lambda (p n strm)
     (cond
-      [(null? strm) '()]
-      [else
-        (cons (reify-answer (car strm))
-          (cond
-            [(zero? n) '()]
-            [else (prefix-aux (- n 1) (@ (cdr strm)))]))])))
+      ((null? strm) '())
+      (else 
+        (pa p (nonfresh-answer (car strm)) n strm)))))
 
-'(define prefix-aux
-  (lambda (n strm)
+(define pa
+  (lambda (p nf n strm)
     (cond
-      [(null? strm) (void)]
-      [else
-        (begin
-          (pretty-print (reify-answer (car strm)))
-          (cond
-              [(zero? n) (void)]
-              [else (prefix-aux (- n 1) (@ (cdr strm)))]))])))
+      ((p nf)
+       (cons (reify-fresh nf)
+         (cond
+           ((zero? n) '())
+           (else (pr p (- n 1) (@ (cdr strm)))))))
+      ((zero? n) '())
+      (else (pr p n (@ (cdr strm)))))))
+
+(define prefix-ground
+  (lambda (n strm)
+    (pr ground? (- n 1) strm)))
+
+(define prefix-nonground
+  (lambda (n strm)
+    (pr nonground? (- n 1) strm))) 
 
 (define prefix*
   (lambda (strm)
     (cond
-      [(null? strm) '()]
-      [else
-        (cons (reify-answer (car strm))
-          (prefix* (@ (cdr strm))))])))
+      ((null? strm) '())
+      (else
+        (cons (reify-fresh (nonfresh-answer (car strm)))
+          (prefix* (@ (cdr strm))))))))
 
-(define reify-answer
+'(define reify-answer
   (lambda (answer)
     (reify (car answer) (cdr answer))))
 
-(define reify
+'(define reify
   (lambda (v s)
     (reify-fresh
       (reify-nonfresh v s))))
+
+(define nonfresh-answer
+  (lambda (answer)
+    (reify-nonfresh (car answer) (cdr answer))))
 
 (define-syntax test-check
   (syntax-rules ()
@@ -207,9 +228,9 @@
     (string->symbol
       (string-append
         (symbol->string id)
-        "$_{_{"
+        "$_{_"
         (number->string index)
-        "}}$"))))
+        "}$"))))
 
 (define reify-id
   (lambda (id index)
@@ -351,3 +372,4 @@
       [else (eq? v _)])))
 
 (define count-cons 0)
+
