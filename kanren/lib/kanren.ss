@@ -361,9 +361,10 @@
      (let ([rel1 rel-exp1] [rel2 rel-exp2])
        (lambda (id ...)
          (lambda@ (sk fk subst cutk)
-           ((interleave sk fk)
-            (@ (rel1 id ...) initial-sk initial-fk subst cutk)
-            (@ (rel2 id ...) initial-sk initial-fk subst cutk)))))]))
+           (let ([ant1 (rel1 id ...)] [ant2 (rel2 id ...)])
+             ((interleave sk fk)
+              (@ ant1 initial-sk initial-fk subst cutk)
+              (@ ant2 initial-sk initial-fk subst cutk))))))]))
 
 (define interleave
   (lambda (sk fk)
@@ -381,6 +382,43 @@
              [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
                      (@ sk (lambda () (interleave q2 (fk))) subst cutk))]))])
       interleave)))
+
+(define-syntax binary-extend-relation-interleave-non-overlap
+  (syntax-rules ()
+    [(_ (id ...) rel-exp1 rel-exp2)
+     (let ([rel1 rel-exp1] [rel2 rel-exp2])
+       (lambda (id ...)
+         (lambda@ (sk fk subst cutk)
+           (let ([ant1 (rel1 id ...)][ant2 (rel2 id ...)])
+             ((interleave-non-overlap sk fk)
+              (@ ant1 initial-sk initial-fk subst cutk)
+              (@ ant2 initial-sk initial-fk subst cutk)
+                  ; means in case of overlap, prefer ant2 over ant1
+              fail
+              ant2)))))]))
+
+(define interleave-non-overlap
+  (lambda (sk fk)
+    (letrec
+      ([finish
+         (lambda (q)
+           (cond
+             [(null? q) (fk)]
+             [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
+                     (@ sk (lambda () (finish (fk))) subst cutk))]))]
+       [interleave
+         (lambda (q1 q2 ant1 ant2)
+           (cond
+             [(null? q1) (if (null? q2) (fk) (finish q2))]
+             [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
+		(if (satisfied? ant2 subst) ; the solution of q1
+   					    ; satisfies ant2. Skip it
+		  (interleave q2 (fk) ant2 ant1)
+		  (@ sk (lambda () (interleave q2 (fk) ant2 ant1)) subst cutk)))]))])
+      interleave)))
+
+(define (satisfied? ant subst)
+  (not (null? (@ ant initial-sk initial-fk subst initial-fk))))
 
 (define-syntax extend-relation
   (syntax-rules ()
@@ -923,23 +961,6 @@
          (@ sk fk subst cutk)
          (fk)))]))
 
-(define-syntax pred->relation
-  (syntax-rules ()
-    [(_ (id ...) p)
-     (lambda (id ...)
-       (pred-call p id ...))]))
-
-(define-syntax fun-call
-  (syntax-rules ()
-    [(_ f t u ...)
-     (lambda@ (sk fk subst cutk)
-       (cond
-         [(unify t ((nonvar! (subst-in f subst)) (nonvar! (subst-in u subst)) ...)
-            subst)
-          => (lambda (subst)
-               (@ sk fk subst cutk))]
-         [else (fk)]))]))
-
 (define-syntax pred-call/no-check
   (syntax-rules ()
     [(_ p t ...)
@@ -948,21 +969,22 @@
          (@ sk fk subst cutk)
          (fk)))]))
 
-(define-syntax pred/no-check->relation
+(define-syntax fun-call
   (syntax-rules ()
-    [(_ (id ...) p)
-     (lambda (id ...)
-       (lambda@ (sk fk subst cutk)
-         (if ((subst-in p subst) (subst-in id subst) ...)
-           (@ sk fk subst cutk)
-           (fk))))]))
+    [(_ f t u ...)
+     (lambda@ (sk fk subst cutk)
+       (cond
+         [(unify t ((nonvar! (subst-in f subst)) (nonvar! (subst-in u subst)) ...) subst)
+          => (lambda (subst)
+               (@ sk fk subst cutk))]
+         [else (fk)]))]))
 
 (define-syntax fun-call/no-check
   (syntax-rules ()
     [(_ f t u ...)
      (lambda@ (sk fk subst cutk)
        (cond
-         [(unify t ((subst-in f subst)  (subst-in u subst) ...) subst)
+         [(unify t ((subst-in f subst) (subst-in u subst) ...) subst)
           => (lambda (subst)
                (@ sk fk subst cutk))]
          [else (fk)]))]))
@@ -1282,6 +1304,7 @@
              (to-show n a b c)
              (exists (m)
                (all
+                 (pred-call positive? n)
                  (fun-call - m n 1)
                  (move m a c b)
                  (pred-call printf "Move a disk from ~s to ~s~n" a b)
@@ -1479,6 +1502,7 @@
                (to-show n a b c)
                (exists (m)
                  (all
+                   (pred-call positive? n)
                    (fun-call - m n 1)
                    (move m a c b)
                    (pred-call push-step a b)
@@ -2720,42 +2744,7 @@
   (exists (x y) (solve 7
 		  ((binary-extend-relation-interleave (a1 a2) fact3 R1) x y))))
 
-(define-syntax binary-extend-relation-interleave-non-overlap
-  (syntax-rules ()
-    [(_ (id ...) rel-exp1 rel-exp2)
-     (let ([rel1 rel-exp1] [rel2 rel-exp2])
-       (lambda (id ...)
-         (lambda@ (sk fk subst cutk)
-           ((interleave-non-overlap sk fk)
-            (@ (rel1 id ...) initial-sk initial-fk subst cutk)
-            (@ (rel2 id ...) initial-sk initial-fk subst cutk)
-	    ; means in case of overlap, prefer rel2 over rel1
-	    fail
-	    (rel2 id ...)))))]))
-
-(define interleave-non-overlap
-  (lambda (sk fk)
-    (letrec
-      ([finish
-         (lambda (q)
-           (cond
-             [(null? q) (fk)]
-             [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
-                     (@ sk (lambda () (finish (fk))) subst cutk))]))]
-       [interleave
-         (lambda (q1 q2 ant1 ant2)
-           (cond
-             [(null? q1) (if (null? q2) (fk) (finish q2))]
-             [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
-		(if (satisfied? ant2 subst) ; the solution of q1
-					; satisfies ant2. Skip it
-		  (interleave q2 (fk) ant2 ant1)
-		  (@ sk (lambda () (interleave q2 (fk) ant2 ant1)) 
-		    subst cutk)))]))])
-      interleave)))
-
-(define (satisfied? rel subst)
-  (not (null? (@ rel initial-sk initial-fk subst initial-fk))))
+;;; Test for nonoverlapping.
 
 (printf "~%binary-extend-relation-interleave-non-overlap~%")
 (printf "~%R1+R2:~%")
@@ -2806,6 +2795,152 @@
     (solve 9
       ((binary-extend-relation-interleave-non-overlap 
 	 (a1 a2) Rinf2 Rinf) x y))))
+
+
+; nrev([],[]).
+; nrev([X|Rest],Ans) :- nrev(Rest,L), append(L,[X],Ans).
+
+; append([],L,L).
+; append([X|L1],L2,[X|L3]) :- append(L1,L2,L3).
+
+
+; data([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,
+;                            21,22,23,24,25,26,27,28,29,30]).
+
+
+(define nrev
+  (extend-relation (a1 a2)
+    (fact () '() '())
+    (relation _ (x rest ans)
+      (to-show `(,x . ,rest) ans)
+      (exists (ls)
+        (all
+          (nrev rest ls)
+          (concat ls `(,x) ans))))))
+
+(define test-nrev
+  (lambda ()
+    (time
+      (exists (x)
+        (solution (nrev '(1 2 3 4 5 6 7 8 9
+                           10 11 12 13 14 15 16 17 18
+                           19 20 21 22 23 24 25 26 27
+                           28 29 30)
+                    x))))))
+
+(printf "Timing test ~s~n" (test-nrev))
+
+(define get_cpu_time
+  (lambda ()
+    (vector-ref (statistics) 1)))
+
+(define lots
+  (extend-relation ()
+    (relation _ ()
+      (to-show)
+      (exists (count)
+        (all
+          (pred-call newline)
+          (pred-call newline)
+          (eg_count count)
+          (bench count)
+          fail)))
+    (fact ())))
+
+(define test-lots
+  (lambda ()
+    (solve 1000 (lots))))
+
+(define eg_count
+  (extend-relation (a1)
+    (fact () 10)
+    (fact () 20)
+    (fact () 50)
+    (fact () 100)
+    (fact () 200)
+    (fact () 500)
+    (fact () 1000)
+    (fact () 2000)
+    (fact () 5000)
+    (fact () 10000)))
+
+(define bench
+  (relation _ (count)
+    (to-show count)
+    (exists (t0 t1 t2)
+      (all
+        (fun-call get_cpu_time t0)
+        (dodummy count)
+        (fun-call get_cpu_time t1)
+        (dobench count)
+        (fun-call get_cpu_time t2)
+        (report count t0 t1 t2)))))
+
+(define dobench
+  (extend-relation (a1)
+    (relation $ (count)
+      (to-show count)
+      (repeat count)
+      (nrev '(1 2 3 4 5 6 7 8 9
+               10 11 12 13 14 15 16 17 18
+               19 20 21 22 23 24 25 26 27
+               28 29 30)
+        _)
+      fail)
+    (fact () _)))
+
+(define dodummy
+  (extend-relation (a1)
+    (relation $ (count)
+      (to-show count)
+      (repeat count)
+      (dummy _)
+      fail)
+    (fact () _)))
+
+(define dummy
+  (relation $ ()
+    (to-show _)))
+
+(define repeat
+  (extend-relation (a1)
+    (fact (n) n)
+    (relation _ (n)
+      (to-show n)
+      (exists (n1)
+        (all
+          (pred-call > n 1)
+          (fun-call - n1 n 1)
+          (repeat n1))))))
+
+(define report
+  (relation _ (count t0 t1 t2)
+    (to-show count t0 t1 t2)
+    (exists (time1 time2 time lips units)
+      (all
+        (fun-call - time1 t1 t0)
+        (fun-call - time2 t2 t1)
+        (fun-call - time time2 time1)
+        (calculate_lips count time lips units)
+        (pred-call printf "~n~s lips for ~s" lips count)
+        (pred-call printf " Iterations taking ~s  ~s ( ~s )~n " time units time)))))
+
+(define calculate_lips
+  (extend-relation (a1 a2 a3 a4)
+    (relation cut (count time lips)
+      (to-show count time lips 'msecs)
+      (== time 0)
+      cut
+      (== lips 0))
+    (relation _ (count time lips)
+      (to-show count time lips 'msecs)
+      (exists (t1 t2)
+        (all
+          (fun-call * t1 496 count 1000)
+          (fun-call + t2 time 0.0)
+          (fun-call / lips t1 t2))))))
+
+(test-lots)
 
 #!eof
 
