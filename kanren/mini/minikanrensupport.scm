@@ -1,4 +1,4 @@
-;; minikanrensupport.ss
+;; minikanrensupport.scm
 
 (define-syntax def-syntax
   (syntax-rules ()
@@ -8,6 +8,13 @@
          [(_ . lhs) rhs]))]))
 
 (print-gensym #f)
+
+(define-syntax let*-values
+  (syntax-rules ()
+    [(_ () body bodies ...) (begin body bodies ...)]
+    ((_ ([(var ...) rhs-exp] [vars* rhs-exp*] ...) bodies ...)
+     (call-with-values (lambda () rhs-exp)
+       (lambda (var ...) (let*-values ([vars* rhs-exp*] ...) bodies ...))))))
 
 (define-syntax lambda@
   (syntax-rules ()
