@@ -1,4 +1,4 @@
-;(load "plshared.ss")
+;load "plshared.ss")
 
 ; $Id$
 
@@ -7,13 +7,6 @@
     [(_ (x ...) vs body0 body1 ...)
      (call-with-values (lambda () vs) (lambda (x ...) body0 body1 ...))]))
 
-(define-syntax let-lv
-  (syntax-rules ()
-    [(_ () body) body]
-    [(_ () body0 body1 body2 ...) (begin body0 body1 body2 ...)]
-    [(_ (id ...) body0 body1 ...)
-     (let ([id (logical-variable 'id)] ...) body0 body1 ...)]))
-
 (define-syntax lambda@
   (syntax-rules ()
     [(_ (formal) body0 body1 ...) (lambda (formal) body0 body1 ...)]
@@ -21,10 +14,29 @@
      (lambda (formal0)
        (lambda@ (formal1 formal2 ...) body0 body1 ...))]))
 
+; (define-syntax trace-lambda@
+;   (syntax-rules ()
+;     [(_ id () body0 body1 ...) (begin body0 body1 ...)]
+;     [(_ id (formal0 formal1 ...) body0 body1 ...)
+;      (trace-lambda id (formal0)
+;        (trace-lambda@ id (formal1 ...) body0 body1 ...))]))
+
 (define-syntax @  
   (syntax-rules ()
     [(_ rator rand) (rator rand)]
     [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
+
+(define symbol-append
+  (lambda symbs
+    (string->symbol
+      (apply string-append
+        (map symbol->string symbs)))))
+
+(define Y
+  (lambda (f)
+    ((lambda (u) (u (lambda (x) (lambda (n) ((f (u x)) n)))))
+     (lambda (x) (x x)))))
+
 
 ; (define-syntax @    
 ;   (syntax-rules (syntax-rules)
@@ -51,7 +63,7 @@
 ; test-check TITLE TESTED-EXPRESSION EXPECTED-RESULT 
 ; where TITLE is something printable (e.g., a symbol or a string)
 ; EXPECTED-RESULT and TESTED-EXPRESSION are both expressions.
-; The expressions are evaluated and their results are compared
+; The expressions are evaluated and their results are cmpared
 ; by equal?
 ; If the results compare, we just print the TITLE.
 ; Otherwise, we print the TITLE, the TESTED-EXPRESSION, and
@@ -85,6 +97,15 @@
 
 (print-gensym #f)
 
+; Introduction of a logical variable
+(define-syntax let-lv
+  (syntax-rules ()
+    [(_ () body) body]
+    [(_ () body0 body1 body2 ...) (begin body0 body1 body2 ...)]
+    [(_ (id ...) body0 body1 ...)
+     (let ([id (logical-variable 'id)] ...) body0 body1 ...)]))
+
+
 ; (define logical-var-tag (list '*logical-var-tag*)) ; unique for eq?
 ; (define native-pair? pair?)
 ; (define logical-variable
@@ -108,6 +129,7 @@
 (define commitment->var car)
 
 (define empty-subst '())
+(define empty-subst? null?)
 
 (define unit-subst
   (lambda (var t)
@@ -122,6 +144,25 @@
     (cond
       [(eq? term var) subst]
       [else (cons (commitment var term) subst)])))
+
+; get the free vars of a term (a list without duplicates)
+(define free-vars
+  (lambda (term)
+    (let loop ([term term] [fv '()])
+      (cond
+        [(var? term) (if (memq term fv) fv (cons term fv))]
+        [(pair? term) (loop (cdr term) (loop (car term) fv))]
+        [else fv]))))
+
+; Check to see if a var occurs in a term
+(define occurs?
+  (lambda (var term)
+    (cond
+      [(var? term) (eq? term var)]
+      [(pair? term) (or (occurs? var (car term)) (occurs? var (cdr term)))]
+      [else #f])))
+
+
 
 (define compose-subst/own-survivors
   (lambda (base refining survivors)
@@ -200,17 +241,6 @@
 	(unify 3 4 empty-subst)
 	#f)))
   #t)
-
-(define-syntax ==
-  (syntax-rules (_)
-    [(_ _ u)
-     (lambda@ (sk) sk)]
-    [(_ t _)
-     (lambda@ (sk) sk)]
-    [(_ t u)
-     (lambda@ (sk fk subst)
-       (let*-and (fk) ([subst (unify t u subst)])
-         (@ sk fk subst)))]))
 
 ;(load "plprelims.ss")
 
@@ -297,15 +327,6 @@
       [(null? env) #f]
       [(eq? (logical-variable-id (caar env)) id) (car env)]
       [else (assq/var-id id (cdr env))])))
-
-(define-syntax trace-lambda@
-  (syntax-rules ()
-    [(_ id () body0 body1 ...) (begin body0 body1 ...)]
-    [(_ id (formal0 formal1 ...) body0 body1 ...)
-     (trace-lambda id (formal0)
-       (trace-lambda@ id (formal1 ...) body0 body1 ...))]))
-
-(define empty-subst? null?)
 
 (let-lv (x y)
   (test-check 'test-compose-subst-0
@@ -1254,6 +1275,20 @@
        (let ((ant-name (rel-exp id ...)) ...)
          body))]))
 
+; Unify lifted to be a binary relation
+(define-syntax ==
+  (syntax-rules (_)
+    [(_ _ u)
+     (lambda@ (sk) sk)]
+    [(_ t _)
+     (lambda@ (sk) sk)]
+    [(_ t u)
+     (lambda@ (sk fk subst)
+       (let*-and (fk) ([subst (unify t u subst)])
+         (@ sk fk subst)))]))
+
+
+
 ;------------------------------------------------------------------------
 ;;;;; Starts the real work of the system.
 
@@ -1601,10 +1636,6 @@
 (test-check 'test-grandpa-1
   (solve 4 (x) (grandpa 'sam x))
   '(((x.0 sal)) ((x.0 pat))))
-
-; (define-syntax trace-fact
-;   (syntax-rules ()
-;    [(_ id (var0 ...) term ...) (trace-relation id (to-show (var0 ...) term ...))]))
 
 (define father
   (extend-relation (a1 a2)
@@ -2200,13 +2231,6 @@
                        [subst (unify (cdr t) (cdr u) subst)])
            subst)]
         [else #f]))))
-
-(define occurs?
-  (lambda (var term)
-    (cond
-      [(var? term) (eq? term var)]
-      [(pair? term) (or (occurs? var (car term)) (occurs? var (cdr term)))]
-      [else #f])))
 
 (test-check 'test-unify/pairs
   (let-lv (w x y z u)
