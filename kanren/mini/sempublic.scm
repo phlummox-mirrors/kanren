@@ -62,25 +62,24 @@
 ;;; all, ef
 
 (define-syntax condo
-  (syntax-rules (else)
-    ((_ (else a* ...)) (all a* ...))
-    ((_ (a* ...)) (all a* ...))
-    ((_ (a a* ...) c c*  ...) 
-     (@ ef a (all a* ...) (condo c c* ...)))))
+  (syntax-rules ()
+   ((_ c c* ...)
+     (lambda@ (s k f) (condo-aux s k f c c* ...)))))
 
-(define ef
-  (lambda@ (t c a)
-     (lambda@ (s k f)
-       (@ t
-         s
-         (lambda@ (s f1)
-           (lambda@ (_w)
-             (@ c s k (lambda@ () (@ (@ f1) f)))))
-         (lambda@ () absorb-and-invoke)
-         (lambda@ () (@ a s k f))))))
+(define-syntax condo-aux
+  (syntax-rules (else)
+    ((_ s k f (else a* ...)) (@ (all a* ...) s k f))
+    ((_ s k f (a* ...)) (@ (all a* ...) s k f))
+    ((_ s k f (q a* ...) c c* ...)
+     (@ q s
+       (lambda@ (s f1)
+	 (lambda@ (_w)
+	   (@ (all a* ...) s k (lambda@ () (@ (@ f1) f)))))
+       absorb-and-invoke
+       (lambda@ () (condo-aux s k f c c* ...))))))
 
 (define absorb-and-invoke
-  (lambda@ (w) (@ w)))
+  (lambda@ () (lambda@ (w) (@ w))))
 
 ;;; all, anyi
 
@@ -162,15 +161,32 @@
 ; Equivalent of Kanren's if-only
 ;   (if-only COND THEN ELSE) ==> (any (all (all! COND) THEN)
 ;                                     (all (fails COND) ELSE))
+; or
+; (conde
+;   (q1 g ...)
+;   (q2 g ...)
+;   (q3 g ...)
+;   (else g ...))
+; ==>
+; (condo
+;   ((once q1) g ...)
+;   ((once q2) g ...)
+;   ((once q3) g ...)
+;   (else g ...))
 
-(define-syntax cond1
+
+(define-syntax conde
+  (syntax-rules ()
+    ((_ c1 c2* ...) (conde-aux () (c1 c2* ...)))))
+
+(define-syntax conde-aux
   (syntax-rules (else)
-    ((_ (else a* ...)) (all a* ...))
-    ((_ (test a* ...) c c*  ...)
-     (lambda@ (s k f)
-       (@ test s
-         (lambda@ (s _f) (@ (all a* ...) s k f))
-         (lambda () (@ (cond1 c c* ...) s k f)))))))
+    ((_ (c1 c2* ...) ()) (condo c1 c2* ...))
+    ((_ (c* ...) ((else . eg)))
+      (conde-aux (c* ... (else . eg)) ()))
+    ((_ (c* ...) ((q . gs) . rest))
+      (conde-aux (c* ... ((once q) . gs)) rest))
+    ))
 
 
 ;;; This does not change
@@ -354,7 +370,7 @@
 (pretty-print `(,test-3 = (7 8)))
 
 
-(define test-4
+'(define test-4
   (prefix 2
     (run (q)
       (fresh (x y)
@@ -370,7 +386,7 @@
             (== 5 y))
           (handy x y q))))))
 
-(pretty-print `(,test-4
+'(pretty-print `(,test-4
                 = (8 7)))
 
 '(define test-5 ;;; twice
@@ -1036,45 +1052,45 @@
 
 
 
-(test-check 'cond1-1
+(test-check 'conde-1
   (prefix 10
     (run (q)
       (fresh (x y)
-	(cond1
+	(conde
 	  ((any (== x 1) (== x 2)) (any (== y 1) (== y 2)))
 	  (else (any (== y 3) (== y 4))))
 	(== q (cons x y)))))
   '((1 . 1) (1 . 2)))
 
-(test-check 'cond1-2
+(test-check 'conde-2
   (prefix 10
     (run (q)
       (fresh (x y)
 	(== x 3)
-	(cond1
+	(conde
 	  ((any (== x 1) (== x 2)) (any (== y 1) (== y 2)))
 	  (else (any (== y 3) (== y 4))))
 	(== q (cons x y)))))
   '((3 . 3) (3 . 4)))
 
 
-(test-check 'cond1-3
+(test-check 'conde-3
   (prefix 10
     (run (q)
       (fresh (x y)
 	(== y 3)
-	(cond1
+	(conde
 	  ((any (== x 1) (== x 2)) (any (== y 1) (== y 2)))
 	  (else (any (== y 3) (== y 4))))
 	(== q (cons x y)))))
   '())
 
-(test-check 'cond1-3
+(test-check 'conde-3
   (prefix 10
     (run (q)
       (fresh (x y)
 	(== x 5) (== y 3)
-	(cond1
+	(conde
 	  ((any (== x 1) (== x 2)) (any (== y 1) (== y 2)))
 	  (else (any (== y 3) (== y 4))))
 	(== q (cons x y)))))
