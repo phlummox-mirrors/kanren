@@ -2734,6 +2734,39 @@
                  (loop (unify-free/any (caar to-unify) (cdar to-unify) subst)
                    (cdr to-unify))]))]))))
 
+; The following does not introduce the temp variables *a and *d
+; It makes substitutions more complex. Therefore, pruning them
+; will take a while, so it is disabled below.
+; Also, we should make an occurs check as we check the term for
+; anon variables.
+; It all works -- and faster (without pruning). Yet we have to carefully
+; think it over.
+; (define unify-free/list
+;   (let ()
+;   (define (has-anon? term)
+;     (cond
+;       ((eq? term _) #t)
+;       ((pair? term) (or (has-anon? (car term)) (has-anon? (cdr term))))
+;       (else #f)))
+;   (define (rebuild-without-anon term)
+;     (cond
+;       ((eq? term _) (logical-variable '*anon))
+;       ((pair? term) (cons (rebuild-without-anon (car term))
+; 		          (rebuild-without-anon (cdr term))))
+;       (else term)))
+;   (lambda (t-var u-value subst)
+;     (if (has-anon? u-value)
+;       (extend-subst t-var (rebuild-without-anon u-value) subst)
+;       (extend-subst t-var u-value subst)))))
+; (define lv-elim
+;   (lambda (vars in-subst subst)
+;     subst))
+; (define lv-elim-1
+;   (lambda (var in-subst subst)
+;     subst))
+
+
+
 ;------------------------------------------------------------------------
 (test-check 'test-unify/pairs-oleg1
   (let-lv (x y)
