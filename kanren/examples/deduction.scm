@@ -142,8 +142,8 @@
     (let-lv (ind)
       (all! (== t ind)
 	(lambda@ (sk fk subst)
-	  (let* ((indc (subst-in ind subst))
-		 (indc1 (universalize indc)))
+	  (let* ([indc (subst-in ind subst)]
+		 [indc1 (universalize indc)])
 	  (pretty-print indc1)
 	  (@ sk fk (unify indc1 t subst))
 	  ;(@ sk fk subst)
@@ -165,18 +165,18 @@
 ; hypotheses contain only eigen-variables (because true inductive hypotheses
 ; must be of that kind).
 
-(define (eigenvar? x)
-  (predicate (x)
-    (and (symbol? x)
-      (eqv? #\! (string-ref (symbol->string x) 0)))))
+(define eigenvar?
+  (lambda (x)
+    (predicate (x)
+      (and (symbol? x)
+	(eqv? #\! (string-ref (symbol->string x) 0))))))
 
 (define ind-kb-test
   (extend-relation (t)
     (relation (x) 
       (to-show `(wff ,x))
       (eigenvar? x))
-    (relation (p h c) 
-      (to-show `(prf ,p  ,h ,c)))
+    (fact (p h c) `(prf ,p  ,h ,c))
     (relation (x y z)
       (to-show `(union ,x ,y ,z))
       (all!
@@ -209,8 +209,6 @@
 ; and re-run the file. We shall see a report that a non-eigen
 ; variable is found. So, we cannot justify the tested property.
 
-
-
 ; Now we define some properties of sets: unions, difference, intersections
 
 (define sets
@@ -224,8 +222,7 @@
 	(if-only (kb `(member ,x ,y))
 	  (kb `(union ,xr ,y ,z))
 	  (all! (kb `(union ,xr ,y ,u))
-	        (== z (cons x u)))
-	  ))
+	        (== z (cons x u)))))
       (fact (x) `(member ,x (,x . ,_)))
       (relation (x l)
 	(to-show `(member ,x (,_ . ,l)))
@@ -237,12 +234,10 @@
 	  (kb `(member ,x ,l))
 	  (kb `(subset ,xr ,l))))
       (fact () `(without ,_ () ()))
-      (relation (x l)
-	(to-show `(without ,x (,x . ,l) ,l)))
+      (fact (x l) `(without ,x (,x . ,l) ,l))
       (relation (x y l l1)
 	(to-show `(without ,x (,y . ,l) (,y . ,l1)))
-	(kb `(without ,x ,l ,l1)))
-)))
+	(kb `(without ,x ,l ,l1))))))
 
 (define Y
   (lambda (f)
@@ -283,25 +278,29 @@
 ; Proving that [] |- x -> x
 ; See p. 3 of the paper
 
-(define (reflex x)
-  `(MP (K ,x ,x)
-     (MP (K ,x (-> ,x ,x))
-       (S ,x (-> ,x ,x) ,x))))
+(define reflex
+  (lambda (x)
+    `(MP (K ,x ,x)
+       (MP (K ,x (-> ,x ,x))
+	 (S ,x (-> ,x ,x) ,x)))))
 
-(printf "~nReflex~n")
+(printf "~nReflex_0~n")
 
 (pretty-print
   (solve 1 (h c) (full-kb `(prf (K "a" "a") ,h ,c))))
+
+(printf "~nReflex_1~n")
 
 (pretty-print
   (solve 1 (h c) (full-kb `(prf ,(reflex a-wff) ,h ,c))))
 
 
-; Now, in the following we automatically prove the correctness
-; of reflex.
-; The paper only says that the correctness proof is simple
-; and can be constructed automatically by a system such as Jape
-; or Boyer-Moore. Our system can also do that -- easily!
+; Now, in the following we automatically prove the correctness of reflex.
+; The paper only says that the correctness proof is simple and can be
+; constructed automatically by a system such as Jape or Boyer-Moore. Our
+; system can also do that -- easily!
+
+(printf "~nReflex_2~n")
 
 (pretty-print
   (solve 1 (p) ((justifies? full-kb) 
@@ -390,14 +389,14 @@
 	))))
 
 ; what follows if we assume the correctness of ded for some H and P
-(define (goal-rev h p hs c q hs1 hsq)
-  (extend-relation (t)
-    (fact () `(prf ,p ,hs ,c))
-    (fact () `(ded ,h ,p ,q))
-    (fact () `(without ,h ,hs ,hs1))
-    (fact () `(prf ,q ,hsq (-> ,h ,c))) ; from justify?
-    (fact () `(subset ,hsq ,hs1))
-    ))
+(define goal-rev
+  (lambda (h p hs c q hs1 hsq)
+    (extend-relation (t)
+      (fact () `(prf ,p ,hs ,c))
+      (fact () `(ded ,h ,p ,q))
+      (fact () `(without ,h ,hs ,hs1))
+      (fact () `(prf ,q ,hsq (-> ,h ,c))) ; from justify?
+      (fact () `(subset ,hsq ,hs1)))))
 
 (printf "~%First check the base case: K, using goal-fwd ~a~n"
   (solution (foo)
@@ -417,7 +416,7 @@
 
 (printf "~%First check the base case: S, using goal-fwd ~a~n"
   (solution (foo)
-    (let ((kb0
+    (let ([kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
 		   (fact () '(wff x))
@@ -428,13 +427,13 @@
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
-		   (justifies? kb))))))
-      (let ((kb1 (goal-fwd kb0)))
+		   (justifies? kb))))])
+      (let ([kb1 (goal-fwd kb0)])
 	(kb1 '(goal h (S x y z))))))) ; note, x is an eigenvariable!
 
- (printf "~%First check the base case: Cp, using goal-fwd ~a~n"
+(printf "~%First check the base case: Cp, using goal-fwd ~a~n"
   (solution (foo)
-    (let ((kb0
+    (let ([kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
 		   (fact () '(wff x))
@@ -444,13 +443,13 @@
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
-		   (justifies? kb))))))
-      (let ((kb1 (goal-fwd kb0)))
+		   (justifies? kb))))])
+      (let ([kb1 (goal-fwd kb0)])
 	(kb1 '(goal h (Cp x y)))))))
 
- (printf "~%First check the base case: Hyp, using goal-fwd ~a~n"
-   (solution (foo)
-    (let ((kb0
+(printf "~%First check the base case: Hyp, using goal-fwd ~a~n"
+  (solution (foo)
+    (let ([kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
 		   (fact () '(wff x))
@@ -459,15 +458,14 @@
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
-		   (justifies? kb))))))
-      (let ((kb1 (goal-fwd kb0)))
+		   (justifies? kb))))])
+      (let ([kb1 (goal-fwd kb0)])
 	(kb1 '(goal h (Hyp x)))))))
-
 
 (printf "~%Some preliminary checks, using goal-rev ~s~%"
 ; (goal h p) => (MP p q) is a proof
   (solution (hs c)
-    (let ((kb
+    (let ([kb
 	    (Y (lambda (kb)
 		 (extend-relation (t)
 		   (fact () '(wff x))
@@ -479,13 +477,13 @@
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
-		   (justifies? kb))))))
+		   (justifies? kb))))])
       (kb `(prf (MP p q) ,hs ,c)))))
 
 (printf "~%Some preliminary checks, using goal-rev ~s~%"
 ; (goal h p) => (ded h p _c)
   (solution (hs c)
-    (let ((kb
+    (let ([kb
 	    (Y (lambda (kb)
 		 (extend-relation (t)
 		   (fact () '(wff x))
@@ -497,13 +495,12 @@
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
-		   (justifies? kb))))))
+		   (justifies? kb))))])
       (kb `(ded h p ,c)))))
-
 
  (printf "~%Check the inductive  case: MP, using goal-fwd ~a~n"
   (solution (foo)
-    (let ((kb0
+    (let ([kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
 		   (fact () '(wff x)) ; inductive hypotheses ...
@@ -539,6 +536,6 @@
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
-		   (justifies? kb))))))
-      (let ((kb1 (goal-fwd kb0)))
+		   (justifies? kb))))])
+      (let ([kb1 (goal-fwd kb0)])
 	(kb1 '(goal h (MP p q)))))))
