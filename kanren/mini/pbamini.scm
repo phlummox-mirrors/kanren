@@ -1,6 +1,9 @@
+;; Oleg's updated version of +o
+(define errorf (lambda x (for-each pretty-print x)))
+
 (load "sempublic.scm")
 
-'(define-syntax trace-vars
+(define-syntax trace-vars
   (syntax-rules ()
     [(_ name (id* ...))
      succeed]))
@@ -248,6 +251,37 @@
          (+o x y z)))
       (else fail))))
 
+
+; the same low bits (or no bits)
+'(define sym+
+  (lambda (n m p)
+    (condi
+      ((== '() n) (== '() m)
+       (== '() p))
+      ((fresh (rm)
+	 (== '(1) n) (== `(1 . ,rm) m)
+	 (== `(0 . ,rp) p)
+	 (+o '(1) rm p)))
+      ((fresh (rm rn)
+	 (== `(1 . ,rn) n) (poso rn)
+	 (== `(1 . ,rm) m)
+	 (== `(0 . ,rp) p)
+	 (+o '(1) rm p)))
+
+      ((== '(1) n) (== '(1) m)
+      ((>1o n) (>1o m)
+       (gen+ n m p))
+      (else fail)))))
+
+
+(define gen1+
+  (lambda (m p)
+    (fresh (mr z)
+      (condi
+        ((== `(0 . ,mr) m) (== `(1 . ,mr) p))
+        ((== `(1 . ,mr) m) (== `(0 . ,z) p) (+o mr '(1) z))
+        (else fail)))))
+
 (define gen1+
   (lambda (m p)
     (fresh (mr z)
@@ -257,14 +291,40 @@
         (else fail)))))
 
 (define gen-odd/odd+
+  (lambda (n m p x y z)
+    (fresh (t)
+      (alli
+        (gen1+ t z)
+        (+o x y t)))))
+
+; length(p) = max(length(m), length(n)), or
+;           = max(length(m), length(n)) + 1
+(define within-1
+  (lambda (p n m)
+    (condi
+      ((== p '()) (== n '()) (== m '()))
+      ((== p '(1)) (== n '()) (== m '()))
+      ((fresh (bp bm rp rm)
+	 (== p `(,bp . ,rp)) (== n '()) (== m `(,bm . ,rm))
+	(within-1 rp n rm)))
+      ((fresh (bp bn rp rn)
+	 (== p `(,bp . ,rp)) (== m '()) (== n `(,bn . ,rn))
+	(within-1 rp rn m)))
+      (else
+	(fresh (bp bn rp rn bm rm)
+	  (== p `(,bp . ,rp)) (== n `(,bn . ,rn)) (== m `(,bm . ,rm))
+	  (within-1 rp rn rm))))))
+	
+      
+
+(define gen-odd/odd+
   (lambda (x y z)
     (fresh (t t1)
       (alli
-	(<ol x `(0 0 . ,z))
-	(<ol y `(0 0 . ,z))
-	(boundx t t1 x `(0 . ,y))
+        (within-1 z x y)
         (gen1+ t z)
         (+o x y t)))))
+
 
 (define gen+
   (lambda (n m p)
@@ -275,21 +335,33 @@
          (== `(0 . ,z) p)
          (+o x y z))
        succeed)
+      ((fresh (x y z t)
+         (== `(1 . ,x) n)
+         (== `(1 . ,y) m)
+         (== `(0 . ,z) p)
+         (gen-odd/odd+ n m p x y z))
+       succeed)
+      (else fail))))
+
+(define gen+
+  (lambda (n m p)
+    (condi
+      ((fresh (x y z)
+         (== `(0 . ,x) n)
+         (== `(0 . ,y) m)
+         (== `(0 . ,z) p)
+         (+o x y z))
+       succeed)
       ((fresh (x y z)
          (== `(1 . ,x) n)
          (== `(1 . ,y) m)
          (== `(0 . ,z) p)
          (gen-odd/odd+ x y z)
-	 ;(trace-vars 'done (x y z))
-	 )
+         )
        succeed)
       (else fail))))
 
 (define +o (commute sym+ asym+))
-
-
-'(define +o (lambda (m n p) 
-	     (all (trace-vars 3 (m n p)) ((commute sym+ asym+) m n p))))
 
 (define -o
   (lambda (n m k)
@@ -312,6 +384,12 @@
 ; it hits 0, m takes the role of n, since it may have some
 ; bits left.  When n and m are both 0, both cases fail.
 ; q and p are counted down naturally.
+
+(define boundx
+  (lambda (r p n m)
+    (fresh (q)
+      (== `(0 . ,q) r)
+      (bound-auxx q p n m))))
 
 (define boundx
   (lambda (r p n m)
@@ -430,8 +508,6 @@
       (else fail))))
 
 
-;(run (x) (+o '(1 1) '(1 0 1) x))
-;#!eof
 
 
 ;; divide 8 by 7
@@ -452,13 +528,6 @@
               (-o n res r)
               (xo q m res))])))
 
-(define build-bit
-  (lambda (b k)
-    (cond@
-      ((== 0 b) (== '() k))
-      ((== 1 b) (== '(1) k))
-      (else fail))))
-
 
 (define count-up
   (lambda (i n)
@@ -466,26 +535,29 @@
       ((== i n) succeed)
       (else (count-up (+ i 1) n)))))
 
-(cout "Test recursive enumerability of addition" nl)
-(let ((n 7))
-  (do ((i 0 (+ 1 i))) ((> i n))
-    (do ((j 0 (+ 1 j))) ((> j n))
-      (let ((p (+ i j)))
-        (test-check
-          (string-append "enumerability: " (number->string i)
-            "+" (number->string j) "=" (number->string p))
-          (run (q)
-            (fresh (x y z) 
-              (all (+o x y z)
-                  (== x (build i))
-          (== y (build j))
-          (== z (build p))
-                  (== q (list x y z)))))
-          `(,(build i) ,(build j) ,(build p))
-          #f)))))
 
 
 ;;; losers
+
+(display "testing div-even")
+(newline)
+
+'(test-check "div-even"  ;; this loops indefinitely.
+  (prefix 5
+    (run-stream (w)
+      (fresh (y z r)
+        (divo `(0 . ,y) (build 2) z r)
+        (== `((0 . ,y) ,(build 2) ,z ,r) w))))
+  '(((0 1) (0 1) (1) ())
+ ((0 0 1) (0 1) (0 1) ())
+ ((0 1 1) (0 1) (1 1) ())
+ ((0 0 _.0 1) (0 1) (0 _.0 1) ())
+ ((0 1 _.0 1) (0 1) (1 _.0 1) ())))
+
+
+
+;;; winners
+
 (test-check "multiplication-all-2"
   (prefix 10
     (run-stream (x)
@@ -503,17 +575,6 @@
       (project (x) (== (trans x) q))))
   33)
 
-'(test-check "div-even"  ;; this loops indefinitely.
-  (prefix 5
-    (run-stream (w)
-      (fresh (y z r)
-        (divo `(0 . ,y) (build 2) z r)
-        (== `((0 . ,y) ,(build 2) ,z ,r) w))))
-  '(((0 1) (0 1) (1) ())
- ((0 0 1) (0 1) (0 1) ())
- ((0 1 1) (0 1) (1 1) ())
- ((0 0 _.0 1) (0 1) (0 _.0 1) ())
- ((0 1 _.0 1) (0 1) (1 _.0 1) ())))
 
 (cout "Testing strong multiplicative commutativity" nl)
 (pretty-print
@@ -549,24 +610,24 @@
             (== (build p) z)
             (== `(,x ,y ,z) q)))
             `(,(build i) ,(build j) ,(build p)))))))
-;#!eof
+
 (cout "Testing strong commutativity with 1" nl)
 (pretty-print
   (prefix 10
     (run-stream (q)
       (fresh (a b c t)
        (alli
-	  (+o '(1) a t)
-	  (+o t b c)
-	  (== `(,a ,b ,c) q)
-	 (trace-vars 1 (a b c))
-	 (once
-	   (fresh (x y z t)
-	     (alli (+o x '(1) t)
-	       (+o t y z))
-	     (== x b)
-	     (== y a)
-	     (== z c))))))))
+          (+o '(1) a t)
+          (+o t b c)
+          (== `(,a ,b ,c) q)
+         (trace-vars 1 (a b c))
+         (once
+           (fresh (x y z t)
+             (alli (+o x '(1) t)
+               (+o t y z))
+             (== x b)
+             (== y a)
+             (== z c))))))))
 
 (define compositeo
   (lambda (n)
@@ -586,7 +647,7 @@
           (bump m x))))))
 
 ;; Generate all composite numbers up to 20.
-'(test-check "compositeo"
+(test-check "compositeo"
   (run* (q)
     (bump (build 20) q)
     (once (compositeo q)))
@@ -601,10 +662,6 @@
     (0 0 0 1)
     (0 1 1)
     (0 0 1)))
-
-
-
-;;; winners
 
 (test-check "times-0-0"
   (run* (q) (xo (build 0) (build 0) q))
@@ -675,6 +732,24 @@
               (== x b)
               (== y a)
               (== z c)))))))
+
+(cout "Test recursive enumerability of addition" nl)
+(let ((n 7))
+  (do ((i 0 (+ 1 i))) ((> i n))
+    (do ((j 0 (+ 1 j))) ((> j n))
+      (let ((p (+ i j)))
+        (test-check
+          (string-append "enumerability: " (number->string i)
+            "+" (number->string j) "=" (number->string p))
+          (run (q)
+            (fresh (x y z) 
+              (all (+o x y z)
+                  (== x (build i))
+          (== y (build j))
+          (== z (build p))
+                  (== q (list x y z)))))
+          `(,(build i) ,(build j) ,(build p))
+          #f)))))
 
 (test-check "addition"
   (run (q)
@@ -790,11 +865,11 @@
  ((1 _.0 . __.0) (0 _.0 . __.0) (1))
  ((0 1 _.0 . __.0) (0 1) (0 0 _.0 . __.0))
  ((1 0 1) (0 1) (1 1))
- ((0 0 0 1) (1 1) (1 0 1))
+ ((0 0 0 1) (1 0 1) (1 1))
  ((1 0 1) (1 1) (0 1))
  ((0 0 0 1) (0 0 1) (0 0 1))
  ((0 0 1) (1) (1 1))
- ((0 1 0 1) (1 1) (1 1 1))))
+ ((0 0 0 1) (1 1) (1 0 1))))
 
 (newline)
 
@@ -833,7 +908,7 @@
  ((1) (1 _.0 . __.0))
  ((0 1) (0 1 _.0 . __.0))
  ((1 1) (1 0 1))
- ((1 1) (0 0 0 1))
+ ((1 0 1) (0 0 0 1))
  ((0 1) (1 0 1)))
   )
 
@@ -848,7 +923,7 @@
  ((0 1) (1 0 1))
  ((0 1) (0 1 _.0 . __.0))
  ((1 1) (1 0 1))
- ((1 1) (0 0 0 1))))
+ ((1 0 1) (0 0 0 1))))
 
 (test-check "comparison-7"
   (run$ (q) (fresh (x y) (<o `(1 . ,x) `(1 . ,y)) (== `(,x ,y) q)))
@@ -861,7 +936,7 @@
  ((1 1) (1 0 1))
  ((0 0 _.0 . __.0) (0 1 _.0 . __.0))
  ((0 1) (1 0 1))
- ((1 0 1) (0 0 0 1))))
+ ((1 1) (0 0 0 1))))
 
 (define inf-loop-again
   (lambda ()
@@ -919,7 +994,7 @@
  ((1) (1 _.0 . __.0))
  ((0 1) (0 1 _.0 . __.0))
  ((1 1) (1 0 1))
- ((1 1) (0 0 0 1)))
+ ((1 0 1) (0 0 0 1)))
   )
 
 
@@ -1189,9 +1264,9 @@
  (12 11 1 1)
  (12 2 6 0)
  (12 1 12 0)
- (12 9 1 3)
- (12 6 2 0)
  (12 5 2 2)
+ (12 6 2 0)
+ (12 9 1 3)
  (12 10 1 2)
  (12 7 1 5)
  (12 8 1 4)
@@ -1348,6 +1423,8 @@
     (any (== 0 q) (== 1 q))
     always)
   (== q 1))
+
+
 
 
 '(define reify-id
