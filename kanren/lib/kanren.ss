@@ -75,16 +75,22 @@
 (define var? logical-variable?)
 
 (print-gensym #f)
+
+; (define logical-var-tag (list '*logical-var-tag*)) ; unique for eq?
+; (define native-pair? pair?)
 ; (define logical-variable
 ;   (lambda (id)
-;     (cons 'var id)))
+;     (cons logical-var-tag id)))
 ; (define var?
 ;   (lambda (x)
-;     (and (pair? x) (eqv? (car x) 'var))))
+;     (and (native-pair? x) (eq? (car x) logical-var-tag))))
 ; (define logical-variable-id
 ;   (lambda (x)
 ;     (if (var? x) (cdr x) 
-;           (error 'logical-variable-id "Invalid Logic Variable: ~s" x))))
+;       (error 'logical-variable-id "Invalid Logic Variable: ~s" x))))
+
+; (define (pair? x) (and (native-pair? x) (not (eq? (car x) logical-var-tag))))
+
 ;;; ------------------------------------------------------
 
 (define commitment cons)             ;;; change to list
