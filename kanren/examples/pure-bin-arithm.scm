@@ -3,12 +3,16 @@
 ; aka: Addition, Multiplication, Division as always terminating,
 ; pure and declarative relations that can be used in any mode whatsoever.
 ; The relations define arithmetics over binary (base-2) integral numerals
-; of arbitrary size.
+; of *arbitrary* size.
 ;
 ; aka: division as relation.
 ; The function divo below is a KANREN relation between four binary numerals
 ; n, m, q, and r such that the following holds
 ;	exists r. 0<=r<m, n = q*m + r
+;
+; The relation 'divo' encompasses all four operations of arithmetics:
+; we can use (divo x y z zero) to multiply and divide and
+; (divo x y one r) to add and subtract.
 ;
 ; See pure-arithm.scm in this directory for Peano arithmetics.
 
@@ -25,6 +29,45 @@
 ; Furthermore, we can try to evaluate (++o X 1 Y) and get the stream
 ; of answers, among which is ((0 *anon.0 . *anon.1) (1 *anon.0 . *anon.1))
 ; which essentially says that 2*x and 2*x +1 are successors, for all x>0!
+;
+; We give two implementations of addition and multiplication
+; relations, `++o' and `**o'. Both versions have the properties of
+; soundness and refutational completeness. The first version of `++o'
+; is faster, but it does not always recursively enumerate its domain
+; if that domain is infinite.  This is the case when, e.g., (**o x y
+; z) is invoked when all three x, y, and z are uninstantiated
+; variables. The relation in that case has the infinite number of
+; solutions, as expected. Alas, those solutions look as follows:
+;	x = 2,  y = 3, z = 6
+;	x = 4,  y = 3, z = 12
+;	x = 8,  y = 3, z = 24
+;	x = 16, y = 3, z = 48
+; That is, (**o x y z) keeps generating solutions where x is a power of
+; two. Therefore, when the answerset of the relation `**o' is infinite, it
+; truly produces an infinite set of solutions -- but only the subset of
+; all possible solutions. In other words, `**o' does not recursively
+; enumerate the set of all numbers such that x*y=z if that set is infinite.
+;
+; Therefore, 
+;   (all (== x '(1 1)) (== y '(1 1)) (**o x y z))
+;   (all (**o x y z)   (== x '(1 1)) (== y '(1 1)))
+; work differently. The former terminates and binds z to the representation
+; of 9 (the product of 3 and 3). The latter fails to terminate.
+; This is not generally surprising as `all', like 'commas' in Prolog, 
+; is not truly a conjunction: they are not commutative. Still, 
+; we would like our `++o' and `**o' to have the algebraic properties
+; expected of addition and multiplication.
+;
+; The second version of `++o' and `**o' completely fixes the
+; problem. The second version for `++o' is slower; the second version
+; for `**o' has roughly the same speed.  The addition and
+; multiplication relations completely enumerate their domain, even if
+; it is infinite. See the tests below for details.  We achieve the
+; property of recursive enumerability without giving up neither
+; completeness nor refutational completeness. As before, if 'z' is
+; instantiated but 'x' and 'y' are not, (++o x y z) delivers *all*
+; non-negative numbers that add to z and (**o x y z) computes *all*
+; factorizations of z.
 ;
 ; Such relations are easy to implement in an impure system such as Prolog,
 ; with the help of a predicate 'var'. The latter can tell if its argument
@@ -49,8 +92,7 @@
 ; (0 0 1) represents 4
 ; etc.
 ;
-; This code has been translated to Prolog. The Prolog version has
-; termination proofs.
+; There is a Prolog version of this code, which has termination proofs.
 ;
 ; $Id$
 
@@ -74,6 +116,43 @@
 ; At least two
 (define gt1
   (fact () `(,_ ,_ . ,_)))
+
+; compare the lengths of two numerals
+; (<ol a b) 
+; holds if a=0 and b>0, or if (floor (log2 a)) < (floor (log2 b))
+; That is, we compare the length (logarithms) of two numerals
+; For a positive numeral, its bitlength = (floor (log2 n)) + 1
+(define <ol
+  (extend-relation (n m)
+    (fact () '() `(,_ . ,_))
+    (relation (x y) (to-show `(,_ . ,x) `(,_ . ,y)) (<ol x y))))
+
+; holds if both a and b are zero
+; or if (floor (log2 a)) = (floor (log2 b))
+(define =ol
+  (extend-relation (n m)
+    (fact () '() '())
+    (relation (x y) (to-show `(,_ . ,x) `(,_ . ,y)) (=ol x y))))
+
+; (<ol3 p1 p n m) holds iff
+; p1 = 0 and p > 0 or
+; length(p1) < length(p) <= length(n) + length(m)
+(define <ol3
+  (relation (head-let p1 p n m)
+    (any
+      (all (== p1 '()) (pos p))
+      (exists (p1r pr)
+	(all
+	  (== p1 `(,_ . ,p1r))
+	  (== p  `(,_ . ,pr))
+	  (any-interleave
+	    (exists (mr)
+	      (all (== n '()) (== m  `(,_ . ,mr)) 
+		(<ol3 p1r pr n mr)))
+	    (exists (nr)
+	      (all (== n  `(,_ . ,nr)) 
+		(<ol3 p1r pr nr m)))
+	    ))))))
 
 ; Half-adder: carry-in a b r carry-out
 ; The relation holds if
@@ -181,6 +260,117 @@
 ; cases are disjoin. At any time, only one case can match. Incidentally,
 ; the lack of overlap guarantees the optimality of the code.
 
+
+; The full-adder above is not recursively enumerating however.
+; Indeed, (solve 10 (x y z) (full-adder '0 x y z))
+; gives solutions with x = 1.
+; We now convert the adder into a recursively enumerable form.
+; We lose some performance however (but see below!)
+;
+; The general principles are:
+; Convert the relation into a disjunctive normal form, that is
+;  (any (all a b c) (all c d e) ...)
+; and then replace the single, top-level any with any-interleave.
+; The conversion may be too invasive. We, therefore, use an effective
+; conversion: if we have a relation
+; (all (any a b) (any c d))
+; then rather than re-writing it into
+; (any (all a c) (all a d) (all b c) (all b d))
+; to push disjunctions out and conjunctions in, we do
+; (all gen (all (any a b) (any c d)))
+; where gen is a relation whose answer set is precisely such
+; that each answer in gen makes (all (any a b) (any c d))
+; semi-deterministic. That is, with the generator gen, we
+; make all the further choices determined.
+;
+; In the code below we use a different kind of generator, whose full
+; justification (with proofs) appears in the Prolog version of the code.
+; Please see the predicate `enum' in that Prolog code.
+;
+; The price to pay is slow-down.
+; Note, if we had all-interleave, then we would generally have
+; breadth-first search and so the changes to the recursively enumerable
+; version would be minimal and without loss of speed.
+
+; The following full-adder* is almost the same as full-adder above.
+(define full-adder*
+  (extend-relation (carry-in a b r)
+;     (fact (a) 0 a '() a) 		; 0 + a + 0 = a
+;     (relation (b)			; 0 + 0 + b = b
+;       (to-show 0 '() b b)
+;       (pos b))
+;     (relation (head-let '1 a '() r)	; 1 + a + 0 = 0 + a + 1
+;       (full-adder 0 a '(1) r))
+;     (relation (head-let '1 '() b r)	; 1 + 0 + b = 0 + 1 + b
+;       (all (pos b)
+; 	(full-adder 0 '(1) b r)))
+
+    ; The following three relations are needed
+    ; to make all numbers well-formed by construction,
+    ; that is, to make sure the higher-order bit is one.
+    (relation (head-let carry-in '(1) '(1) r)	; c + 1 + 1 >= 2
+      (exists (r1 r2)
+	(all (== r `(,r1 ,r2))
+	     (half-adder carry-in 1 1 r1 r2))))
+
+    ; cin + 1 + (2*br + bb) = (2*rr + rb) where br > 0 and so is rr > 0
+    (relation (carry-in bb br rb rr)
+      (to-show carry-in '(1) `(,bb . ,br) `(,rb . ,rr))
+      (all
+	(pos br) (pos rr)
+	(exists (carry-out)
+	  (all
+	    (half-adder carry-in 1 bb rb carry-out)
+	    (full-adder carry-out '() br rr)))))
+
+    ; symmetric case for the above
+    (relation (head-let carry-in a '(1) r)
+      (all
+	(gt1 a) (gt1 r)
+	(full-adder* carry-in '(1) a r)))
+
+    ; carry-in + (2*ar + ab) + (2*br + bb) 
+    ; = (carry-in + ab + bb) (mod 2)
+    ; + 2*(ar + br + (carry-in + ab + bb)/2)
+    ; The cases of ar= 0 or br = 0 have already been handled.
+    ; So, now we require ar >0 and br>0. That implies that rr>0.
+    (relation (carry-in ab ar bb br rb rr)
+      (to-show carry-in `(,ab . ,ar) `(,bb . ,br) `(,rb . ,rr))
+      (all
+	(pos ar) (pos br) (pos rr)
+	(exists (carry-out)
+	  (all
+	    (half-adder carry-in ab bb rb carry-out)
+	    (full-adder* carry-out ar br rr))))
+    )))
+
+; This driver handles the trivial cases and then invokes full-adder*
+; coupled with the recursively enumerating generator.
+
+(define full-adder
+  (extend-relation (carry-in a b r)
+    (fact (a) 0 a '() a) 		; 0 + a + 0 = a
+    (relation (b)			; 0 + 0 + b = b
+      (to-show 0 '() b b)
+      (pos b))
+    (relation (head-let '1 a '() r)	; 1 + a + 0 = 0 + a + 1
+      (full-adder 0 a '(1) r))
+    (relation (head-let '1 '() b r)	; 1 + 0 + b = 0 + 1 + b
+      (all (pos b)
+	(full-adder 0 '(1) b r)))
+    (relation (head-let carry-in a b r)
+      (any-interleave
+	; Note that we take advantage of the fact that if
+	; a + b = r and length(b) <= length(a) then length(a) <= length(r)
+	(all (<ol a `(,_ . ,r))		; or, length(a) < length(2*r)
+	  (any (<ol b a) (=ol b a))
+	  (full-adder* carry-in a b r))
+	; commutative case, length(a) < length(b)
+	(all (<ol b `(,_ . ,r))
+	  (<ol a b)
+	  (full-adder* carry-in a b r))
+	))))
+
 ; a + b = c
 (define ++o
   (relation (head-let a b c)
@@ -196,42 +386,6 @@
   (relation (head-let n m)
     (exists (x) (all (pos x) (++o n x m)))))
 
-; compare the length of two numerals
-; (<ol a b) holds 
-; holds if a=0 and b>0, or if (floor (log2 a)) < (floor (log2 b))
-; That is, we compare the length (logarithms) of two numerals
-; For a positive numeral, its bitlength = (floor (log2 n)) + 1
-(define <ol
-  (extend-relation (n m)
-    (fact () '() `(,_ . ,_))
-    (relation (x y) (to-show `(,_ . ,x) `(,_ . ,y)) (<ol x y))))
-
-; holds if both a and b are zero
-; or if (floor (log2 a)) = (floor (log2 b))
-(define =ol
-  (extend-relation (n m)
-    (fact () '() '())
-    (relation (x y) (to-show `(,_ . ,x) `(,_ . ,y)) (=ol x y))))
-
-; (<ol3 p1 p n m) holds iff
-; p1 = 0 and p > 0 or
-; length(p1) < length(p) <= length(n) + length(m)
-(define <ol3
-  (relation (head-let p1 p n m)
-    (any
-      (all (== p1 '()) (pos p))
-      (exists (p1r pr)
-	(all
-	  (== p1 `(,_ . ,p1r))
-	  (== p  `(,_ . ,pr))
-	  (any-interleave
-	    (exists (mr)
-	      (all (== n '()) (== m  `(,_ . ,mr)) 
-		(<ol3 p1r pr n mr)))
-	    (exists (nr)
-	      (all (== n  `(,_ . ,nr)) 
-		(<ol3 p1r pr nr m)))
-	    ))))))
 
 ; n * m = p
 (define **o
@@ -316,6 +470,11 @@
 	(display (trans (subst-in x subst)))
 	(newline)))))
 
+(define (subset? l1 l2)
+  (or (null? l1)
+    (and (member (car l1) l2) (subset? (cdr l1) l2))))
+(define (set-equal? l1 l2) (or (subset? l1 l2) (subset? l2 l1)))
+  
 (cout nl "addition" nl)
 (test (x) (++o (build 29) (build 3) x))
 (test (x) (++o (build 3) x (build 29)))
@@ -327,8 +486,8 @@
 	(project (y z) (== `(,(trans y) ,(trans z)) w)))))
    '(((w.0 (4 0)))
      ((w.0 (0 4)))
-     ((w.0 (1 3)))
      ((w.0 (3 1)))
+     ((w.0 (1 3)))
      ((w.0 (2 2)))
      )
   )
@@ -336,11 +495,49 @@
   (solve 5 (x y) (++o x (build 1) y))
    '(((x.0 ()) (y.0 (1))) ; 0 + 1 = 1
      ((x.0 (1)) (y.0 (0 1))) ; 1 + 1 = 2
-      ; 2*x and 2*x+1 are successors, for all x>0!
-     ((x.0 (0 *anon.0 . *anon.1)) (y.0 (1 *anon.0 . *anon.1)))
-     ((x.0 (1 1)) (y.0 (0 0 1)))
-     ((x.0 (1 0 *anon.0 . *anon.1)) (y.0 (0 1 *anon.0 . *anon.1))))
+      ((x.0 (0 *anon.0)) (y.0 (1 *anon.0)))
+      ((x.0 (1 1)) (y.0 (0 0 1)))
+      ((x.0 (0 *anon.0 *anon.1)) (y.0 (1 *anon.0 *anon.1))))
+)
+;       ; 2*x and 2*x+1 are successors, for all x>0!
+;      ((x.0 (0 *anon.0 . *anon.1)) (y.0 (1 *anon.0 . *anon.1)))
+;      ((x.0 (1 1)) (y.0 (0 0 1)))
+;      ((x.0 (1 0 *anon.0 . *anon.1)) (y.0 (0 1 *anon.0 . *anon.1))))
+
+; check that add(X,Y,Z) recursively enumerates all
+; numbers such as X+Y=Z
+;
+(cout "Test recursive enumerability of addition" nl)
+(let ((n 7))
+  (do ((i 0 (+ 1 i))) ((> i n))
+    (do ((j 0 (+ 1 j))) ((> j n))
+      (let ((p (+ i j)))
+	(test-check
+	  (string-append "enumerability: " (number->string i)
+	    "+" (number->string j) "=" (number->string p))
+	  (solve 1 (x y z) 
+	    (all (++o x y z)
+	      (== x (build i)) (== y (build j)) (== z (build p))))
+	  `(((x.0 ,(build i)) (y.0 ,(build j))
+	      (z.0 ,(build p)))))))))
+
+(test-check "strong commutativity"
+  (solve 5 (a b c)
+    (all (++o a b c)
+    (exists (x y z)
+      (all!
+	(++o x y z)
+	(== x b)
+	(== y a)
+	(== z c)
+	))))
+  '(((a.0 ()) (b.0 ()) (c.0 ()))
+    ((a.0 ()) (b.0 (*anon.0 . *anon.1)) (c.0 (*anon.0 . *anon.1)))
+    ((a.0 (1)) (b.0 (1)) (c.0 (0 1)))
+    ((a.0 (1)) (b.0 (0 *anon.0)) (c.0 (1 *anon.0)))
+    ((a.0 (0 *anon.0)) (b.0 (1)) (c.0 (1 *anon.0))))
   )
+
 
 (cout nl "subtraction" nl)
 (test (x) (--o (build 29) (build 3) x))
@@ -350,22 +547,34 @@
 (test (x) (--o (build 29) (build 30) x))
 (test-check "print a few numbers such as Y - Z = 4"
   (solve 5 (y z) (--o y z (build 4)))
-'(((y.0 (0 0 1)) (z.0 ()))  ; 4 - 0 = 4
- ((y.0 (1 0 1)) (z.0 (1)))  ; 5 - 1 = 4
- ((y.0 (0 1 1)) (z.0 (0 1))) ; 6 -2 = 4
- ((y.0 (0 0 0 1)) (z.0 (0 0 1))) ; 8 -4 = 4
- ((y.0 (0 0 1 *anon.0 . *anon.1)) ; 16*a + 8*b +4 - (16*a +8*b) = 4
-  (z.0 (0 0 0 *anon.0 . *anon.1)))) ;forall a and b!!!
+  '(((y.0 (0 0 1)) (z.0 ()))        ; 4 - 0 = 4
+    ((y.0 (0 0 0 1)) (z.0 (0 0 1))) ; 8 - 4 = 4
+    ((y.0 (1 0 1)) (z.0 (1)))       ; 5 - 1 = 4
+    ((y.0 (0 1 0 1)) (z.0 (0 1 1))) ; 10 - 6 = 4
+    ((y.0 (0 1 1)) (z.0 (0 1))))    ; 6  - 2 = 4
 )
+; '(((y.0 (0 0 1)) (z.0 ()))  ; 4 - 0 = 4
+;  ((y.0 (1 0 1)) (z.0 (1)))  ; 5 - 1 = 4
+;  ((y.0 (0 1 1)) (z.0 (0 1))) ; 6 -2 = 4
+;  ((y.0 (0 0 0 1)) (z.0 (0 0 1))) ; 8 -4 = 4
+;  ((y.0 (0 0 1 *anon.0 . *anon.1)) ; 16*a + 8*b +4 - (16*a +8*b) = 4
+;   (z.0 (0 0 0 *anon.0 . *anon.1)))) ;forall a and b!!!
+; )
 
 (test-check "print a few numbers such as X - Y = Z"
   (solve 5 (x y z) (--o x y z))
-'(((x.0 y.0) (y.0 y.0) (z.0 ())) ; y - y = 0
-  ((x.0 (*anon.0 . *anon.1)) (y.0 ()) (z.0 (*anon.0 . *anon.1)))
-  ((x.0 (0 1)) (y.0 (1)) (z.0 (1)))
-  ((x.0 (1 *anon.0 . *anon.1)) (y.0 (1)) (z.0 (0 *anon.0 . *anon.1)))
-  ((x.0 (0 0 1)) (y.0 (1)) (z.0 (1 1))))
+  '(((x.0 y.0) (y.0 y.0) (z.0 ())) ; y - y = 0
+    ((x.0 (*anon.0 . *anon.1)) (y.0 ()) (z.0 (*anon.0 . *anon.1)))
+    ((x.0 (0 1)) (y.0 (1)) (z.0 (1)))
+    ((x.0 (1 *anon.0)) (y.0 (1)) (z.0 (0 *anon.0)))
+    ((x.0 (1 *anon.0)) (y.0 (0 *anon.0)) (z.0 (1))))
 )
+; '(((x.0 y.0) (y.0 y.0) (z.0 ())) ; y - y = 0
+;   ((x.0 (*anon.0 . *anon.1)) (y.0 ()) (z.0 (*anon.0 . *anon.1)))
+;   ((x.0 (0 1)) (y.0 (1)) (z.0 (1)))
+;   ((x.0 (1 *anon.0 . *anon.1)) (y.0 (1)) (z.0 (0 *anon.0 . *anon.1)))
+;   ((x.0 (0 0 1)) (y.0 (1)) (z.0 (1 1))))
+; )
 
 
 (cout nl "comparisons" nl)
@@ -374,14 +583,18 @@
 (test (x) (all (== x (build 4)) (<o x (build 3))))
 (test-check "print all numbers hat are less than 6"
   (solve 10 (x) (<o x (build 6)))
-'(((x.0 ())) ((x.0 (1))) ((x.0 (1 0 1))) ((x.0 (0 1)))
-  ((x.0 (0 0 1))) ((x.0 (1 1))))
+  '(((x.0 ())) ((x.0 (1 1))) ((x.0 (1))) ((x.0 (1 0 1))) 
+    ((x.0 (0 1))) ((x.0 (0 0 1))))
 )
+; '(((x.0 ())) ((x.0 (1))) ((x.0 (1 0 1))) ((x.0 (0 1)))
+;   ((x.0 (0 0 1))) ((x.0 (1 1))))
 
 (test-check "print a few numbers that are greater than 4"
   (solve 3 (x) (<o (build 4) x))
-'(((x.0 (1 0 1))) ((x.0 (0 1 1))) ((x.0 (0 0 0 1))))
+  '(((x.0 (1 0 1))) ((x.0 (0 0 1 *anon.0))) ((x.0 (0 1 1))))
+  ;'(((x.0 (1 0 1))) ((x.0 (0 1 1))) ((x.0 (0 0 0 1))))
 )
+
 
 
 (cout nl "multiplication" nl)
@@ -447,7 +660,7 @@
 ; check that mul(X,Y,Z) recursively enumerates all
 ; numbers such as X*Y=Z
 ;
-(cout "Test recursive enumerability" nl)
+(cout "Test recursive enumerability of multiplication" nl)
 (let ((n 7))
   (do ((i 0 (+ 1 i))) ((> i n))
     (do ((j 0 (+ 1 j))) ((> j n))
@@ -488,7 +701,8 @@
   '(((w.0 (3))) ((w.0 (5))) ((w.0 (4)))))
 
 (test-check "all inexact factorizations of 12"
-  (solve 100 (w) 
+  (set-equal?
+   (solve 100 (w) 
     (exists (m q r n)
       (all 
 	(== n (build 12))
@@ -501,6 +715,7 @@
     ((w.0 (6 2 0)))  ((w.0 (3 4 0)))
     ((w.0 (9 1 3)))  ((w.0 (7 1 5)))
     ((w.0 (5 2 2)))))
+  #t)
 
 
 (test-check 'div-all-3
