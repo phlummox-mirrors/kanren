@@ -1,0 +1,200 @@
+Subject: On rember*, condo, and the admissibility of negation
+Message-ID: <20040928221726.CDB80A973@Adric.metnet.navy.mil>
+Date: Tue, 28 Sep 2004 15:17:26 -0700 (PDT)
+
+
+	I have thought about the quandary with rember* and have come
+to realize a condition that makes committed-choice non-determinism,
+negation, and condo `safe' (`safe' is defined in detail below). The
+rule can be succinctly stated as: negation, committed-choice,
+if-then-else (aka soft-cut) and even the hard cut can be admitted --
+but only in the observably ground case. The nice property of the new
+rule is that it outlaws (rember* x '(1 2 3) '(1 2 3)). It also makes
+it impossible to implement the infamous 'var' predicate via the
+double-negation trick.
+
+	Before I start: I have committed the early (July 20, 2004)
+draft of the multiple-world semantics of Kanren into the SourceForge
+CVS repository:
+	http://cvs.sf.net/viewcvs.py/kanren/kanren/docs/mw-semantics.txt
+(the above link will be available in an hour or so). The section about the
+committed-choice non-determinism at the end definitely has to be
+updated.
+
+
+	First, the problem. Let's consider the following Scheme
+function:
+
+	(define (first-or-second x a b)
+	   (cond
+	     ((eq? x a) b)
+	     (else a)))
+
+Given three values, it returns the third if the first two are
+(intensionally) equal. Otherwise, it returns the second one. We can
+re-write this in mini-kanren as follows:
+
+	(define (first-or-second@ x a b r)
+	   (cond@
+	     ((== x a) (== r b))
+	     (else (== r a))))
+
+So, (first-or-second@ 1 1 2 r) will succeed and unify r with '2'. But
+it also has the second answer: unifying 'r' with '1'. So,
+first-or-second@ is not not precisely first-or-second: in the latter
+we meant 'or' to be exclusive, but in 'first-or-second@' the 'or' is
+inclusive (which is not the usual meaning of 'or' in English). We can
+try to make the 'or' exclusive by writing
+
+	(define (first-or-secondo x a b r)
+	   (condo
+	     ((== x a) (== r b))
+	     (else (== r a))))
+
+And indeed, (first-or-secondo 1 1 2 r) will give only one answer: r
+unified with '2'. Alas, first-or-secondo has a deep problem. If we
+ask (first-or-secondo x 1 2 r) with x fresh, we get again the answer x
+= 1 and r = 2. But obviously there is another answer, say, x = 3 and r
+= 1. Actually, there is a multitude of the answers, x /= 1 and r = 1.
+To see the problem, let's consider a conjunction
+ (fresh (x r) (== x 3) (== r 1) (first-or-secondo x 1 2 r))
+It succeeds. However,
+ (fresh (x r) (== r 1) (first-or-secondo x 1 2 r) (== x 3))
+fails. The dependence on the instantiatedness of a variable is
+disturbing. In logical programming, a predicate is both a membership
+test and a generator of its extension. The dependence on
+instantiatedness breaks this symmetry (and the axiom of
+comprehension) 
+
+The problem is uncannily similar to that of overlapping
+instances with functional dependencies in Haskell.
+
+Incidentally, the predicate first-or-second@, albeit unintuitive at
+first, actually behaves better. Both the following conjunctions
+
+ (fresh (x r) (== x 3) (== r 1) (first-or-second@ x 1 2 r))
+ (fresh (x r) (== r 1) (first-or-second@ x 1 2 r) (== x 3))
+succeed.
+
+
+	The root of the problem is negation. condo implicitly has a
+negation (that's why it's _exclusive_ OR). Indeed, 
+	(condo
+	 (p1 p2)
+         (else p3))
+is equivalent (any (all p1 p2) (all (not p1) p3)). Mercury
+documentation defines condo (or, if-then-else in their notation)
+exactly like that. The predicate 'not' is problematic because it lets
+us distinguish the instantiatedness of a variable. Indeed, we can
+trivially define the infamous 'var?' predicate:
+
+	(define (var? x)
+	  (all (not (not (== x #t))) (not (not (== x #f)))))
+
+
+	Proposed solution: outlaw the root of the problem, that is,
+outlaw the cases where negation and related 'condo' and
+committed-choice cause the problem. We propose:
+
+G Rule: (not ant) is admitted if and only if: when 'ant' succeeds it
+does not change the instantiatedness of any visible logical
+variables. In short: 'not' is admitted only for observably ground
+predicates.
+
+The qualification 'observable' says that 'ant' may introduce its own local
+logical variables. However, 'ant' may not bind them to any logical
+variable that existed before 'ant' is evaluated. That is, if 'ant'
+chooses to bind logical variables, that fact should not be observable.
+
+Justifications for the G Rule.
+
+- (first-or-secondo x a b r) may not be invoked where 'x' is
+uninstantiated. Doing so would lead to a run-time error. 
+
+I must remark that the instantiatedness of logical variables can be
+statically inferred by a static analysis of a program. Given a
+predicate, we can statically infer which logical variables it _may_
+bind. So, we can statically outlaw an expression which contains
+(first-or-secondo x a b r) in a context that admits a chance of 'x'
+being uninstantiated. In Kanren (in the tradition of Scheme) we merely
+report the type error at run-time.
+
+Incidentally, we _may_ use the internal 'var?' predicate to check for
+the safety condition: the use of 'var?' is only unsound if it is a
+predicate that may 'fail' (in Kanren sense). If we use 'var?' to check
+an implementation assertion (as a type safety predicate, so to speak),
+its use is sound because var? is then equivalent to identity,
+operationally, in every _correct_ and _terminating_ program.
+
+- (all (not (not (== x #t))) (not (not (== x #f)))) is safe (and
+useless). If 'x' is uninstantiated, a run-time _error_ is raised (in
+other words,  (not (not (== x #t))) is not admissible in the context
+where 'x' is uninstantiated). If 'x' is bound, the latter conjunction
+always fails. 
+
+In other words: (not (not ant)) is tantamount to evaluating 'ant' and
+disregarding whatever bindings it may have made. According to G Rule,
+(not (not ant)) is admissible provided 'ant' did not make any
+observable bindings. So, we can ignore new substitutions only if there
+is nothing new anyway.
+
+- logically. We know that the ground resolution principle is sound and
+refutationally complete (Herbrand). We know that unground resolution
+is sound and refutationally complete only if there is a most-general
+unifier. Negations prevent MGU. So we admit negation only in the
+ground case (which does not interfere with MGU and falls under ground
+unification).
+
+>From the point of view of the multiple-world semantics: an
+uninstantiated logical variable is equivalent to a set of all
+worlds. Unrestricted negation and committed-choice non-determinism
+break this equivalence.
+	(exists (x) (all (cchoice (any (== x 1) (== x 2))) (== x 1)))
+can either succeed or fail, depending on which of two answers 'cchoice'
+has committed to. OTH,
+	(exists (x) (all (== x 1) (cchoice (any (== x 1) (== x 2)))))
+is safe (and succeeding) because cchoice is used in the context where
+it is safe: where it is used to check for satisfiability.
+
+
+Bottom line: G Rule does not restore the axiom of comprehension. Some
+predicates, such as (not ant), cannot be used both as membership tests
+and generators of their extensions. G Rule merely outlaws the usage of
+those crippled predicates in the context they may not, logically, be
+used.
+
+Implementation: to be considered. There are
+some technical difficulties (that is, inefficiencies). Perhaps we need
+some help from the user to be able to evaluate condo safely and
+efficiently.
+
+
+
+Added on Oct 18:
+
+The following are comments to our previous discussions.
+
+Regarding Rule G: variables that appear in antecedents with explicit
+or implicit negation (such as condo) must be fully instantiated (or,
+in a more general formulation: such antecedents must not change the
+instantiatedness status of any existing logic variable).
+
+I have realized that this rule is a particular case of a general
+Datalog safety rule: a predicate is safe if all of its clauses are
+safe. A clause is safe if it is either a ground fact, or it is a rule
+all of whose variables are safe. A variable is safe if it appears in
+the body of the rule in a non-negated safe atom (that is, antecedent).
+
+In Datalog, the order of clauses and the order of conjunctions within
+a clause are immaterial. If an antecedent is negated or includes
+negation, all of its variables must appear in a safe antecedent. A
+variable that appears in a safe antecedent will be grounded, sooner or
+later. So, conjunctions in a safe Datalog program can be reordered in
+such a way so that antecedents involving negation will have all their
+variables instantiated.
+
+One can see that the safety condition is essentially a Restricted
+Axiom of Comprehension. BTW, for recursive Datalog programs, we need
+to amend the above rules: a predicate can be considered safe if it is
+a member of a strongly-connected component with no negative arc. The
+latter requirement is meant to outlaw Russel paradox.
