@@ -7,7 +7,7 @@
    (title "A declarative logic programming system")
    (description "An applicative logic programming system with a
 declarative set-theoretical semantics, and its applications")
-   (Date-Revision-yyyymmdd "20040126")
+   (Date-Revision-yyyymmdd "20040130")
    (Date-Creation-yyyymmdd "20040121")
    (keywords "Logic Programming, meta-logic programming, relations,
 iterative deepening, proof assistant, Scheme")
@@ -107,15 +107,28 @@ truly write the equivalence axioms, including the symmetry axiom
 
    (Section 3 "Documentation" " and tutorials")
 
-   (p
-    "Detailed description of the system"
-    (URL "http://www.cs.indiana.edu/l/www/classes/b521/qs.ps")
-    (URL "http://www.cs.indiana.edu/l/www/classes/b521/qs.pdf")
+   (dl
+     (dt "Detailed description of the system")
+     (dd 
+       "<" (a (@ (href "http://www.cs.indiana.edu/l/www/classes/b521/qs.ps"))
+	     "http://www.cs.indiana.edu/l/www/classes/b521/qs.ps") ">" (br)
+       "<" (a (@ (href "http://www.cs.indiana.edu/l/www/classes/b521/qs.pdf"))
+	     "http://www.cs.indiana.edu/l/www/classes/b521/qs.pdf") ">" (br)
+       (n_)
     )
+
+   (dt (cvs-ref "docs/Substitution-Properties.txt"))
+   (dd
+     "Properties of Substitutions: "
+     "Nine propositions about substitutions and the KANREN
+unifier. The propositions justify several pieces of KANREN code, e.g.,
+a " (code "head-let") " form of relation. The propositions were put
+forth and proven " (em "before") " the code was written.")
+     )
 
 
    (Section 3 "Availability")
-   (p "The current version of KANREN is 3.14. KANREN is OpenSource,
+   (p "The current version of KANREN is 3.17. KANREN is OpenSource,
 distributed under the MIT license.")
    (p
      "KANREN has been tested on the following Scheme systems:"
