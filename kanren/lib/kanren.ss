@@ -603,7 +603,7 @@
 ; All conjunctions below satisfy properties
 ;    ans is an answer of (a-conjunction ant1 ant2 ...) ==>
 ;       forall i. ans is an answer of ant_i
-;    (a-conjunction) ==> true
+;    (a-conjunction) ==> success
 
 
 ; (all ant1 ant2 ...)
@@ -984,6 +984,7 @@
                  ; (car curr) is finished - drop it, and try next
                  (lambda () (loop (cdr curr) residuals)))))]))))
 
+
 ; Another if-then-else
 ; (if-some COND THEN)
 ; (if-some COND THEN ELSE)
@@ -1031,6 +1032,90 @@
              ans))
              ; condition failed
          (lambda () (@ else sk fk subst))))]))
+
+
+; An interleaving conjunction: all-interleave
+;
+; This conjunction is similar to the regular conjunction `all' but
+; delivers the answers in the breadth-first rather than depth-first
+; order.
+;
+; Motivation.
+; Let us consider the conjunction (all ant1 ant2)
+; where ant1 is (any ant11 ant12) and ant2 is an antecedent with the
+; infinite number of answers (in the environment when either ant11 or
+; ant12 succeed). It is easy to see (all ant1 ant2) will have the
+; infinite number of answers too -- but only the proper subset of
+; all the possible answers. Indeed, (all ant1 ant2) will essentially
+; be equivalent to (all ant11 ant2). Because ant2 succeeds infinitely
+; many times, the choice ant12 in ant1 will never be explored.
+; We can see that formally:
+; (all ant1 ant2) 
+;   = (all (any ant11 ant12) ant2) 
+;   = (any (all ant11 ant2) (all ant12 ant2))
+; Because (all ant11 ant2) can succeed infinitely many times, it starves
+; the other disjunction, (all ant12 ant2).
+; But we know how to deal with that: we just replace any with any-interleave:
+; (all ant1 ant2) --> (any-interleave (all ant11 ant2) (all ant12 ant2))
+;
+; It seems that the problem is solved? We just re-write our expressions
+; into the disjunctive normal form, and then replace the top-level
+; `any' with `any-interleave'. Alas, that means that to get the benefit
+; of fair scheduling and get all the possible solutions of the conjunction
+; (i.e., recursive enumerability), we need to re-write all the code.
+; We have to explicitly re-write a conjunction of disjunctions into
+; the disjunctive normal form. That is not that easy considering that ant2
+; will most likely be a recursive antecedent re-invoking the original
+; conjunction. That would be a lot of re-writing.
+;
+; The conjunction all-interleave effectively does the above `re-writing'
+; That is, given the example above,
+;	(all-interleave (any ant11 ant12) ant2)
+; is observationally equivalent to
+;	(any-interleave (all ant11 ant2) (all ant12 ant2))
+;
+; The advantage is that we do not need to re-write our conjunctions:
+; we merely replace `all' with `all-interleave.'
+; 
+; How can we do that in the general case, (all ant1 ant2)
+; where ant1 is not _explicitly_ a disjunction? We should remember the
+; property of partially-eval-sant: Any antecedent `ant' with at least one
+; answer can be represented as (any ant-1 ant-rest)
+; where ant-1 is a primitive antecedent holding the first answer of `ant',
+; and ant-rest holding the rest of the answers. We then apply the
+; all-any-distributive law and re-write
+; (all-interleave ant1 ant2) 
+; ==> (all-interleave (any ant1-1 ant1-rest) ant2) 
+; ==> (any-interleave (all ant1 ant2) (all-interleave ant1-rest ant2))
+;
+; If ant1 has no answers, then (all-interleave ant1 ant2) fails, as
+; a conjunction must.
+; It is also easy to see that
+; (all-interleave ant1 ant2 ...) is the same as
+; (all-interleave ant1 (all-interleave ant2 ...))
+
+(define-syntax all-interleave
+  (syntax-rules ()
+    [(_) (all)]
+    [(_ ant) ant]
+    [(_ ant0 ant1 ...)
+      (lambda@ (sk fk subst)
+	(all-interleave-bin
+	  sk fk
+	  (ant->sant ant0 subst) (all-interleave ant1 ...)))]))
+
+(define all-interleave-bin
+  (lambda (sk fk sant1 ant2)
+    (@ partially-eval-sant sant1
+      (lambda@ (ans residual)
+	(interleave sk fk
+	  (list 
+	    (lambda@ (sk fk) (@ ant2 sk fk ans))
+	    (lambda@ (sk fk) (all-interleave-bin sk fk residual ant2))
+	    )))
+	  ;ant1 failed
+	  fk)))
+
 
 ; Relations...........................
 
@@ -3495,6 +3580,49 @@
   (solve 7 (x y)
     (any-interleave (fact3 x y) (R1 x y)))
     '(((x.0 x3) (y.0 y3)) ((x.0 x1) (y.0 y1)) ((x.0 x2) (y.0 y2)))
+)
+
+; testing all-interleave
+(test-check 'all-interleave-1
+  (solve 100 (x y z)
+    (all-interleave
+      (any (== x 1) (== x 2))
+      (any (== y 3) (== y 4))
+      (any (== z 5) (== z 6) (== z 7))))
+  '(((x.0 1) (y.0 3) (z.0 5))
+    ((x.0 2) (y.0 3) (z.0 5))
+    ((x.0 1) (y.0 4) (z.0 5))
+    ((x.0 2) (y.0 4) (z.0 5))
+    ((x.0 1) (y.0 3) (z.0 6))
+    ((x.0 2) (y.0 3) (z.0 6))
+    ((x.0 1) (y.0 4) (z.0 6))
+    ((x.0 2) (y.0 4) (z.0 6))
+    ((x.0 1) (y.0 3) (z.0 7))
+    ((x.0 2) (y.0 3) (z.0 7))
+    ((x.0 1) (y.0 4) (z.0 7))
+    ((x.0 2) (y.0 4) (z.0 7)))
+)
+
+(test-check "R1 * Rinf: clearly starvation"
+  (solve 5 (x y u v)
+    (all (R1 x y) (Rinf u v)))
+  ; indeed, only the first choice of R1 is apparent
+  '(((x.0 x1) (y.0 y1) (u.0 z) (v.0 z))
+    ((x.0 x1) (y.0 y1) (u.0 (s z)) (v.0 (s z)))
+    ((x.0 x1) (y.0 y1) (u.0 (s (s z))) (v.0 (s (s z))))
+    ((x.0 x1) (y.0 y1) (u.0 (s (s (s z)))) (v.0 (s (s (s z)))))
+    ((x.0 x1) (y.0 y1) (u.0 (s (s (s (s z))))) (v.0 (s (s (s (s z)))))))
+)
+
+(test-check "R1 * Rinf: interleaving"
+  (solve 5 (x y u v)
+    (all-interleave (R1 x y) (Rinf u v)))
+  ; both choices of R1 are apparent
+  '(((x.0 x1) (y.0 y1) (u.0 z) (v.0 z))
+    ((x.0 x2) (y.0 y2) (u.0 z) (v.0 z))
+    ((x.0 x1) (y.0 y1) (u.0 (s z)) (v.0 (s z)))
+    ((x.0 x2) (y.0 y2) (u.0 (s z)) (v.0 (s z)))
+    ((x.0 x1) (y.0 y1) (u.0 (s (s z))) (v.0 (s (s z)))))
 )
 
 ;;; Test for nonoverlapping.
