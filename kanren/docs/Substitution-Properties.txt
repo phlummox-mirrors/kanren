@@ -321,7 +321,7 @@ Proposition 9. Let T be a term other than _. Then
 is observationally equivalent to
 (let ([u T]) A)
 
-where A is an arbitrary antecedent. So, we can convert a logical
+where A is an arbitrary goal. So, we can convert a logical
 variable into a Scheme variable.
 
 Proof: Propositions 4 and 8, keeping in mind that (exists (u) ...)
@@ -336,7 +336,7 @@ can be represented as
   (exists (x y z)
     (all (== C t) A)))
 
-where T and C are terms and A is an antecedent. Suppose the unification of
+where T and C are terms and A is an goal. Suppose the unification of
 C and t succeeds and (some of) logical variables x, y, z ...  become
 committed in a way that does not create a cycle among them. Then the
 expression above is observationally equivalent to
@@ -436,12 +436,12 @@ As we have seen, the only complex occurrences in substitutions created
 in unifications involve fresh variables introduced by unify itself
 (i.e., by the function ufl-analyze-list).
 
-Corollary 1: A substitution that is an answer of the antecedent
+Corollary 1: A substitution that is an answer of the goal
 (let-lv (v) A) maintains the property of definition 3.
 
 Proof: trivial, keeping in mind that let-lv creates a fresh logical
 variable, which is guaranteed not to occur freely in any substitution
-that is given to the antecedent (let-lv (v) A).
+that is given to the goal (let-lv (v) A).
 
 Corollary 2. If v has a non-complex occurrence in subst, then
 (prune-subst v subst) can be written as

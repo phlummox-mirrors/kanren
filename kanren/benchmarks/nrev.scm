@@ -82,7 +82,7 @@
 	     (exists (l1)
 	       (all!
 		 (nreverse l0 l1)
-		 (trace-ant-raw 'cc (concatenate l1 (list x) l))))
+		 (trace-goal-raw 'cc (concatenate l1 (list x) l))))
 	     (all!! (== lh '()) (== l '()))))))
       (concatenate
 	(relation (head-let a l2 c)

@@ -1,10 +1,10 @@
 		Multiple-world semantics of Kanren
-	  Algebraic properties of antecedents and combinators
+	  Algebraic properties of goals and combinators
 
-* Primitive antecedents
+* Primitive goals
 
 (== var val), succeed (hereafter denoted as #s) and fail (hereafter,
-#u) are primitive antecedents. They tell an atomic piece of
+#u) are primitive goals. They tell an atomic piece of
 information about the world. Each has at most one answer. (== var val)
 succeeds and tells us that in the world it succeeds, var is associated
 with val. #s just succeeds (and tells us nothing more about the
@@ -12,7 +12,7 @@ world). #u just fails.
 
 #u (== var_i val_i) #s form a lattice: nothing, something, everything
 
-* Simple antecedents: all
+* Simple goals: all
 
 (== x 5) tells us that in the world it succeeds x is associated with
 5.
@@ -29,13 +29,13 @@ fact2" (just as multiplication a * b is often written as a b in
 mathematical notation. The analogy with multiplication is not an
 accident).
 
-So, simple antecedents -- like trivial antecedents -- either fail or
+So, simple goals -- like trivial goals -- either fail or
 succeed at most once. When they succeed, they tell us several facts
 about the world. By a "fact" we mean an association between a variable
 and a value (a value associated with a particular variable).
 
 
-#s is a trivial antecedent that succeeds and tells nothing about the
+#s is a trivial goal that succeeds and tells nothing about the
 association of variables with values. Totally indeterminate.
 
 (all (== x 1) (== y 2)) tells that in the world the all form succeeds,
@@ -46,7 +46,7 @@ determinate.
 the same value that y is associated with. But it does not tell what
 this value is. Can be anything. Somewhat indeterminate.
 
-So, when we add simple antecedents, we get a richer lattice, more
+So, when we add simple goals, we get a richer lattice, more
 shades between the total knowledge and the total ignorance.
 
 (== x x) -- in the world this succeeds, x is associated with whatever
@@ -54,9 +54,9 @@ x is associated. Which tells us absolutely nothing about x. This is
 the same as #s.
 
 
-* General antecedents
+* General goals
 
-A general antecedent either fails, or succeeds. When it succeeds, it
+A general goal either fails, or succeeds. When it succeeds, it
 tells us one or more _alternative_ facts about the world (or
 alternative worlds?).  Each answer is an _alternative_ view of the
 world. The list of answers is _ordered_.
@@ -74,16 +74,16 @@ either 1, or 2, or 3.
 (any (== x 1) (== x 2) (== x 3)))
 The same answers, in the same order. 
 
-So, each antecedent can be conceptually (if not literally) represented
-either as #s, #u, or (any ant1 ant2 ...)
+So, each goal can be conceptually (if not literally) represented
+either as #s, #u, or (any gl1 gl2 ...)
 
-where ant_i is either a simple or trivial antecedent.
-So, a general antecedent either fails, or gives us a sequence of
+where gl_i is either a simple or trivial goal.
+So, a general goal either fails, or gives us a sequence of
 alternative views of the world, each view being a set of facts that hold
 about the world.
 
 
-* Properties of `all' of simple or trivial antecedents
+* Properties of `all' of simple or trivial goals
 
 (all (== x 1) (== x 1))
 In the world where that succeeds, x is associated with 1 and x is
@@ -124,18 +124,18 @@ already know that x is associated with 1. So,
 (== y 2)) 
 
 
-The upshot (`ant' is a simple or a trivial antecedent):
+The upshot (`gl' is a simple or a trivial goal):
 
-(all ant ant) === ant
-(all ant) === ant
-(all ant1 ant2) === (all ant2 ant1)
-(all ant1 #s) === ant1
-(all ant1 #u) === #u
-(all ant1 ant2) === #u if ant1 and ant2 contradict each other.
-(all ant1 ant2) === ant1 if ant1 implies ant2: that is, all facts
-   described by ant2 are true for ant1. Facts ant1 subsume facts ant2.
+(all gl gl) === gl
+(all gl) === gl
+(all gl1 gl2) === (all gl2 gl1)
+(all gl1 #s) === gl1
+(all gl1 #u) === #u
+(all gl1 gl2) === #u if gl1 and gl2 contradict each other.
+(all gl1 gl2) === gl1 if gl1 implies gl2: that is, all facts
+   described by gl2 are true for gl1. Facts gl1 subsume facts gl2.
 
-(all (all ant1 ant2) ant3) === (all ant1 ant2 ant3) Flattening
+(all (all gl1 gl2) gl3) === (all gl1 gl2 gl3) Flattening
 
 So, all indeed looks like a multiplication: or, more precise, as
 conjunction. Here, #s plays the role of #t and #u as #f. However, we
@@ -145,8 +145,8 @@ have a far richer logic.
 
 * Properties of any
 
-(any simple-ant) tells one alternative view of the world -- which is
-the same as simple-ant.
+(any simple-gl) tells one alternative view of the world -- which is
+the same as simple-gl.
 
 (any (== x 1) (== y 2)) In the world this holds, either x is
 associated with 1, or y is associated with 2.
@@ -183,7 +183,7 @@ Likewise, (any #s #s ....) is not the same as #s.
 So, 'any' is not the same as 'or' -- order matters, no #t subsumption,
 but #u (aka #f) suppression holds.
 
-(any (any ant1 ant2) (any ant3 ant4)) === (any ant1 ant2 ant3 ant4)
+(any (any gl1 gl2) (any gl3 gl4)) === (any gl1 gl2 gl3 gl4)
 flattening. But watch the order! Unlike 'all', the order matters here.
 
 * #s
@@ -232,21 +232,21 @@ This is quite similar to the distributivity of multiplication relative to
 addition. 'all' is quite similar to multiplication. But for 'any',
 order matters a great deal. So, we have to watch the order.
 Actually, the commutativity of 'all' holds only if its arguments are
-simple antecedents.
+simple goals.
 
-* The disjunctive normal form for antecedents
+* The disjunctive normal form for goals
 
-An antecedent is conceptually (or literally) equivalent to
-	(any (all ant1 ...) ...)
-where ant1 is a simple or a trivial antecedent. This is a disjunctive
+An goal is conceptually (or literally) equivalent to
+	(any (all gl1 ...) ...)
+where gl1 is a simple or a trivial goal. This is a disjunctive
 normal form. 
 
 
-* An antecedent as a question. 
+* An goal as a question. 
 
 Its answer is an ordered list of world alternative views (alternative
 worlds) where the question holds.
-In other words, an antecedent is a question of the form: "are there
+In other words, an goal is a question of the form: "are there
 any worlds so that either that set of facts holds, or that set of
 facts holds, etc." In the second form, the question is essentially
 the answer itself.
@@ -263,15 +263,15 @@ the set of facts that correspond to one or several disjunctions.
 
 * Committed choice.
 
-A general antecedent gen-ant gives us an ordered list of possible
+A general goal gen-gl gives us an ordered list of possible
 alternative views of the world (or possible worlds). Sometimes we
 don't care about all the possibilities: we only want one. Given a
 question (a predicate) we are interested in the one answer -- the first
 in the list of possible alternatives. 
 
-(cchoice gen-ant) converts a general antecedent into a simple one.
-(cchoice ant) has at most one answer -- the first answer of the
-gen-ant.
+(cchoice gen-gl) converts a general goal into a simple one.
+(cchoice gl) has at most one answer -- the first answer of the
+gen-gl.
 
 Justification: See the mercury documentation on committed choice. It
 is well-written.

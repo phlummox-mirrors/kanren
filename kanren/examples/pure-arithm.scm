@@ -134,8 +134,8 @@
 
 (define-syntax test
   (syntax-rules ()
-    ((_ (x) ant)
-      (query (redok subst x) ant
+    ((_ (x) gl)
+      (query (redok subst x) gl
 	(display (trans (subst-in x subst)))
 	(newline)))))
 

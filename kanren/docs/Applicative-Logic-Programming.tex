@@ -31,7 +31,7 @@
 \def\Di{$D_i$}
 \def\Ds{$D_s$}
 % From Steve
-%\Rule{name}{antecedents}{conclusions}{sideconditions?}
+%\Rule{name}{goals}{conclusions}{sideconditions?}
 \newcommand{\Rule}[4]{
 \makebox{{\rm #1}
 $\displaystyle
@@ -839,7 +839,7 @@ equal to a number.
 The logic system has a handful operators: \texttt{relation}
 (\texttt{fact} is derived from \texttt{relation}.), which expands into
 a \texttt{lambda} expression. We have three macros for handling
-sequences of antecedents: \texttt{all}, its dual \texttt{any}, and its
+sequences of goals: \texttt{all}, its dual \texttt{any}, and its
 deterministic counterpart \texttt{all!}.  \texttt{extend-relation},
 which gives us the ability to form a new relation from other
 relations, is derived from \texttt{any}.  To enter the system, we have
@@ -856,12 +856,12 @@ Here are the types we use in this system:
                   Fk = () -> Ans
                  Ans = Nil + [Subst, Fk]
                   Sk = Fk -> Subst -> Ans
-          Antecedent = Sk -> Sk
-            Relation = Term* -> Antecedent
+          Goal = Sk -> Sk
+            Relation = Term* -> Goal
 \end{alltt}
 
 \texttt{Ans} is a stream of \texttt{Subst}s, since \texttt{Fk} is
-a function of zero arguments. An antecedent is an \texttt{Sk}
+a function of zero arguments. An goal is an \texttt{Sk}
 transformer.
 
 \subsection{It's a small world}
@@ -875,16 +875,16 @@ to figure out these definitions.)
 (define-syntax all
   (syntax-rules ()
     [(_) succeed]
-    [(_ ant) ant]
-    [(_ ant0 ant1 ant2 ...)
+    [(_ gl) gl]
+    [(_ gl0 gl1 gl2 ...)
      (lambda@ (sk)
-       (splice-in-ants/all sk ant0 ant1 ant2 ...))]))
+       (splice-in-gls/all sk gl0 gl1 gl2 ...))]))
 
-(define-syntax splice-in-ants/all
+(define-syntax splice-in-gls/all
   (syntax-rules ()
-    [(_ sk ant) (@ ant sk)]
-    [(_ sk ant0 ant1 ant2 ...)
-     (@ ant0 (splice-in-ants/all sk ant1 ant2 ...))]))
+    [(_ sk gl) (@ gl sk)]
+    [(_ sk gl0 gl1 gl2 ...)
+     (@ gl0 (splice-in-gls/all sk gl1 gl2 ...))]))
 \end{alltt}
 
 The \texttt{all} expression has two things in common with Scheme's
@@ -897,38 +897,38 @@ Let's take a look at how it expands, without worrying about
 the actual arguments to \texttt{all}.
 
 \begin{alltt}
-> (expand-only '(all splice-in-ants/all lambda@)
-    '(all ant1 ant2 ant3 ant4 ant5))
-(lambda (sk) (ant1 (ant2 (ant3 (ant4 (ant5 sk))))))
+> (expand-only '(all splice-in-gls/all lambda@)
+    '(all gl1 gl2 gl3 gl4 gl5))
+(lambda (sk) (gl1 (gl2 (gl3 (gl4 (gl5 sk))))))
 \end{alltt}
 
 \noindent
-It looks like the first thing that happens is that \texttt{ant5} is
+It looks like the first thing that happens is that \texttt{gl5} is
 applied, but although that is the first thing that happens, it is
-\texttt{ant1} that actually does the first bit of work.  How is that
+\texttt{gl1} that actually does the first bit of work.  How is that
 possible?  Let's look at a simpler example.
 
 \begin{alltt}
-> (expand-only '(all splice-in-ants/all)
-    '(all ant1 ant2))
-(lambda (sk) (ant1 (ant2 sk)))
+> (expand-only '(all splice-in-gls/all)
+    '(all gl1 gl2))
+(lambda (sk) (gl1 (gl2 sk)))
 \end{alltt}
 
 \noindent
-This is just function composition.  We know that \texttt{(ant2 sk)}
-must return an \texttt{sk}, since that is what \texttt{ant1} is
-expecting.  But suppose that, \texttt{ant1} is also expecting another
+This is just function composition.  We know that \texttt{(gl2 sk)}
+must return an \texttt{sk}, since that is what \texttt{gl1} is
+expecting.  But suppose that, \texttt{gl1} is also expecting another
 argument, say \texttt{fk}. So, we can see this as \texttt{(lambda@ (sk
-fk) ((ant1 (ant2 sk)) fk))}.  Now, eventually, if \texttt{ant1}
-decides to invoke the \texttt{(ant2 sk)}, which was passed in, it will
+fk) ((gl1 (gl2 sk)) fk))}.  Now, eventually, if \texttt{gl1}
+decides to invoke the \texttt{(gl2 sk)}, which was passed in, it will
 do it on a different \texttt{fk}, but it should be clear that
-\texttt{ant1} gets to run first.  These two \texttt{lambda}
+\texttt{gl1} gets to run first.  These two \texttt{lambda}
 expressions are $\eta$-convertible, however, so we do not need to
 worry about the \texttt{fk}s.  Moreover, there is an additional
-argument, \texttt{subst}, that must arrive before \texttt{ant1} runs.
+argument, \texttt{subst}, that must arrive before \texttt{gl1} runs.
 This is tricky, but what is important is that we must understand that
 the order of the arguments in \texttt{all} determines when the
-antecedents are run, which is what we would expect.
+goals are run, which is what we would expect.
 
 Next, we consider \texttt{all!}, the more deterministic variant of
 \texttt{all}.
@@ -936,17 +936,17 @@ Next, we consider \texttt{all!}, the more deterministic variant of
 \begin{alltt}
 (define-syntax promise-one-answer
   (syntax-rules ()
-    ((_ ant) ant)))
+    ((_ gl) gl)))
 
 (define-syntax all!
   (syntax-rules (promise-one-answer)
     [(_) (all)]
-    [(_ (promise-one-answer ant)) (promise-one-answer ant)]
-    [(_ ant0 ant1 ...)
+    [(_ (promise-one-answer gl)) (promise-one-answer gl)]
+    [(_ gl0 gl1 ...)
      (promise-one-answer
        (lambda@ (sk fk)
 	 (@
-	   (splice-in-ants/all (lambda@ (fk-ign) (@ sk fk)) ant0 ant1 ...)
+	   (splice-in-gls/all (lambda@ (fk-ign) (@ sk fk)) gl0 gl1 ...)
 	   fk)))]))
 \end{alltt}
 
@@ -955,23 +955,23 @@ And again, we get a feel for what it does by looking at its
 expansion.
 
 \begin{alltt}
-> (expand-only '(all! splice-in-ants/all)
-    '(all! ant1 ant2 ant3))
+> (expand-only '(all! splice-in-gls/all)
+    '(all! gl1 gl2 gl3))
 (promise-one-answer
   (lambda@ (sk fk)
-    (@ (@ ant1
-         (@ ant2
-           (@ ant3
+    (@ (@ gl1
+         (@ gl2
+           (@ gl3
              (lambda@ (fk-ign)
                (@ sk fk)))))
        fk)))
 \end{alltt}
 
-As in the previous version, if all antecedents succeed, then the
+As in the previous version, if all goals succeed, then the
 original success continuation \texttt{sk} is invoked.  But, this time,
-however, once \texttt{ant3} succeeds, if failure backs into it, it
+however, once \texttt{gl3} succeeds, if failure backs into it, it
 invokes the original failure continuation, rather than retry
-\texttt{ant3}.  That is, the \texttt{all!} expression fails. This is
+\texttt{gl3}.  That is, the \texttt{all!} expression fails. This is
 what is meant by ``promise one answer''.
 
 Finally, we introduce the fully deterministic \texttt{all!!}.
@@ -980,20 +980,20 @@ Finally, we introduce the fully deterministic \texttt{all!!}.
 (define-syntax all!!
   (syntax-rules ()
     [(_) (all!)]
-    [(_ ant) (all! ant)]
-    [(_ ant0 ant1 ...)
+    [(_ gl) (all! gl)]
+    [(_ gl0 gl1 ...)
      (promise-one-answer
        (lambda@ (sk fk)
-         (splice-in-ants/all!! sk fk ant0 ant1 ...)))]))
+         (splice-in-gls/all!! sk fk gl0 gl1 ...)))]))
 
-(define-syntax splice-in-ants/all!!
+(define-syntax splice-in-gls/all!!
   (syntax-rules (promise-one-answer)
     [(_ sk fk) (@ sk fk)]
-    [(_ sk fk (promise-one-answer ant)) (@ ant sk fk)]
-    [(_ sk fk ant0 ant1 ...)
-     (@ ant0
+    [(_ sk fk (promise-one-answer gl)) (@ gl sk fk)]
+    [(_ sk fk gl0 gl1 ...)
+     (@ gl0
        (lambda (fk-ign)
-         (splice-in-ants/all!! sk fk ant1 ...))
+         (splice-in-gls/all!! sk fk gl1 ...))
        fk)]))
 \end{alltt}
 
@@ -1002,11 +1002,11 @@ Again, it should be easier to follow a specific instance of its use.
 \begin{alltt}
 (promise-one-answer
   (lambda@ (sk fk)
-    (@ ant1
+    (@ gl1
       (lambda (fk-ign)
-        (@ ant2
+        (@ gl2
           (lambda (fk-ign)
-            (@ ant3
+            (@ gl3
               (lambda (fk-ign)
                 (@ sk fk))
               fk))
@@ -1016,10 +1016,10 @@ Again, it should be easier to follow a specific instance of its use.
 
 The macro \texttt{all!!} generates a procedure that expects a success
 and a failure continuation (and one more, which is $\eta$-reduced
-away).  Each antecedent is run in a new success continuation, but each
+away).  Each goal is run in a new success continuation, but each
 is run with the same failure continuation.  Thus, this is a fully
 deterministic \texttt{all}.  One slip up, and you fail, whereas, with
-\texttt{all}, you get to backup through the antecedents and retry them
+\texttt{all}, you get to backup through the goals and retry them
 until success, but we are getting a bit ahead of our story.
 
 Even with all this technology to explain the idea of using all, all!,
@@ -1028,8 +1028,8 @@ shall look at three simple examples that should clarify how these
 work together.
 
 Let us assume that \texttt{a}, \texttt{b}, \texttt{c} \texttt{d},
-\texttt{e} and \texttt{f} are all antecedents.  Then consider these
-three antecedents
+\texttt{e} and \texttt{f} are all goals.  Then consider these
+three goals
 
 \begin{alltt}
 1. (all a b (all c d) e f)
@@ -1039,7 +1039,7 @@ three antecedents
 3. (all a b (all!! c d) e f)
 \end{alltt}
 
-Of course, the only place they differ is in their third antecedent.
+Of course, the only place they differ is in their third goal.
 The first example is the same as \texttt{(all a b c d e f)}.  Thus, if
 \texttt{b} fails, it retries \texttt{a}, if \texttt{c} fails, it
 retries \texttt{b}, etc. But, most importantly for our second and
@@ -1048,9 +1048,9 @@ second example, if \texttt{e} fails, then it retries \texttt{(all! c
 d)}, which forces a retry of \texttt{b}.  If \texttt{d} fails, it
 retries \texttt{c}.  The last example is the same as the second
 example, but if \texttt{d} fails, it retries \texttt{b}, since within
-\texttt{(all!! c d)} if any antecedent fails, it retries \texttt{b}.
+\texttt{(all!! c d)} if any goal fails, it retries \texttt{b}.
 This follows from the fact that any failure causes the entire
-\texttt{(all!! c d)} antecedent to fail.  In each of the three
+\texttt{(all!! c d)} goal to fail.  In each of the three
 examples, if \texttt{c} fails, then it retries \texttt{b}.
 
 The macro \texttt{exists} makes sure that the variables
@@ -1062,11 +1062,11 @@ from the substitution, since they may be part of some commitment's term.
 \begin{alltt}
 (define-syntax exists
   (syntax-rules ()
-    [(_ () ant) ant]
-    [(_ (id0 id1 ...) ant)
+    [(_ () gl) gl]
+    [(_ (id0 id1 ...) gl)
      (let-lv (id ...)
        (lambda@ (sk fk in-subst)
-	 (@ ant
+	 (@ gl
             (lambda@ (fk out-subst)
               (@ sk fk (prune-subst (list id0 id1 ...) in-subst out-subst)))
             fk
@@ -1099,52 +1099,52 @@ accumulating fresh variables the length of the arguments to the
 \texttt{to-show} keyword.  Once the accumulation has been accomplished
 in the \texttt{(g ...)}, we consider the remaining clause.  The
 \texttt{all!!} of the unifications is wrapped by an \texttt{all} and
-is followed by the antecedents.  Thus, if all the unifications succeed
+is followed by the goals.  Thus, if all the unifications succeed
 yielding a substitution, we start with that resultant substitution and
-try to show the antecedents.
+try to show the goals.
 
 \begin{alltt}
 (define-syntax relation
   (syntax-rules (to-show)
-    [(_ (ex-id ...) (to-show x ...) ant ...)
-     (relation (ex-id ...) () (x ...) (x ...) ant ...)]
-    [(_ (ex-id ...) (var ...) (x0 x1 ...) xs ant ...)
-     (relation (ex-id ...) (var ... g) (x1 ...) xs ant ...)]
-    [(_ (ex-id ...) (g ...) () (x ...) ant ...)
+    [(_ (ex-id ...) (to-show x ...) gl ...)
+     (relation (ex-id ...) () (x ...) (x ...) gl ...)]
+    [(_ (ex-id ...) (var ...) (x0 x1 ...) xs gl ...)
+     (relation (ex-id ...) (var ... g) (x1 ...) xs gl ...)]
+    [(_ (ex-id ...) (g ...) () (x ...) gl ...)
      (lambda (g ...)
        (exists (ex-id ...)
-         (all (all!! (promise-one-answer (== g x)) ...) ant ...)))]))
+         (all (all!! (promise-one-answer (== g x)) ...) gl ...)))]))
 \end{alltt}
 
 There are several special cases that we can observe from the last
 clause of \texttt{relation}.  The \texttt{g}s might be empty, and the
-\texttt{ant}s might be empty.  In addtion, there might be exactly one
-\texttt{ant}.  Thus we revise \texttt{relation} to check for these
+\texttt{gl}s might be empty.  In addtion, there might be exactly one
+\texttt{gl}.  Thus we revise \texttt{relation} to check for these
 special cases.
 
 \begin{alltt}
 (define-syntax relation
   (syntax-rules (to-show)
-    [(_ (ex-id ...) (to-show x ...) ant ...)
-     (relation (ex-id ...) () (x ...) (x ...) ant ...)]
-    [(_ (ex-id ...) (var ...) (x0 x1 ...) xs ant ...)
-     (relation (ex-id ...) (var ... g) (x1 ...) xs ant ...)]
-    [(_ (ex-id ...) () () () ant ...)
+    [(_ (ex-id ...) (to-show x ...) gl ...)
+     (relation (ex-id ...) () (x ...) (x ...) gl ...)]
+    [(_ (ex-id ...) (var ...) (x0 x1 ...) xs gl ...)
+     (relation (ex-id ...) (var ... g) (x1 ...) xs gl ...)]
+    [(_ (ex-id ...) () () () gl ...)
      (lambda ()
        (exists (ex-id ...)
-         (all ant ...)))]
+         (all gl ...)))]
     [(_ (ex-id ...) (g ...) () (x ...))
      (lambda (g ...)
        (exists (ex-id ...)
  	 (all!! (promise-one-answer (== g x)) ...)))]
-    [(_ (ex-id ...) (g ...) () (x ...) ant)
+    [(_ (ex-id ...) (g ...) () (x ...) gl)
      (lambda (g ...)
        (exists (ex-id ...)
- 	 (if-all! ((promise-one-answer (== g x)) ...) ant)))]
-    [(_ (ex-id ...) (g ...) () (x ...) ant ...)
+ 	 (if-all! ((promise-one-answer (== g x)) ...) gl)))]
+    [(_ (ex-id ...) (g ...) () (x ...) gl ...)
      (lambda (g ...)
        (exists (ex-id ...)
-         (all (all!! (promise-one-answer (== g x)) ...) ant ...)))]))
+         (all (all!! (promise-one-answer (== g x)) ...) gl ...)))]))
 \end{alltt}
 
 We now have enough tools to define a relation with a single fact.
@@ -1160,7 +1160,7 @@ Let's focus on the single fact that says that ``Rob is the father of
 Sal.''  But, what it really says is that there is a relation, that
 connects ``Rob to Sal,'' which we are calling ``The father relation.''
 And when do we know that Rob is the father of Sal?  When we have shown
-that all the antecedent expressions below the \texttt{to-show} keyword
+that all the goal expressions below the \texttt{to-show} keyword
 expression hold.  But, since there are none, it holds vacuously.
 Therefore, Rob is always the father of Sal.  But, if we have another
 relation, \emph{older\_than}, we can have the fact that ``Rob is older
@@ -1200,24 +1200,24 @@ variables.} It can figure that out from the number of operands in the
 variable \texttt{g1} with the value of \texttt{'rob} and the value of
 the variable \texttt{g2} with the value of \texttt{'sal}, then the
 resultant substitution is passed to a procedure that addresses any
-remaining antecedents.  In our simple example, there are none.
+remaining goals.  In our simple example, there are none.
 
 Whenever \texttt{father} is invoked, a dad (\texttt{g1}) and a child
-(\texttt{g2}) get bound to a term.  Then an antecedent is returned.
-This antecedent is waiting for a success continuation, a failure
+(\texttt{g2}) get bound to a term.  Then an goal is returned.
+This goal is waiting for a success continuation, a failure
 continuation, and a substitution.  The failure continuation is invoked
 if the arguments fail to unify.  This causes a return from the call
 to \texttt{father}, since \texttt{all!!} fails if any of its arguments
 fail.
 
-There is a relation between \texttt{relation} and antecedents.
+There is a relation between \texttt{relation} and goals.
 It is possible to turn any antededent into a zero-argument
-relation using \texttt{ant->relation} below.
+relation using \texttt{gl->relation} below.
 
 \begin{alltt}
-(define ant->relation
-  (lambda (ant)
-    (relation () (to-show) ant)))
+(define gl->relation
+  (lambda (gl)
+    (relation () (to-show) gl)))
 \end{alltt}
 
 Next, we define a relation \texttt{child-of-male} and compare its expansion
@@ -1277,7 +1277,7 @@ expanding \texttt{exists}.
            in-subst)))))
 \end{alltt}
 
-Here, we see that the body of \texttt{let-lv} is an antecedent, which
+Here, we see that the body of \texttt{let-lv} is an goal, which
 runs the \texttt{all!!} expression with a success continuation that
 will prune away the naively introduced variables \texttt{child} and
 \texttt{dad} from the resultant substitution.  The substitution
@@ -1301,8 +1301,8 @@ to determine ``If Rob is the father of Sal.''
 (define initial-sk (lambda@ (fk subst) (cons subst fk)))
 (define initial-fk (lambda () '()))
 
-> (let ([ant (father 'rob 'sal)])
-    (@ ant initial-sk initial-fk empty-subst))
+> (let ([gl (father 'rob 'sal)])
+    (@ gl initial-sk initial-fk empty-subst))
 (() . #<initial-fk>)
 \end{alltt}
 
@@ -1325,8 +1325,8 @@ below.
 
 \begin{alltt}
 (define query
-  (lambda (ant)
-    (@ ant initial-sk initial-fk empty-subst)))
+  (lambda (gl)
+    (@ gl initial-sk initial-fk empty-subst)))
 \end{alltt}
 
 We next consider the role of nonempty substitutions.  Instead of
@@ -1379,37 +1379,37 @@ The operator \texttt{any} is the dual of \texttt{all}.
 (define-syntax any
   (syntax-rules ()
     [(_) fail]
-    [(_ ant) ant]
-    [(_ ant ...)
+    [(_ gl) gl]
+    [(_ gl ...)
       (lambda@ (sk fk subst)
-	(splice-in-ants/any sk fk subst ant ...))]))
+	(splice-in-gls/any sk fk subst gl ...))]))
 
-(define-syntax splice-in-ants/any
+(define-syntax splice-in-gls/any
   (syntax-rules ()
-    [(_ sk fk subst ant) (@ ant sk fk subst)]
-    [(_ sk fk subst ant0 ant1 ant2 ...)
-     (@ ant0
+    [(_ sk fk subst gl) (@ gl sk fk subst)]
+    [(_ sk fk subst gl0 gl1 gl2 ...)
+     (@ gl0
         sk
         (lambda ()
-          (splice-in-ants/any sk fk subst ant1 ant2 ...))
+          (splice-in-gls/any sk fk subst gl1 gl2 ...))
        subst)]))
 \end{alltt}
 
 The first two clauses are simple.  The first, is the dual of
-\texttt{all}, since when there are no antecedents for \texttt{all},
+\texttt{all}, since when there are no goals for \texttt{all},
 we \texttt{succeed}, whereas with \texttt{any} when we have no
-antecedents, we \texttt{fail}.  As before, just one antecedent, expands
-to that one antecedent.  So, let's see what happens when we have more
-than one antecedent.
+goals, we \texttt{fail}.  As before, just one goal, expands
+to that one goal.  So, let's see what happens when we have more
+than one goal.
 
 \begin{alltt}
-> (expand-only '(any splice-in-ants/any)
-    '(any ant1 ant2))
+> (expand-only '(any splice-in-gls/any)
+    '(any gl1 gl2))
 (lambda@ (sk fk subst)
-  (@ ant1
+  (@ gl1
      sk
      (lambda ()
-       (@ ant2 sk fk subst))
+       (@ gl2 sk fk subst))
      subst))
 \end{alltt}
 
@@ -1417,16 +1417,16 @@ than one antecedent.
 and
 
 \begin{alltt}
-> (expand-only '(any splice-in-ants/any)
-    '(any ant1 ant2 ant3))
+> (expand-only '(any splice-in-gls/any)
+    '(any gl1 gl2 gl3))
 (lambda@ (sk fk subst)
-  (@ ant1
+  (@ gl1
      sk
      (lambda ()
-       (@ ant2
+       (@ gl2
           sk
           (lambda ()
-            (@ ant3 sk fk subst))
+            (@ gl3 sk fk subst))
           subst))
      subst))
 \end{alltt}
@@ -1509,7 +1509,7 @@ arguments to \texttt{any} involve applications of the generated
 ((\texttt{g}\emph{i}) variables passing along the artificial
 (\texttt{a}\emph{i}) variables.
 
-A convenient abbreviation of a relation where there are no antecedents
+A convenient abbreviation of a relation where there are no goals
 is decribed by the macro \texttt{fact}.
 
 \begin{alltt}
@@ -1588,18 +1588,18 @@ Let us return to our discussion about how we are going to use
 \texttt{stream-prefix}.  Once we have a finite list of substitutions,
 we are free to use them however we wish. For example, we define a
 macro \texttt{solve} that takes a positive integer upper bound, a list
-of variable names, and an antecedent (here a relation call).  It
+of variable names, and an goal (here a relation call).  It
 returns a list like the one above for Rob's children.  Each variable
 is associated with the substituted for term of its commitment.
 
 \begin{alltt}
 (define-syntax solve
   (syntax-rules ()
-    [(_ n (var ...) ant)
+    [(_ n (var ...) gl)
      (let-lv (var ...)
        (map (lambda (subst)
               (concretize-subst/vars subst var ...))
-         (stream-prefix (- n 1) (query ant))))]))
+         (stream-prefix (- n 1) (query gl))))]))
 \end{alltt}
 
 \begin{alltt}
@@ -1635,8 +1635,8 @@ We can simplify things a bit when we want at most one result with
 \begin{alltt}
 (define-syntax solution
   (syntax-rules ()
-    [(_ (var ...) ant)
-     (let ([ls (solve 1 (var ...) ant)])
+    [(_ (var ...) gl)
+     (let ([ls (solve 1 (var ...) gl)])
        (if (null? ls) #f (car ls)))]))
 \end{alltt}
 
@@ -1657,11 +1657,11 @@ integer appears.  In this case, it is impossible to know what integer bound
 to pass to \texttt{stream-prefix}.  In those circumstances, it is best
 to process the stream of substitutions using a hand-crafted procedure.
 
-\subsection{Sequences of antecedents}
+\subsection{Sequences of goals}
 
 In the definition of \texttt{child-of-male}, we have exactly one
-antecedent.  We are going to look at relations with additional
-antecedents.
+goal.  We are going to look at relations with additional
+goals.
 
 Let's first redefine \texttt{father}.
 
@@ -1920,8 +1920,8 @@ the other.  Once it has exhausted one of the streams, it
 \texttt{finish}es the job on the other one.  The success and failure
 continuations that are passed into \texttt{interleave} and
 \texttt{finish-interleave} from the start are the ones that came in as
-part of the invocation of an antecedent.  But, when the actual
-antecedent gets passed arguments, it uses the \emph{initial} success
+part of the invocation of an goal.  But, when the actual
+goal gets passed arguments, it uses the \emph{initial} success
 and failure continuations.
 
 \noindent
@@ -1937,34 +1937,34 @@ What other variant is possible?
      (let ([rel1 rel-exp1] [rel2 rel-exp2])
        (lambda (id ...)
          (lambda@ (sk fk subst)
-           (let ([ant2 (rel2 id ...)])
+           (let ([gl2 (rel2 id ...)])
              ((interleave-non-overlap sk fk)
               (@ (rel1 id ...) initial-sk initial-fk subst)
-              (@ ant2 initial-sk initial-fk subst)
+              (@ gl2 initial-sk initial-fk subst)
               fail
-              ant2)))))]))
+              gl2)))))]))
 
 (define interleave-non-overlap
   (lambda (sk fk)
     (letrec
       ([interleave
-         (lambda (q1 q2 ant1 ant2)
+         (lambda (q1 q2 gl1 gl2)
            (cond
              [(null? q1) (if (null? q2) (fk) ((finish-interleave sk fk) q2))]
              [else (let ([fk (cdr q1)] [subst (car q1)])
-		(if (not (eq? (initial-fk) (satisfied? ant2 subst)))
-		  (interleave q2 (fk) ant2 ant1)
-		  (@ sk (lambda () (interleave q2 (fk) ant2 ant1)) subst)))]))])
+		(if (not (eq? (initial-fk) (satisfied? gl2 subst)))
+		  (interleave q2 (fk) gl2 gl1)
+		  (@ sk (lambda () (interleave q2 (fk) gl2 gl1)) subst)))]))])
       interleave)))
 
 (define satisfied?
-  (lambda (ant subst)
-    (@ ant initial-sk initial-fk subst)))
+  (lambda (gl subst)
+    (@ gl initial-sk initial-fk subst)))
 \end{alltt}
 
 Here, again, \texttt{finish} takes whatever is left to do after one of
 the streams is exhausted.  But, this time if it can be shown that
-either antecedent can be satisfied with the same substitution, we drop
+either goal can be satisfied with the same substitution, we drop
 one of the results.  It is worthwhile to compare \texttt{satisfied}
 with \texttt{query}.  The place where it differs is
 \texttt{satisfied?} has an additional argument, \texttt{subst}, which
@@ -2042,7 +2042,7 @@ Here is an example of its use.
 \end{alltt}
 
 \noindent
-In these calls to \texttt{solve}, we created an antecedent with
+In these calls to \texttt{solve}, we created an goal with
 \texttt{exists} in order to avoid seeing the children.
 
 \texttt{Exercise d} The second example introduces a new problem.
@@ -2051,22 +2051,22 @@ the same people we probably would be as happy seeing their names only
 once.  Revise \texttt{solve} to so that only the \emph{first} occurrences of
 these names appears.\endofexercise{}
 
-In the remainder of the paper, we present some additional antecedents,
+In the remainder of the paper, we present some additional goals,
 consider the role of recursion in our logic system, and study some
 famous examples that display some of the power of logic programming.
 
-\section{Additional antecedents}
+\section{Additional goals}
 
 In this section we introduce some additional operators, which rely on
 the underlying structure.  In each instance, we are expanding the
-kinds of antecedents that are available.  Among these are
+kinds of goals that are available.  Among these are
 \texttt{fail} and \texttt{succeed}; an operator
 \texttt{let*-inject/everything} for running Scheme expressions that
 are lexically enclosed in a substitution, and three useful,
 miscellaneous operators: \texttt{fails}, \texttt{instantiated}, and
 \texttt{view-subst}.
 
-The grammar for antecedents \texttt{<A>} completes the language.
+The grammar for goals \texttt{<A>} completes the language.
 \begin{alltt}
 <A> =
      <relation call>
@@ -2077,11 +2077,11 @@ The grammar for antecedents \texttt{<A>} completes the language.
    | (all! <A>*)
    | (all!! <A>*)
    | (any <A>*)
-   | <additional antecedent>
+   | <additional goal>
    | <or any Scheme expression that evaluates to these,
        since these are all values.>
 
-<additional antecedent> =
+<additional goal> =
      (let*-inject/everything ([var_0 ([var bool] ...) Scheme-exp] ...) <A>*)
    | (fails <A>)
    | (succeeds <A>)
@@ -2211,7 +2211,7 @@ Rob, so Rob's children are still someone's grandchildren.
 \end{alltt}
 
 The Scheme expression is arbitrary.  The Scheme expression acts like an
-antecedent, but can do anything that any Scheme expression can do, including
+goal, but can do anything that any Scheme expression can do, including
 capturing continuations, setting variables, writing to files, etc.  The
 full panoply of options is available to the user.  We abstract this use
 with a handy operator \texttt{predicate} and its \texttt{no-check} variant.
@@ -2238,9 +2238,9 @@ and failure continuations.
 
 \begin{alltt}
 (define fails
-  (lambda (ant)
+  (lambda (gl)
     (lambda@ (sk fk subst cutk)
-      (@ ant
+      (@ gl
         (lambda@ (ign-fk ign-subst ign-cutk) (fk))
         (lambda () (@ sk fk subst cutk))
         subst
@@ -2268,7 +2268,7 @@ And here is an example of \texttt{fails}.
 \end{alltt}
 
 To determine if a variable, \texttt{t}, is instantiated, use
-\texttt{(instantiated t)} as an antecedent and this definition.
+\texttt{(instantiated t)} as an goal and this definition.
 
 \begin{alltt}
 (define instantiated
@@ -2523,7 +2523,7 @@ binary relation.
 The similarities with Seres and Spivey are striking.  In fact, a
 subset of our model maps directly onto theirs, although our goal
 has been a full implementation of logic programming, including
-many of the sullied antecedents as well as some meta operations.
+many of the sullied goals as well as some meta operations.
 
 Using \texttt{==} our Scheme embedding resembles their Haskell
 embedding.  Where we differ is that we would be limited to using only
@@ -2585,17 +2585,17 @@ failure continuation
 
 In sum, the Haskell embedding is good as far as it goes, but it
 leaves many of the more interesting aspects of logic programming
-unresolved.  The approach of treating every antecedent as a stream
+unresolved.  The approach of treating every goal as a stream
 of substitutions is not far from our approach.  Since we have
 substitutions \texttt{subst} and failure continuations \texttt{fk}
-in every antecedent, we could use a different representation of the
-body of the antecedent, where all but \texttt{fk} would comprise
+in every goal, we could use a different representation of the
+body of the goal, where all but \texttt{fk} would comprise
 a data structure and the \texttt{fk} would be a stream (thunk).
-Then each antecedent closure could be modelled as the \texttt{cons}ing
+Then each goal closure could be modelled as the \texttt{cons}ing
 of the data structure to a stream.  Because this is a relatively
 small program, making this last step in order to use the stream
 monad seems like overkill, especially since this approach does not
-appear to extend naturally to the all important sullied antecedents.
+appear to extend naturally to the all important sullied goals.
 
 \subsection{``Towers of Hanoi''}
 
@@ -3418,7 +3418,7 @@ Next, we include \texttt{bool-rel} below in \texttt{!-}.
 
 Before we include relations for the arithmetic primitives, we observe
 that we need to use \texttt{all!}.  This means that whenever there is
-failure, all the antecedents fail.  We do this because our type
+failure, all the goals fail.  We do this because our type
 inferencer has this deterministic behavior.  There cannot be any
 backtracking.  That is, once a decision is made, it cannot be
 reconsidered!
@@ -4423,7 +4423,7 @@ that.
 (define depth-counter-var (let-lv (*depth-counter-var*) *depth-counter-var*))
 
 (define with-depth
-  (lambda (limit ant)
+  (lambda (limit gl)
     (lambda@ (sk fk subst cutk)
       (cond
         [(assq depth-counter-var subst)
@@ -4432,21 +4432,21 @@ that.
                 (if (= counter limit)
                   (fk)
                   (let ([s (extend-subst depth-counter-var (+ counter 1) subst)])
-                    (@ ant sk fk s cutk)))))]
+                    (@ gl sk fk s cutk)))))]
         [else
           (let ([s (extend-subst depth-counter-var 0 subst)])
-            (@ ant sk fk s cutk))]))))
+            (@ gl sk fk s cutk))]))))
 \end{alltt}
 
 The procedure \texttt{with-depth} takes an upper bound and an
-antecedent and it returns an antecedent to be run in the same state
-one more time than the limit for that antecedent.  It does this by
+goal and it returns an goal to be run in the same state
+one more time than the limit for that goal.  It does this by
 associating a counter with a substitution, so that a particular
-antecedent that runs in that state gets run a limited number of times.
+goal that runs in that state gets run a limited number of times.
 This, keeps infinite loops, which are natural when proving theorems,
 from taking place.  Alternatively, with-depth limits the number of
 applications of a particular axiom/rule when searching for a proof.
-By extending the substitution on each invocation of the antecedent,
+By extending the substitution on each invocation of the goal,
 and by searching using \texttt{assq}, we are guaranteed to get the
 most recent value of the counter associated with that substitution.
 
@@ -4645,10 +4645,10 @@ then represents a relation that can be invoked as a function.  Next we
 noticed that the sullied operators could also be written as functions
 with the same interface, thus removing a dispatch.  Once the dispatch
 was removed, it was easy to remove the lone remaining search down the
-antecedents.  Discovering that a non-recursive unifier was possible
+goals.  Discovering that a non-recursive unifier was possible
 came much later.  The first implementation and discussion of
 polymorphic \texttt{let} is the work of Jeremiah Willcock.  Treating
-the consequent of a relation as an antecedent has been inspired by
+the consequent of a relation as an goal has been inspired by
 Seres and Spivey's paper.  Several fruitful discussions with Venkatesh
 Choppella led to more thought about the types in the code of this
 logic system.  We are grateful to Oscar Waddell for implementing

@@ -43,11 +43,11 @@
 ;  Fk  = () -> Ans
 ;  Ans =  Nil + [Subst,Fk]
 ;  Sk = Fk -> Subst -> Ans  
-;  Antecedent = Sk -> Sk
-;  Rule = Antecedent -> [Goal-fn,Int] -> Antecedent
+;  Goal = Sk -> Sk
+;  Rule = Goal -> [Goal-fn,Int] -> Goal
 
-;  relation: Term -> Antecedent
-;  to-show: Term -> Antecedent -> Rule
+;  relation: Term -> Goal
+;  to-show: Term -> Goal -> Rule
 ;  initial-sk : Sk
 ;  initial-fk : Fk
 
@@ -170,18 +170,18 @@
 ; That was the code for the unifier that introduced temp variables
 ; (define-syntax exists
 ;   (syntax-rules ()
-;     ((_ () ant) ant)
-;     ((_ (ex-id) ant)
+;     ((_ () gl) gl)
+;     ((_ (ex-id) gl)
 ;      (let-lv (ex-id)
 ;        (lambda@ (sk fk in-subst)
-;          (@ ant
+;          (@ gl
 ;            (lambda@ (fk out-subst)
 ;              (@ sk fk (lv-elim-1 ex-id in-subst out-subst)))
 ;            fk in-subst))))
-;     ((_ (ex-id ...) ant)
+;     ((_ (ex-id ...) gl)
 ;      (let-lv (ex-id ...) 
 ;        (lambda@ (sk fk in-subst)
-;          (@ ant
+;          (@ gl
 ;            (lambda@ (fk out-subst)
 ;              (@ sk fk (lv-elim (list ex-id ...) in-subst out-subst)))
 ;            fk in-subst))))))
@@ -208,33 +208,33 @@
 
 (define-syntax exists
   (syntax-rules ()
-    ((_ () ant) ant)
-    ((_ (ex-id ...) ant)
-     (let-lv (ex-id ...) ant))
+    ((_ () gl) gl)
+    ((_ (ex-id ...) gl)
+     (let-lv (ex-id ...) gl))
     ))
 
 ;-----------------------------------------------------------
 ; Sequencing of relations
-; Antecedent is a multi-valued function (which takes
+; Goal is a multi-valued function (which takes
 ;   sk, fk, subst and exits to either sk or fk).
-; A relation is a parameterized antecedent.
+; A relation is a parameterized goal.
 ;
-; All sequencing operations are defined on antecedents.
+; All sequencing operations are defined on goals.
 ; They can be "lifted" to relations (see below).
 ; 
 
-; TRACE-ANT-RAW TITLE ANT -> ANT
-; Traces all invocations and re-invocations of an antecedent
+; TRACE-GOAL-RAW TITLE GL -> GL
+; Traces all invocations and re-invocations of an goal
 ; printing subst before and after, in their raw form
-(define trace-ant-raw
-  (lambda (title ant)
+(define trace-goal-raw
+  (lambda (title gl)
     (let ((print-it
 	    (lambda (event subst)
 	      (display title) (display " ")
 	      (display event) (pretty-print subst) (newline))))
       (lambda@ (sk fk subst)
 	(print-it "CALL:" subst)
-	(@ ant 
+	(@ gl 
 	  (lambda@ (fk subst)
 	    (print-it "RETURN:" subst)
 	    (@ sk
@@ -249,46 +249,46 @@
 
 ; Conjunctions
 ; All conjunctions below satisfy properties
-;    ans is an answer of (a-conjunction ant1 ant2 ...) ==>
-;       forall i. ans is an answer of ant_i
+;    ans is an answer of (a-conjunction gl1 gl2 ...) ==>
+;       forall i. ans is an answer of gl_i
 ;    (a-conjunction) ==> success
 
 
-; (all ant1 ant2 ...)
+; (all gl1 gl2 ...)
 ; A regular Prolog conjunction. Non-deterministic (i.e., can have 0, 1,
 ; or more answers).
 ; Properties:
-;  (all ant) ==> ant
-;  (all ant1 ... ant_{n-1} antn) is a "join" of answerlists of
-;        (all ant1 ... ant_{n-1}) and antn
+;  (all gl) ==> gl
+;  (all gl1 ... gl_{n-1} gln) is a "join" of answerlists of
+;        (all gl1 ... gl_{n-1}) and gln
 
 (define-syntax all
   (syntax-rules ()
     ((_) (lambda@ (sk) sk))
-    ((_ ant) ant)
-    ((_ ant0 ant1 ...)
+    ((_ gl) gl)
+    ((_ gl0 gl1 ...)
      (lambda@ (sk)
-       (splice-in-ants/all sk ant0 ant1 ...)))))
+       (splice-in-gls/all sk gl0 gl1 ...)))))
 
-(define-syntax splice-in-ants/all
+(define-syntax splice-in-gls/all
   (syntax-rules ()
-    ((_ sk ant) (@ ant sk))
-    ((_ sk ant0 ant1 ...)
-     (@ ant0 (splice-in-ants/all sk ant1 ...)))))
+    ((_ sk gl) (@ gl sk))
+    ((_ sk gl0 gl1 ...)
+     (@ gl0 (splice-in-gls/all sk gl1 ...)))))
 
 (define succeed (all))
 
-; (promise-one-answer ant)
+; (promise-one-answer gl)
 ; Operationally, it is the identity.
-; It is an optimization directive: if the user knows that an antecedent
+; It is an optimization directive: if the user knows that an goal
 ; can produce at most one answer, he can tell the system about it.
 ; The behavior is undefined if the user has lied.
 
 (define-syntax promise-one-answer
   (syntax-rules ()
-    ((_ ant) ant)))
+    ((_ gl) gl)))
 
-; (all! ant1 ant2 ...)
+; (all! gl1 gl2 ...)
 ; A committed choice nondeterminism conjunction
 ; From the Mercury documentation:
 
@@ -298,59 +298,59 @@
 ;   calls to that mode of the predicate (or function) occur in a context
 ;   in which only one solution is needed.
 ;
-; (all! ant) evaluates ant in a single-choice context. That is,
-; if ant fails, (all! ant) fails. If ant has at least one answer,
+; (all! gl) evaluates gl in a single-choice context. That is,
+; if gl fails, (all! gl) fails. If gl has at least one answer,
 ; this answer is returned.
-; (all! ant) has at most one answer regardless of the answers of ant.
-;   ans is an answer of (all! ant) ==> ans is an answer of ant
+; (all! gl) has at most one answer regardless of the answers of gl.
+;   ans is an answer of (all! gl) ==> ans is an answer of gl
 ; The converse is not true.
-; Corollary: (all! ant) =/=> ant
-; Corollary: ant is (semi-) deterministic: (all! ant) ==> ant
-; (all! (promise-one-answer ant)) ==> ant
+; Corollary: (all! gl) =/=> gl
+; Corollary: gl is (semi-) deterministic: (all! gl) ==> gl
+; (all! (promise-one-answer gl)) ==> gl
 ;
-; By definition, (all! ant1 ant2 ...) ===> (all! (all ant1 ant2 ...))
+; By definition, (all! gl1 gl2 ...) ===> (all! (all gl1 gl2 ...))
 
 (define-syntax all!
   (syntax-rules (promise-one-answer)
     ((_) (promise-one-answer (all)))
-    ((_ (promise-one-answer ant)) (promise-one-answer ant)) ; keep the mark
-    ((_ ant0 ant1 ...)
+    ((_ (promise-one-answer gl)) (promise-one-answer gl)) ; keep the mark
+    ((_ gl0 gl1 ...)
      (promise-one-answer
        (lambda@ (sk fk)
 	 (@
-	   (splice-in-ants/all (lambda@ (fk-ign) (@ sk fk)) ant0 ant1 ...)
+	   (splice-in-gls/all (lambda@ (fk-ign) (@ sk fk)) gl0 gl1 ...)
 	   fk))))))
 
-; (all!! ant1 ant2 ...)
+; (all!! gl1 gl2 ...)
 ; Even more committed choice nondeterministic conjunction
 ; It evaluates all elements of the conjunction in a single answer context
-; (all!! ant) ==> (all! ant) =/=> ant
-; (all!! ant1 ant2 ...) ==> (all (all! ant1) (all! ant2) ...)
-;                       ==> (all! (all! ant1) (all! ant2) ...)
-; (all!! ant1 ... antn (promise-one-answer ant)) ==>
-;    (all (all!! ant1 ... antn) ant)
+; (all!! gl) ==> (all! gl) =/=> gl
+; (all!! gl1 gl2 ...) ==> (all (all! gl1) (all! gl2) ...)
+;                       ==> (all! (all! gl1) (all! gl2) ...)
+; (all!! gl1 ... gln (promise-one-answer gl)) ==>
+;    (all (all!! gl1 ... gln) gl)
 
 (define-syntax all!!
   (syntax-rules ()
     ((_) (all!))
-    ((_ ant) (all! ant))
-    ((_ ant0 ant1 ...)
+    ((_ gl) (all! gl))
+    ((_ gl0 gl1 ...)
      (promise-one-answer 
        (lambda@ (sk fk)
-         (splice-in-ants/all!! sk fk ant0 ant1 ...))))))
+         (splice-in-gls/all!! sk fk gl0 gl1 ...))))))
 
-(define-syntax splice-in-ants/all!!
+(define-syntax splice-in-gls/all!!
   (syntax-rules (promise-one-answer)
     ((_ sk fk)
       (@ sk fk))
-    ((_ sk fk (promise-one-answer ant))
-      (@ ant sk fk))
-    ((_ sk fk ant0 ant1 ...)
-      (@ ant0 (lambda (fk-ign) (splice-in-ants/all!! sk fk ant1 ...)) fk))))
+    ((_ sk fk (promise-one-answer gl))
+      (@ gl sk fk))
+    ((_ sk fk gl0 gl1 ...)
+      (@ gl0 (lambda (fk-ign) (splice-in-gls/all!! sk fk gl1 ...)) fk))))
 
 ; (if-only COND THEN)
 ; (if-only COND THEN ELSE)
-; Here COND, THEN, ELSE are antecedents.
+; Here COND, THEN, ELSE are goals.
 ; If COND succeeds at least once, the result is equivalent to
 ;      (all (all! COND) TNEN)
 ; If COND fails, the result is the same as ELSE.
@@ -404,24 +404,24 @@
 ;     ((_ (condition) then else) (if-only condition then else))
 ;     ((_ (condition1 condition2 ...) then)
 ;      (lambda@ (sk fk)
-;        (@ (splice-in-ants/all
+;        (@ (splice-in-gls/all
 ;             (lambda@ (fk-ign)
 ;               (@ then sk fk))
 ;             condition1 condition2 ...)
 ;           fk)))
 ;     ((_ (condition1 condition2 ...) then else)
 ;      (lambda@ (sk fk subst)
-;        (@ (splice-in-ants/all
+;        (@ (splice-in-gls/all
 ;             (lambda@ (fk-ign)
 ;               (@ then sk fk)) condition1 condition2 ...)
 ;           (lambda ()
 ;             (@ else sk fk subst))
 ; 	 subst)))))
 
-; Disjunction of antecedents
+; Disjunction of goals
 ; All disjunctions below satisfy properties
-;  ans is an answer of (a-disjunction ant1 ant2 ...) ==>
-;    exists i. ans is an answer of ant_i
+;  ans is an answer of (a-disjunction gl1 gl2 ...) ==>
+;    exists i. ans is an answer of gl_i
 ; (a-disjunction) ==> fail
 
 ; Any disjunction. A regular Prolog disjunction (introduces
@@ -429,73 +429,73 @@
 ; Note that 'any' is not a union! In particular, it is not
 ; idempotent.
 ; (any) ===> fail
-; (any ant) ===> ant
-; (any ant1 ... antn) ==> _concatenation_ of their answerlists
+; (any gl) ===> gl
+; (any gl1 ... gln) ==> _concatenation_ of their answerlists
 
 (define-syntax any
   (syntax-rules ()
     ((_) (lambda@ (sk fk subst) (fk)))
-    ((_ ant) ant)
-    ((_ ant ...)
+    ((_ gl) gl)
+    ((_ gl ...)
       (lambda@ (sk fk subst)
-	(splice-in-ants/any sk fk subst ant ...)))))
+	(splice-in-gls/any sk fk subst gl ...)))))
 
-(define-syntax splice-in-ants/any
+(define-syntax splice-in-gls/any
   (syntax-rules ()
-    ((_ sk fk subst ant1) (@ ant1 sk fk subst))
-    ((_ sk fk subst ant1 ant2 ...)
-     (@ ant1 sk (lambda ()
-                  (splice-in-ants/any sk fk subst ant2 ...))
+    ((_ sk fk subst gl1) (@ gl1 sk fk subst))
+    ((_ sk fk subst gl1 gl2 ...)
+     (@ gl1 sk (lambda ()
+                  (splice-in-gls/any sk fk subst gl2 ...))
        subst))))
 
 (define fail (any))
 
 ; Negation
-; (fails ant) succeeds iff ant has no solutions
-; (fails ant) is a semi-deterministic predicate: it can have at most
+; (fails gl) succeeds iff gl has no solutions
+; (fails gl) is a semi-deterministic predicate: it can have at most
 ; one solution
-; (succeeds ant) succeeds iff ant has a solution
+; (succeeds gl) succeeds iff gl has a solution
 ;
-; (fails (fails ant)) <===> (succeeds ant)
-; but (succeeds ant) =/=> ant
+; (fails (fails gl)) <===> (succeeds gl)
+; but (succeeds gl) =/=> gl
 ; Cf. (equal? (not (not x)) x) is #f in Scheme in general.
 
 (define fails
-  (lambda (ant)
+  (lambda (gl)
     (lambda@ (sk fk subst)
-      (@ ant
+      (@ gl
         (lambda@ (current-fk subst) (fk))
         (lambda () (@ sk fk subst))
         subst))))
 
 (define succeeds
-  (lambda (ant)
+  (lambda (gl)
     (lambda@ (sk fk subst)
-      (@ ant (lambda@ (fk-ign subst-ign) (@ sk fk subst))
+      (@ gl (lambda@ (fk-ign subst-ign) (@ sk fk subst))
 	fk subst))))
 
-; partially-eval-sant: Partially evaluate a semi-antecedent. A
-; semi-antecedent is an expression that, when applied to two
+; partially-eval-sgl: Partially evaluate a semi-goal. A
+; semi-goal is an expression that, when applied to two
 ; arguments, sk and fk, can produce zero, one, or more answers.  Any
-; antecedent can be turned into a semi-antecedent if partially applied
-; to subst.  The following higher-order semi-antecedent takes an
-; antecedent and yields the first answer and another, residual
-; antecedent. The latter, when evaluated, will give the rest of the
-; answers of the original semi-antecedent.  partially-eval-sant could
+; goal can be turned into a semi-goal if partially applied
+; to subst.  The following higher-order semi-goal takes an
+; goal and yields the first answer and another, residual
+; goal. The latter, when evaluated, will give the rest of the
+; answers of the original semi-goal.  partially-eval-sgl could
 ; be implemented with streams (lazy lists). The following is a purely
 ; combinational implementation.
 ;
-; (@ partially-eval-sant sant a b) =>
-;   (b) if sant has no answers
-;   (a s residial-sant) if sant has a answer. That answer is delivered
+; (@ partially-eval-sgl sgl a b) =>
+;   (b) if sgl has no answers
+;   (a s residial-sgl) if sgl has a answer. That answer is delivered
 ;                       in s. 
-; The residial semi-antecedent can be passed to partially-eval-sant
-; again, and so on, to obtain all answers from an antecedent one by one.
+; The residial semi-goal can be passed to partially-eval-sgl
+; again, and so on, to obtain all answers from an goal one by one.
 
 ; The following definition is eta-reduced.
 
-(define (partially-eval-sant sant)
-  (@ sant
+(define (partially-eval-sgl sgl)
+  (@ sgl
     (lambda@ (fk subst a b)
       (@ a subst 
 	(lambda@ (sk1 fk1)
@@ -507,14 +507,14 @@
 	    fk1))))
     (lambda () (lambda@ (a b) (b)))))
 
-(define (ant->sant ant subst)
+(define (gl->sgl gl subst)
   (lambda@ (sk fk)
-    (@ ant sk fk subst)))
+    (@ gl sk fk subst)))
 
 ; An interleaving disjunction.
 ; Declaratively, any-interleave is the same as any.
-; Operationally, any-interleave schedules each component antecedent
-; in round-robin. So, any-interleave is fair: it won't let an antecedent
+; Operationally, any-interleave schedules each component goal
+; in round-robin. So, any-interleave is fair: it won't let an goal
 ; that produces infinitely many answers (such as repeat) starve the others.
 ; any-interleave introduces a breadth-first-like traversal of the
 ; decision tree.
@@ -525,26 +525,26 @@
 (define-syntax any-interleave
   (syntax-rules ()
     ((_) fail)
-    ((_ ant) ant)
-    ((_ ant ...)
+    ((_ gl) gl)
+    ((_ gl ...)
      (lambda@ (sk fk subst)
        (interleave sk fk
-         (list (ant->sant ant subst) ...))))))
+         (list (gl->sgl gl subst) ...))))))
 
-; we treat sants as a sort of a circular list
+; we treat sgls as a sort of a circular list
 (define interleave
-  (lambda (sk fk sants)
+  (lambda (sk fk sgls)
     (cond
-      ((null? sants) (fk))		; all of the sants are finished
-      ((null? (cdr sants))
-      ; only one sants left -- run it through the end
-       (@ (car sants) sk fk))
+      ((null? sgls) (fk))		; all of the sgls are finished
+      ((null? (cdr sgls))
+      ; only one sgls left -- run it through the end
+       (@ (car sgls) sk fk))
       (else
-        (let loop ((curr sants) (residuals '()))
+        (let loop ((curr sgls) (residuals '()))
 	  ; check if the current round is finished
 	  (if (null? curr) (interleave sk fk (reverse residuals))
 	    (@
-	      partially-eval-sant (car curr)
+	      partially-eval-sgl (car curr)
 	      ; (car curr) had an answer
 	      (lambda@ (subst residual)
 	        (@ sk
@@ -555,64 +555,64 @@
 	    (lambda () (loop (cdr curr) residuals)))))))))
 
 ; An interleaving disjunction removing duplicates: any-union
-; This is a true union of the constituent antecedents: it is fair, and
-; it removes overlap in the antecedents to union, if any. Therefore,
-;    (any-union ant ant) ===> ant
-; whereas (any ant ant) =/=> ant
-; because the latter has twice as many answers as ant.
+; This is a true union of the constituent goals: it is fair, and
+; it removes overlap in the goals to union, if any. Therefore,
+;    (any-union gl gl) ===> gl
+; whereas (any gl gl) =/=> gl
+; because the latter has twice as many answers as gl.
 ;
 ; Any-union (or interleave-non-overlap, to be precise) is quite similar
-; to the function interleave above. But now, the order of antecedents
-; matters. Given antecedents ant1 ant2 ... antk ... antn,
-; at the k-th step we try to partially-eval antk. If it yields an answer,
-; we check if ant_{k+1} ... antn can be satisfied with that answer.
-; If any of them does, we disregard the current answer and ask antk for
+; to the function interleave above. But now, the order of goals
+; matters. Given goals gl1 gl2 ... glk ... gln,
+; at the k-th step we try to partially-eval glk. If it yields an answer,
+; we check if gl_{k+1} ... gln can be satisfied with that answer.
+; If any of them does, we disregard the current answer and ask glk for
 ; another one. We maintain the invariant that
-;  ans is an answer of (any-union ant1 ... antn) 
-;  ===> exists i. ans is an answer of ant_i
-;       && forall j>i. ans is not an answer of ant_j
+;  ans is an answer of (any-union gl1 ... gln) 
+;  ===> exists i. ans is an answer of gl_i
+;       && forall j>i. ans is not an answer of gl_j
 ; The latter property guarantees the true union.
 ; Note the code below does not check if answers of each individual
-; antecedent are unique. It is trivial to modify the code so that
-; any-union removes the duplicates not only among the antecedents but
-; also within an antecedent. That change entails a run-time cost. More
+; goal are unique. It is trivial to modify the code so that
+; any-union removes the duplicates not only among the goals but
+; also within an goal. That change entails a run-time cost. More
 ; importantly, it breaks the property
-; (any-union ant ant) ===> ant
-; Only a weaker version, (any-union' ant ant) ===> (any-union' ant)
+; (any-union gl gl) ===> gl
+; Only a weaker version, (any-union' gl gl) ===> (any-union' gl)
 ; would hold. Therefore, we do not make that change.
 
 (define-syntax any-union
   (syntax-rules ()
     ((_) fail)
-    ((_ ant) ant)
-    ((_ ant ...)
+    ((_ gl) gl)
+    ((_ gl ...)
      (lambda@ (sk fk subst)
        (interleave-non-overlap sk fk
-         (list (cons (ant->sant ant subst) ant) ...))))))
+         (list (cons (gl->sgl gl subst) gl) ...))))))
 
-; we treat saants as a sort of a circular list
-; Each element of saants is a pair (sant . ant)
-; where ant is the original antecedent (needed for the satisfiability testing)
-; and sant is the corresponding semi-antecedent or a 
+; we treat sagls as a sort of a circular list
+; Each element of sagls is a pair (sgl . gl)
+; where gl is the original goal (needed for the satisfiability testing)
+; and sgl is the corresponding semi-goal or a 
 ; residual thereof.
 (define interleave-non-overlap
-  (lambda (sk fk saants)
-    (let outer ((saants saants))
+  (lambda (sk fk sagls)
+    (let outer ((sagls sagls))
       (cond
-        ((null? saants) (fk))  ; all of the saants are finished
-        ((null? (cdr saants))  ; only one ant is left -- run it through the end
-	 (@ (caar saants) sk fk))
+        ((null? sagls) (fk))  ; all of the sagls are finished
+        ((null? (cdr sagls))  ; only one gl is left -- run it through the end
+	 (@ (caar sagls) sk fk))
         (else
-	  (let loop ((curr saants)
+	  (let loop ((curr sagls)
                      (residuals '()))
             ; check if the current round is finished
 	    (if (null? curr) (outer (reverse residuals))
                 (@
-                 partially-eval-sant (caar curr)
+                 partially-eval-sgl (caar curr)
                   ; (caar curr) had an answer
                  (lambda@ (subst residual)
                   ; let us see now if the answer, subst, satisfies any of the
-                  ; ants down the curr.
+                  ; gls down the curr.
                    (let check ((to-check (cdr curr)))
                      (if (null? to-check) ; OK, subst is unique, give it to user
                          (@ sk
@@ -622,7 +622,7 @@
                                (cons (cons residual (cdar curr)) residuals)))
                            subst)
                          (@ (cdar to-check)
-                            ; subst was the answer to some other ant: check failed
+                            ; subst was the answer to some other gl: check failed
                             (lambda@ (fk1 subst1) 
                               (loop (cdr curr) 
                                 (cons (cons residual (cdar curr)) residuals)))
@@ -636,7 +636,7 @@
 ; Another if-then-else
 ; (if-some COND THEN)
 ; (if-some COND THEN ELSE)
-; Here COND, THEN, ELSE are antecedents.
+; Here COND, THEN, ELSE are goals.
 ; If COND succeeds at least once, the result is equivalent to
 ;      (all COND TNEN)
 ; If COND fails, the result is the same as ELSE.
@@ -660,7 +660,7 @@
 ; In Prolog, if-some is called a soft-cut (aka *->). In Mercury,
 ; if-some is the regular IF-THEN-ELSE.
 ;
-; We can implement if-some with partially-eval-sant. Given a COND, we
+; We can implement if-some with partially-eval-sgl. Given a COND, we
 ; peel off one answer, if possible. If there is one, we then execute THEN
 ; passing it the answer and the fk from COND so that if THEN fails,
 ; it can obtain another answer. If COND has no answers, we execute
@@ -672,7 +672,7 @@
     ((_ condition then) (all condition then))
     ((_ condition then else)
      (lambda@ (sk fk subst)
-       (@ partially-eval-sant (ant->sant condition subst)
+       (@ partially-eval-sgl (gl->sgl condition subst)
          (lambda@ (ans residual)
            (@ then sk
              ; then failed. Check to see if condition has another answer
@@ -689,22 +689,22 @@
 ; order.
 ;
 ; Motivation.
-; Let us consider the conjunction (all ant1 ant2)
-; where ant1 is (any ant11 ant12) and ant2 is an antecedent with the
-; infinite number of answers (in the environment when either ant11 or
-; ant12 succeed). It is easy to see (all ant1 ant2) will have the
+; Let us consider the conjunction (all gl1 gl2)
+; where gl1 is (any gl11 gl12) and gl2 is an goal with the
+; infinite number of answers (in the environment when either gl11 or
+; gl12 succeed). It is easy to see (all gl1 gl2) will have the
 ; infinite number of answers too -- but only the proper subset of
-; all the possible answers. Indeed, (all ant1 ant2) will essentially
-; be equivalent to (all ant11 ant2). Because ant2 succeeds infinitely
-; many times, the choice ant12 in ant1 will never be explored.
+; all the possible answers. Indeed, (all gl1 gl2) will essentially
+; be equivalent to (all gl11 gl2). Because gl2 succeeds infinitely
+; many times, the choice gl12 in gl1 will never be explored.
 ; We can see that formally:
-; (all ant1 ant2) 
-;   = (all (any ant11 ant12) ant2) 
-;   = (any (all ant11 ant2) (all ant12 ant2))
-; Because (all ant11 ant2) can succeed infinitely many times, it starves
-; the other disjunction, (all ant12 ant2).
+; (all gl1 gl2) 
+;   = (all (any gl11 gl12) gl2) 
+;   = (any (all gl11 gl2) (all gl12 gl2))
+; Because (all gl11 gl2) can succeed infinitely many times, it starves
+; the other disjunction, (all gl12 gl2).
 ; But we know how to deal with that: we just replace any with any-interleave:
-; (all ant1 ant2) --> (any-interleave (all ant11 ant2) (all ant12 ant2))
+; (all gl1 gl2) --> (any-interleave (all gl11 gl2) (all gl12 gl2))
 ;
 ; It seems that the problem is solved? We just re-write our expressions
 ; into the disjunctive normal form, and then replace the top-level
@@ -712,51 +712,51 @@
 ; of fair scheduling and get all the possible solutions of the conjunction
 ; (i.e., recursive enumerability), we need to re-write all the code.
 ; We have to explicitly re-write a conjunction of disjunctions into
-; the disjunctive normal form. That is not that easy considering that ant2
-; will most likely be a recursive antecedent re-invoking the original
+; the disjunctive normal form. That is not that easy considering that gl2
+; will most likely be a recursive goal re-invoking the original
 ; conjunction. That would be a lot of re-writing.
 ;
 ; The conjunction all-interleave effectively does the above `re-writing'
 ; That is, given the example above,
-;	(all-interleave (any ant11 ant12) ant2)
+;	(all-interleave (any gl11 gl12) gl2)
 ; is observationally equivalent to
-;	(any-interleave (all ant11 ant2) (all ant12 ant2))
+;	(any-interleave (all gl11 gl2) (all gl12 gl2))
 ;
 ; The advantage is that we do not need to re-write our conjunctions:
 ; we merely replace `all' with `all-interleave.'
 ; 
-; How can we do that in the general case, (all ant1 ant2)
-; where ant1 is not _explicitly_ a disjunction? We should remember the
-; property of partially-eval-sant: Any antecedent `ant' with at least one
-; answer can be represented as (any ant-1 ant-rest)
-; where ant-1 is a primitive antecedent holding the first answer of `ant',
-; and ant-rest holding the rest of the answers. We then apply the
+; How can we do that in the general case, (all gl1 gl2)
+; where gl1 is not _explicitly_ a disjunction? We should remember the
+; property of partially-eval-sgl: Any goal `gl' with at least one
+; answer can be represented as (any gl-1 gl-rest)
+; where gl-1 is a primitive goal holding the first answer of `gl',
+; and gl-rest holding the rest of the answers. We then apply the
 ; all-any-distributive law and re-write
-; (all-interleave ant1 ant2) 
-; ==> (all-interleave (any ant1-1 ant1-rest) ant2) 
-; ==> (any-interleave (all ant1 ant2) (all-interleave ant1-rest ant2))
+; (all-interleave gl1 gl2) 
+; ==> (all-interleave (any gl1-1 gl1-rest) gl2) 
+; ==> (any-interleave (all gl1 gl2) (all-interleave gl1-rest gl2))
 ;
-; If ant1 has no answers, then (all-interleave ant1 ant2) fails, as
+; If gl1 has no answers, then (all-interleave gl1 gl2) fails, as
 ; a conjunction must.
 ; It is also easy to see that
-; (all-interleave ant1 ant2 ...) is the same as
-; (all-interleave ant1 (all-interleave ant2 ...))
+; (all-interleave gl1 gl2 ...) is the same as
+; (all-interleave gl1 (all-interleave gl2 ...))
 ;
-; Although all-interleave was motivated by an example (all ant1 ant2)
-; where ant1 is finitary and only ant2 is infinitary, the above
+; Although all-interleave was motivated by an example (all gl1 gl2)
+; where gl1 is finitary and only gl2 is infinitary, the above
 ; equations (and the implementation below) show that all-interleave
-; can do the right thing even if ant1 is infinitary as well. To be
+; can do the right thing even if gl1 is infinitary as well. To be
 ; precise, given
 ;
-;	(all-interleave ant1 ant2)
+;	(all-interleave gl1 gl2)
 ;
-; with ant1 and ant2 infinitary, the i-th solution of ant1 will be
+; with gl1 and gl2 infinitary, the i-th solution of gl1 will be
 ; observed in every 2^i-th solution to the whole conjunction. Granted,
 ; all-interleave isn't precisely very fair -- the later solutions of
-; ant1 will appear progressively more rarely -- yet, they will all
+; gl1 will appear progressively more rarely -- yet, they will all
 ; appear. The infinity of c0 is big enough. That is, given any
-; solution to ant1, we will eventually, in finite time, find it in the
-; solution of the whole conjunction (provided ant2 doesn't fail on
+; solution to gl1, we will eventually, in finite time, find it in the
+; solution of the whole conjunction (provided gl2 doesn't fail on
 ; that solution, of course).
 
 
@@ -764,23 +764,23 @@
 (define-syntax all-interleave
   (syntax-rules ()
     ((_) (all))
-    ((_ ant) ant)
-    ((_ ant0 ant1 ...)
+    ((_ gl) gl)
+    ((_ gl0 gl1 ...)
       (lambda@ (sk fk subst)
 	(all-interleave-bin
 	  sk fk
-	  (ant->sant ant0 subst) (all-interleave ant1 ...))))))
+	  (gl->sgl gl0 subst) (all-interleave gl1 ...))))))
 
 (define all-interleave-bin
-  (lambda (sk fk sant1 ant2)
-    (@ partially-eval-sant sant1
+  (lambda (sk fk sgl1 gl2)
+    (@ partially-eval-sgl sgl1
       (lambda@ (ans residual)
 	(interleave sk fk
 	  (list 
-	    (lambda@ (sk fk) (@ ant2 sk fk ans))
-	    (lambda@ (sk fk) (all-interleave-bin sk fk residual ant2))
+	    (lambda@ (sk fk) (@ gl2 sk fk ans))
+	    (lambda@ (sk fk) (all-interleave-bin sk fk residual gl2))
 	    )))
-	  ;ant1 failed
+	  ;gl1 failed
 	  fk)))
 
 
@@ -789,24 +789,24 @@
 ; The current incremented unification of argument passing is quite similar to
 ; the compilation of argument unifications in WAM.
 
-; relation (VAR ...) (to-show TERM ...) [ANT]
+; relation (VAR ...) (to-show TERM ...) [GL]
 ; Defines a relation of arity (length '(TERM ...)) with an optional body
-; ANT. VAR ... are logical variables that are local to the relation, i.e.,
-; appear in TERM or ANT. It's better to list as VAR ... only logical
-; variables that appear in TERM. Variables that appear only in ANT should
+; GL. VAR ... are logical variables that are local to the relation, i.e.,
+; appear in TERM or GL. It's better to list as VAR ... only logical
+; variables that appear in TERM. Variables that appear only in GL should
 ; be introduced with exists. That makes their existential quantification
 ; clearer. Variables that appear in TERM are universally quantified.
 ;
-; relation (head-let TERM ...) [ANT]
+; relation (head-let TERM ...) [GL]
 ; See relation-head-let below.
 ;
-; relation (ANNOT-VAR ...) (to-show TERM ...) [ANT]  (see remark below!)
+; relation (ANNOT-VAR ...) (to-show TERM ...) [GL]  (see remark below!)
 ; where ANNOT-VAR is either a simple VAR or (once VAR)
 ; where 'once' is a distingushed symbol. The latter form introduces
 ; a once-var, aka linear variable. A linear variable appears only once in
 ; TERM ... and only at the top level (that is, one and only one TERM
 ; in the to-show pattern contains ONCE-VAR, and that term is ONCE-VAR
-; itself). In addition, ONCE-VAR must appear at most once in the body ANT.
+; itself). In addition, ONCE-VAR must appear at most once in the body GL.
 ; (Of course, then ONCE-VAR could be _, instead.)
 ; If these conditions are satisfied, we can replace a logical variable
 ; ONCE-VAR with a regular Scheme variable.
@@ -866,25 +866,25 @@
 
 (define-syntax relation
   (syntax-rules (to-show head-let once _)
-    ((_ (head-let head-term ...) ant)
-     (relation-head-let (head-term ...) ant))
+    ((_ (head-let head-term ...) gl)
+     (relation-head-let (head-term ...) gl))
     ((_ (head-let head-term ...))	; not particularly useful without body
      (relation-head-let (head-term ...)))
-    ((_ () (to-show term ...) ant)	; pattern with no vars _is_ linear
-     (relation-head-let (`,term ...) ant))
+    ((_ () (to-show term ...) gl)	; pattern with no vars _is_ linear
+     (relation-head-let (`,term ...) gl))
     ((_ () (to-show term ...))		; the same without body: not too useful
      (relation-head-let (`,term ...)))
-    ((_ (ex-id ...) (to-show term ...) ant)  ; body present
-     (relation "a" () () (ex-id ...) (term ...) ant))
+    ((_ (ex-id ...) (to-show term ...) gl)  ; body present
+     (relation "a" () () (ex-id ...) (term ...) gl))
     ((_ (ex-id ...) (to-show term ...))      ; no body
      (relation "a" () () (ex-id ...) (term ...)))
     ; process the list of variables and handle annotations
-    ((_ "a" vars once-vars ((once id) . ids) terms . ant)
-     (relation "a" vars (id . once-vars) ids terms . ant))
-    ((_ "a" vars once-vars (id . ids) terms . ant)
-     (relation "a" (id . vars) once-vars ids terms . ant))
-    ((_ "a" vars once-vars () terms . ant)
-     (relation "g" vars once-vars () () () (subst) terms . ant))
+    ((_ "a" vars once-vars ((once id) . ids) terms . gl)
+     (relation "a" vars (id . once-vars) ids terms . gl))
+    ((_ "a" vars once-vars (id . ids) terms . gl)
+     (relation "a" (id . vars) once-vars ids terms . gl))
+    ((_ "a" vars once-vars () terms . gl)
+     (relation "g" vars once-vars () () () (subst) terms . gl))
     ; generating temp names for each term in the head
     ; don't generate if the term is a variable that occurs in
     ; once-vars
@@ -892,22 +892,22 @@
     ; parameters, and forget them
     ; also, note and keep track of the first occurrence of a term
     ; that is just a var (bare-var) 
-    ((_ "g" vars once-vars (gs ...) gunis bvars bvar-cl (_ . terms) . ant)
+    ((_ "g" vars once-vars (gs ...) gunis bvars bvar-cl (_ . terms) . gl)
      (relation "g" vars once-vars (gs ... anon) gunis
-       bvars bvar-cl terms . ant))
+       bvars bvar-cl terms . gl))
     ((_ "g" vars once-vars (gs ...) gunis bvars (subst . cls)
-           (term . terms) . ant)
+           (term . terms) . gl)
      (id-memv?? term once-vars 
        ; success continuation: term is a once-var
        (relation "g" vars once-vars (gs ... term) gunis bvars (subst . cls)
-	 terms . ant)
+	 terms . gl)
        ; failure continuation: term is not a once-var
        (id-memv?? term vars
 	 ; term is a bare var
 	 (id-memv?? term bvars
 	   ; term is a bare var, but we have seen it already: general case
 	   (relation "g" vars once-vars  (gs ... g) ((g . term) . gunis) 
-	     bvars (subst . cls) terms . ant)
+	     bvars (subst . cls) terms . gl)
 	   ; term is a bare var, and we have not seen it
 	   (relation "g" vars once-vars (gs ... g) gunis
 	     (term . bvars)
@@ -918,30 +918,30 @@
 	       (term (if fast-path? (commitment->term (car subst)) term))
 	       (subst (if fast-path? (cdr subst) subst))
 	       . cls)
-	     terms . ant))
+	     terms . gl))
 	 ; term is not a bare var
 	 (relation "g" vars once-vars  (gs ... g) ((g . term) . gunis) 
-	   bvars (subst . cls) terms . ant))))
-    ((_ "g" vars once-vars gs gunis bvars bvar-cl () . ant)
-     (relation "f" vars once-vars gs gunis bvar-cl . ant))
+	   bvars (subst . cls) terms . gl))))
+    ((_ "g" vars once-vars gs gunis bvars bvar-cl () . gl)
+     (relation "f" vars once-vars gs gunis bvar-cl . gl))
 
     ; Final: writing the code
-    ((_ "f" vars () () () (subst) ant)   ; no arguments (no head-tests)
+    ((_ "f" vars () () () (subst) gl)   ; no arguments (no head-tests)
       (lambda ()
-	(exists vars ant)))
+	(exists vars gl)))
                                     ; no tests but pure binding
-    ((_ "f" (ex-id ...) once-vars (g ...) () (subst) ant)
+    ((_ "f" (ex-id ...) once-vars (g ...) () (subst) gl)
      (lambda (g ...)
-       (exists (ex-id ...) ant)))
+       (exists (ex-id ...) gl)))
 				    ; the most general
     ((_ "f" (ex-id ...) once-vars (g ...) ((gv . term) ...) 
-       (subst let*-clause ...) ant ...)
+       (subst let*-clause ...) gl ...)
      (lambda (g ...)
        (exists (ex-id ...)
 	 (lambda@ (sk fk subst)
 	   (let* (let*-clause ...)
 	     (let*-and (fk) ((subst (unify gv term subst)) ...)
-	       (@ ant ... sk fk subst)))))))))
+	       (@ gl ... sk fk subst)))))))))
 
 ; A macro-expand-time memv function for identifiers
 ;	id-memv?? FORM (ID ...) KT KF
@@ -978,10 +978,10 @@
 ;   (id-memv?? x (x a b) 'OK #f))
 
 
-; relation-head-let (head-term ...) ant 
+; relation-head-let (head-term ...) gl 
 ; A simpler, and more efficient kind of relation. The simplicity comes
 ; from a simpler pattern at the head of the relation. The pattern must
-; be linear and shallow with respect to introduced variables.  The ant
+; be linear and shallow with respect to introduced variables.  The gl
 ; is optional (although omitting it doesn't make much sense in
 ; practice) There are two kinds of head-terms.  One kind is an
 ; identifier. This identifier is taken to be a logical identifier, to
@@ -1021,25 +1021,25 @@
 
 (define-syntax relation-head-let
   (syntax-rules ()
-    ((_ (head-term ...) . ants)
-     (relation-head-let "g" () (head-term ...) (head-term ...) . ants))
+    ((_ (head-term ...) . gls)
+     (relation-head-let "g" () (head-term ...) (head-term ...) . gls))
     ; generate names of formal parameters
     ((_ "g" (genvar ...) ((head-term . tail-term) . ht-rest)
-       head-terms . ants)
-     (relation-head-let "g" (genvar ... g) ht-rest head-terms . ants))
-    ((_ "g" (genvar ...) (head-term . ht-rest) head-terms . ants)
-     (relation-head-let "g" (genvar ... head-term) ht-rest head-terms . ants))
-    ((_ "g" genvars  () head-terms . ants)
-     (relation-head-let "d" () () genvars head-terms genvars . ants))
+       head-terms . gls)
+     (relation-head-let "g" (genvar ... g) ht-rest head-terms . gls))
+    ((_ "g" (genvar ...) (head-term . ht-rest) head-terms . gls)
+     (relation-head-let "g" (genvar ... head-term) ht-rest head-terms . gls))
+    ((_ "g" genvars  () head-terms . gls)
+     (relation-head-let "d" () () genvars head-terms genvars . gls))
     ; partition head-terms into vars and others
-    ((_ "d" vars others (gv . gv-rest) ((hth . htt) . ht-rest) gvs . ants)
+    ((_ "d" vars others (gv . gv-rest) ((hth . htt) . ht-rest) gvs . gls)
      (relation-head-let "d" vars ((gv (hth . htt)) . others)
-       gv-rest ht-rest gvs . ants))
-    ((_ "d" vars others (gv . gv-rest) (htv . ht-rest) gvs . ants)
+       gv-rest ht-rest gvs . gls))
+    ((_ "d" vars others (gv . gv-rest) (htv . ht-rest) gvs . gls)
      (relation-head-let "d" (htv . vars) others
-       gv-rest ht-rest gvs . ants))
-    ((_ "d" vars others () () gvs . ants)
-     (relation-head-let "f" vars others gvs . ants))
+       gv-rest ht-rest gvs . gls))
+    ((_ "d" vars others () () gvs . gls)
+     (relation-head-let "f" vars others gvs . gls))
  
     ; final generation
     ((_ "f" vars ((gv term) ...) gvs) ; no body
@@ -1048,35 +1048,35 @@
 	 (let*-and (fk) ((subst (unify gv term subst)) ...)
 	   (@ sk fk subst)))))
 
-    ((_ "f" (var0 ...) ((gvo term) ...) gvs ant)
+    ((_ "f" (var0 ...) ((gvo term) ...) gvs gl)
      (lambda gvs
        (lambda@ (sk fk subst)			; first unify the constants
 	 (let*-and (fk) ((subst (unify gvo term subst)) ...)
            (let ((var0 (if (eq? var0 _) (logical-variable '?) var0)) ...)
-             (@ ant sk fk subst))))))))
+             (@ gl sk fk subst))))))))
 
 ; (define-syntax relation/cut
 ;   (syntax-rules (to-show)
-;     ((_ cut-id (ex-id ...) (to-show x ...) ant ...)
-;      (relation/cut cut-id (ex-id ...) () (x ...) (x ...) ant ...))
-;     ((_ cut-id ex-ids (var ...) (x0 x1 ...) xs ant ...)
-;      (relation/cut cut-id ex-ids (var ... g) (x1 ...) xs ant ...))
-;     ((_ cut-id (ex-id ...) (g ...) () (x ...) ant ...)
+;     ((_ cut-id (ex-id ...) (to-show x ...) gl ...)
+;      (relation/cut cut-id (ex-id ...) () (x ...) (x ...) gl ...))
+;     ((_ cut-id ex-ids (var ...) (x0 x1 ...) xs gl ...)
+;      (relation/cut cut-id ex-ids (var ... g) (x1 ...) xs gl ...))
+;     ((_ cut-id (ex-id ...) (g ...) () (x ...) gl ...)
 ;      (lambda (g ...)
 ;        (exists (ex-id ...)
 ;          (all! (== g x) ...
 ;            (lambda@ (sk fk subst cutk)
 ;              (let ((cut-id (!! cutk)))
-;                (@ (all ant ...) sk fk subst cutk)))))))))
+;                (@ (all gl ...) sk fk subst cutk)))))))))
 
 (define-syntax fact
   (syntax-rules ()
     ((_ (ex-id ...) term ...)
      (relation (ex-id ...) (to-show term ...)))))
 
-; Lifting from antecedents to relations
-; (define-rel-lifted-comb rel-syntax ant-proc-or-syntax)
-; Given (ant-proc-or-syntax ant ...)
+; Lifting from goals to relations
+; (define-rel-lifted-comb rel-syntax gl-proc-or-syntax)
+; Given (gl-proc-or-syntax gl ...)
 ; define 
 ; (rel-syntax (id ...) rel-exp ...)
 ; We should make rel-syntax behave as a CBV function, that is,
@@ -1102,41 +1102,41 @@
 
 (define-syntax define-rel-lifted-comb
   (syntax-rules ()
-    ((_ rel-syntax-name ant-proc-or-syntax)
+    ((_ rel-syntax-name gl-proc-or-syntax)
      (define-syntax rel-syntax-name
        (syntax-rules ()
          ((_ ids . rel-exps)
-          (lift-ant-to-rel-aux ant-proc-or-syntax ids () . rel-exps)))))))
+          (lift-gl-to-rel-aux gl-proc-or-syntax ids () . rel-exps)))))))
 
-(define-syntax lift-ant-to-rel-aux
+(define-syntax lift-gl-to-rel-aux
   (syntax-rules ()
-    ((_ ant-handler ids ((g rel-var) ...))
+    ((_ gl-handler ids ((g rel-var) ...))
      (let ((g rel-var) ...)
        (lambda ids
-         (ant-handler (g . ids) ...))))
-    ((_ ant-handler ids (let-pair ...) rel-exp0 rel-exp1 ...)
-     (lift-ant-to-rel-aux ant-handler ids 
+         (gl-handler (g . ids) ...))))
+    ((_ gl-handler ids (let-pair ...) rel-exp0 rel-exp1 ...)
+     (lift-gl-to-rel-aux gl-handler ids 
        (let-pair ... (g rel-exp0)) rel-exp1 ...))))
 
 (define-rel-lifted-comb extend-relation any)
 
-; The following  antecedent-to-relations 
+; The following  goal-to-relations 
 ; transformers are roughly equivalent. I don't know which is better.
 ; see examples below.
 
-; (lift-to-relations ids (ant-comb rel rel ...))
+; (lift-to-relations ids (gl-comb rel rel ...))
 (define-syntax lift-to-relations
   (syntax-rules ()
-    ((_ ids (ant-comb rel ...))
-     (lift-ant-to-rel-aux ant-comb ids () rel ...))))
+    ((_ ids (gl-comb rel ...))
+     (lift-gl-to-rel-aux gl-comb ids () rel ...))))
 
-; (let-ants ids ((name rel) ...) body)
+; (let-gls ids ((name rel) ...) body)
 ; NB: some macro systems do not like if 'ids' below is replaced by (id ...)
-(define-syntax let-ants
+(define-syntax let-gls
   (syntax-rules ()
-    ((_ ids ((ant-name rel-exp) ...) body)
+    ((_ ids ((gl-name rel-exp) ...) body)
      (lambda ids
-       (let ((ant-name (rel-exp . ids)) ...)
+       (let ((gl-name (rel-exp . ids)) ...)
          body)))))
 
 ; Unify lifted to be a binary relation
@@ -1153,15 +1153,15 @@
 
 
 ;	query (redo-k subst id ...) A SE ... -> result or '()
-; The macro 'query' runs the antecedent A in the empty
+; The macro 'query' runs the goal A in the empty
 ; initial substitution, and reifies the resulting
 ; answer: the substitution and the redo-continuation bound
 ; to fresh variables with the names supplied by the user.
 ; The substitution and the redo continuation can then be used
 ; by Scheme expressions SE ...
-; Before running the antecedent, the macro creates logical variables
+; Before running the goal, the macro creates logical variables
 ; id ... for use in A and SE ...
-; If the antecedent fails, '() is returned and SE ... are not evaluated.
+; If the goal fails, '() is returned and SE ... are not evaluated.
 ; Note the similarity with shift/reset-based programming
 ; where the immediate return signifies "failure" and the invocation
 ; of the continuation a "success"
@@ -1185,11 +1185,11 @@
 
 (define-syntax solve
   (syntax-rules ()
-    ((_ n (var0 ...) ant)
+    ((_ n (var0 ...) gl)
       (if (<= n 0) '()
 	(stream-prefix (- n 1)
 	  (query (redo-k subst var0 ...)
-	    ant
+	    gl
 	    (cons (reify-subst (list var0 ...) subst) redo-k)))))))
 
 
@@ -1202,17 +1202,17 @@
 
 (define-syntax project
   (syntax-rules ()
-    ((_ (var ...) ant)
+    ((_ (var ...) gl)
      (lambda@ (sk fk subst)
        (let ((var (nonvar! (subst-in var subst))) ...)
-	 (@ ant sk fk subst))))))
+	 (@ gl sk fk subst))))))
 
 (define-syntax project/no-check
   (syntax-rules ()
-    ((_ (var ...) ant)
+    ((_ (var ...) gl)
      (lambda@ (sk fk subst)
        (let ((var (subst-in var subst)) ...)
-	 (@ ant sk fk subst))))))
+	 (@ gl sk fk subst))))))
 
 (define-syntax predicate
   (syntax-rules ()
@@ -1228,7 +1228,7 @@
       t)))
 
 ; TRACE-VARS TITLE (VAR ...)
-; Is a deterministic antecedent that prints the current values of VARS
+; Is a deterministic goal that prints the current values of VARS
 ; TITLE is any displayable thing.
 
 ; (define-syntax trace-vars
@@ -1278,7 +1278,7 @@
     ((_ limit ids rel ...)
       (let ((depth-counter-var (logical-variable '*depth-counter*)))
 	(lambda ids
-	  (let ((ant (any (rel . ids) ...)))
+	  (let ((gl (any (rel . ids) ...)))
 	    (lambda@ (sk fk subst)
 	      (cond
 		((assq depth-counter-var subst)
@@ -1288,10 +1288,10 @@
 			   (fk)
 			   (let ((s (extend-subst depth-counter-var
 				      (+ counter 1) subst)))
-			     (@ ant sk fk s))))))
+			     (@ gl sk fk s))))))
 		(else
 		  (let ((s (extend-subst depth-counter-var 1 subst)))
-		    (@ ant sk fk s)))))))))
+		    (@ gl sk fk s)))))))))
     ))
 
 ; ?- help(call_with_depth_limit/3).
@@ -1683,7 +1683,7 @@
 ; if-then-else. But we emulate it...
     (let
       ((grandpa
-	 (let-ants (a1 a2) ((grandpa/father grandpa/father)
+	 (let-gls (a1 a2) ((grandpa/father grandpa/father)
 			    (grandpa/mother grandpa/mother))
 	   (if-only (succeeds grandpa/father) grandpa/father grandpa/mother)))
 	)
@@ -1701,7 +1701,7 @@
 ; The same as above, with if-all! -- just to test the latter.
     (let
       ((grandpa
-	 (let-ants (a1 a2) ((grandpa/father grandpa/father)
+	 (let-gls (a1 a2) ((grandpa/father grandpa/father)
 			    (grandpa/mother grandpa/mother))
 	   (if-only (all! (succeeds grandpa/father) (succeeds grandpa/father))
 	     grandpa/father grandpa/mother))))
@@ -1722,7 +1722,7 @@
 ; Now do it with soft-cuts
     (let
       ((grandpa
-	 (let-ants (a1 a2) ((grandpa/father grandpa/father)
+	 (let-gls (a1 a2) ((grandpa/father grandpa/father)
 			    (grandpa/mother grandpa/mother))
 	   (if-some grandpa/father succeed grandpa/mother)))
 	)
@@ -1741,7 +1741,7 @@
 	   (exists (parent)
 	     (all! (mother grandad parent)))))
 	(no-grandma-grandpa
-	  (let-ants (a1 a2) ((a-grandma a-grandma)
+	  (let-gls (a1 a2) ((a-grandma a-grandma)
 			     (grandpa (lift-to-relations (a1 a2)
 					(all!
 					  (extend-relation (a1 a2) 
@@ -1766,19 +1766,19 @@
 	(fact () 'tad 'carl)))
     )
 
-  (test-check 'test-partially-eval-sant
+  (test-check 'test-partially-eval-sgl
    (let-lv (p1 p2)
-    (let* ((parents-of-scouts-sant
-	     (ant->sant (parents-of-scouts p1 p2) empty-subst))
+    (let* ((parents-of-scouts-sgl
+	     (gl->sgl (parents-of-scouts p1 p2) empty-subst))
            (cons@ (lambda@ (x y) (cons x y)))
            (split1 (@ 
-                    partially-eval-sant parents-of-scouts-sant
+                    partially-eval-sgl parents-of-scouts-sgl
                     cons@ (lambda () '())))
            (a1 (car split1))
-           (split2 (@ partially-eval-sant (cdr split1) cons@
+           (split2 (@ partially-eval-sgl (cdr split1) cons@
                      (lambda () '())))
            (a2 (car split2))
-           (split3 (@ partially-eval-sant (cdr split2) cons@
+           (split3 (@ partially-eval-sgl (cdr split2) cons@
                      (lambda () '())))
            (a3 (car split3)))
       (map (lambda (subst)

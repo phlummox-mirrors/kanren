@@ -795,7 +795,7 @@
 	(any (== b '(1 1)) (== b `(,_ ,_ ,_ . ,_))) ; b >= 3
 	(<ol b n)			; b becomes L-instantiated
 	                                ; If b was L-instantiated, the previous
-					; ant had only *one* answer
+					; goal had only *one* answer
 	(exists (bw nw nw1 bw1 ql1 ql qh qdh qd bql bqd bq bq1)
 	 (all
 	  (exp2 b '() bw1)
@@ -836,8 +836,8 @@
 
 (define-syntax test
   (syntax-rules ()
-    ((_ (x) ant)
-      (query (redok subst x) ant
+    ((_ (x) gl)
+      (query (redok subst x) gl
 	(display (trans (subst-in x subst)))
 	(newline)))))
 

@@ -80,7 +80,7 @@
 ; The association '(<var-name> generic <type-gen>)' asserts that
 ; <var-name> is given a _generic_ type. <type-gen> then is a
 ; predicate of arity 1. To be more precise, (<type-gen> <type>)
-; is an antecedent that succeeds or fails depending on the fact if
+; is an goal that succeeds or fails depending on the fact if
 ; <type> is an instance of a generic type represented by <type-gen>.
 ; 
 ; This is precisely the logical meaning of generalization, as

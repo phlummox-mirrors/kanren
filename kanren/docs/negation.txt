@@ -96,14 +96,14 @@ trivially define the infamous 'var?' predicate:
 outlaw the cases where negation and related 'condo' and
 committed-choice cause the problem. We propose:
 
-G Rule: (not ant) is admitted if and only if: when 'ant' succeeds it
+G Rule: (not gl) is admitted if and only if: when 'gl' succeeds it
 does not change the instantiatedness of any visible logical
 variables. In short: 'not' is admitted only for observably ground
 predicates.
 
-The qualification 'observable' says that 'ant' may introduce its own local
-logical variables. However, 'ant' may not bind them to any logical
-variable that existed before 'ant' is evaluated. That is, if 'ant'
+The qualification 'observable' says that 'gl' may introduce its own local
+logical variables. However, 'gl' may not bind them to any logical
+variable that existed before 'gl' is evaluated. That is, if 'gl'
 chooses to bind logical variables, that fact should not be observable.
 
 Justifications for the G Rule.
@@ -132,9 +132,9 @@ other words,  (not (not (== x #t))) is not admissible in the context
 where 'x' is uninstantiated). If 'x' is bound, the latter conjunction
 always fails. 
 
-In other words: (not (not ant)) is tantamount to evaluating 'ant' and
+In other words: (not (not gl)) is tantamount to evaluating 'gl' and
 disregarding whatever bindings it may have made. According to G Rule,
-(not (not ant)) is admissible provided 'ant' did not make any
+(not (not gl)) is admissible provided 'gl' did not make any
 observable bindings. So, we can ignore new substitutions only if there
 is nothing new anyway.
 
@@ -158,7 +158,7 @@ it is safe: where it is used to check for satisfiability.
 
 
 Bottom line: G Rule does not restore the axiom of comprehension. Some
-predicates, such as (not ant), cannot be used both as membership tests
+predicates, such as (not gl), cannot be used both as membership tests
 and generators of their extensions. G Rule merely outlaws the usage of
 those crippled predicates in the context they may not, logically, be
 used.
@@ -174,23 +174,23 @@ Added on Oct 18:
 
 The following are comments to our previous discussions.
 
-Regarding Rule G: variables that appear in antecedents with explicit
+Regarding Rule G: variables that appear in goals with explicit
 or implicit negation (such as condo) must be fully instantiated (or,
-in a more general formulation: such antecedents must not change the
+in a more general formulation: such goals must not change the
 instantiatedness status of any existing logic variable).
 
 I have realized that this rule is a particular case of a general
 Datalog safety rule: a predicate is safe if all of its clauses are
 safe. A clause is safe if it is either a ground fact, or it is a rule
 all of whose variables are safe. A variable is safe if it appears in
-the body of the rule in a non-negated safe atom (that is, antecedent).
+the body of the rule in a non-negated safe atom (that is, goal).
 
 In Datalog, the order of clauses and the order of conjunctions within
-a clause are immaterial. If an antecedent is negated or includes
-negation, all of its variables must appear in a safe antecedent. A
-variable that appears in a safe antecedent will be grounded, sooner or
+a clause are immaterial. If an goal is negated or includes
+negation, all of its variables must appear in a safe goal. A
+variable that appears in a safe goal will be grounded, sooner or
 later. So, conjunctions in a safe Datalog program can be reordered in
-such a way so that antecedents involving negation will have all their
+such a way so that goals involving negation will have all their
 variables instantiated.
 
 One can see that the safety condition is essentially a Restricted
