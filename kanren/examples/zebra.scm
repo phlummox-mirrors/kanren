@@ -93,3 +93,10 @@
 ;     11 ms elapsed cpu time
 ;     11 ms elapsed real time
 ;     532912 bytes allocated
+
+; For version of kanren 3.53 (increased sharing during unification)
+; (time (solution (h) ...))
+;     no collections
+;     7 ms elapsed cpu time
+;     8 ms elapsed real time
+;     443792 bytes allocated
