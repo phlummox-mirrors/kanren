@@ -168,30 +168,6 @@
             [xxx (var 'x)])
         `(,x 3 ,xx 5 ,xxx ,xxx ,xx ,x)))))
 
-(define unify-check
-  (lambda (v w s)
-    (let ((v (walk v s))
-          (w (walk w s)))
-      (cond
-        ((eq? v w) s)
-        ((var? v)
-         (cond
-           ((occurs? v w s) #f)
-           (else (ext-s v w s))))
-        ((var? w)
-         (cond
-           ((occurs? w v s) #f)
-           (else (ext-s w v s))))
-        ((and (pair? v) (pair? w))
-         (cond
-           ((unify-check (car v) (car w) s) =>
-            (lambda (s)
-              (unify-check (cdr v) (cdr w) s)))
-           (else #f)))
-        ((or (pair? v) (pair? w)) #f)
-        ((equal? v w) s)
-        (else #f)))))
-
 (define unify
   (lambda (v w s)
     (let ((v (walk v s))
@@ -209,6 +185,33 @@
         ((or (pair? v) (pair? w)) #f)
         ((equal? v w) s)
         (else #f)))))
+
+(define unify
+  (lambda (v w s)
+    (let ((v (walk v s))
+          (w (walk w s)))
+      (cond
+        ((eq? v w) s)
+        ((var? v) (if (var? w) (ext-s-ordered v w s) (ext-s v w s)))
+        ((var? w) (ext-s w v s))
+        ((and (pair? v) (pair? w))
+         (cond
+           ((unify (car v) (car w) s) =>
+            (lambda (s)
+              (unify (cdr v) (cdr w) s)))
+           (else #f)))
+        ((or (pair? v) (pair? w)) #f)
+        ((equal? v w) s)
+        (else #f)))))
+
+(define ext-s-ordered 
+  (lambda (v w s) 
+    (cond 
+      ((string>?
+         (symbol->string (var-id v)) 
+         (symbol->string (var-id w))) 
+       (ext-s v w s)) 
+      (else (ext-s w v s)))))
 
 (define unify-check
   (lambda (v w s)
