@@ -50,3 +50,37 @@
 	     '(id ...) (concretize `(,id ...)))
       (newline)
       (all))))
+
+
+(define-syntax relation
+  (syntax-rules (to-show)
+    [(_ (ex-id* ...) (to-show Term* ...) ant)
+     (relation-aux (ex-id* ...) () (Term* ...) (Term* ...) ant)]))
+
+(define-syntax relation-aux
+  (syntax-rules ()
+    [(_ ex-ids (var* ...) () (Term* ...) ant)
+     (lambda (var* ...)
+       (exists ex-ids
+	 (ef/only (all!! (== var* Term*) ...) ant (any))))]
+    [(_ ex-ids (var* ...) (Term Term* ...) Terms ant)
+     (relation-aux ex-ids (var* ... g) (Term* ...) Terms ant)]))
+
+(def-syntax (fact (ex-id* ...) Term* ...)
+  (relation (ex-id* ...) (to-show Term* ...) (all)))
+
+(def-syntax (extend-relation (arity-id* ...) rel* ...)
+  (construct-relation any (arity-id* ...) () rel* ...))
+
+(define-syntax construct-relation
+  (syntax-rules ()
+    [(_ any (arity-id* ...) ([g rel] ...))
+     (let ([g rel] ...)
+       (lambda (arity-id* ...)
+         (any (g arity-id* ...) ...)))]
+    [(_ any (arity-id* ...) (let-pair ...) rel rel* ...)
+     (construct-relation any (arity-id* ...) (let-pair ... [g rel]) rel* ...)]))
+
+(def-syntax (intersect-relation (arity-id* ...) rel* ...)
+  (construct-relation all (arity-id* ...) () rel* ...))
+  

@@ -1,6 +1,3 @@
-(load "minikanrensupport.scm")
-(load "minikanren.scm")
-
 (define father
   (lambda (dad child)
     (all!! (== dad 'jon) (== child 'sam))))
@@ -219,3 +216,35 @@
       (newline))))
 
 (test)
+
+(define scouts
+  (extend-relation (s)
+    (fact () 'rob)
+    (fact () 'sue)
+    (fact () 'sal)))
+
+(define athletes
+  (extend-relation (a)
+    (fact () 'roz)
+    (fact () 'sue)
+    (fact () 'sal)))
+
+(define busy-children
+  (intersect-relation (c)
+    scouts
+    athletes))
+
+(define social-children
+  (extend-relation (c)
+    scouts
+    athletes))
+
+(define test2
+  (lambda ()
+    (query (fk subst c) (all (busy-children c) (trace-vars "::" (c)) (any)) #t)
+    (display "------------------------------------")
+    (newline)
+    (query (fk subst c) (all (social-children c) (trace-vars "::" (c)) (any)) #t)))
+
+(test2)
+    

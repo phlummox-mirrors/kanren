@@ -173,15 +173,13 @@
       [(eq? lst _) (logical-variable '*anon)]
       [(not (pair? lst)) #f]
       [(null? (cdr lst))
-	(let [(new-car (rebuild-without-anons (car lst)))]
-	  (and new-car (cons new-car '())))]
+       (let ([new-car (rebuild-without-anons (car lst))])
+         (and new-car (cons new-car '())))]
       [else
-	(let [(new-car (rebuild-without-anons (car lst)))
-              (new-cdr (rebuild-without-anons (cdr lst)))]
-	  (if new-car
-	    (cons new-car (or new-cdr (cdr lst)))
-	    (and new-cdr (cons (car lst) new-cdr))))])))
-
-
+        (let ([new-car (rebuild-without-anons (car lst))]
+              [new-cdr (rebuild-without-anons (cdr lst))])
+          (if new-car
+            (cons new-car (or new-cdr (cdr lst)))
+            (and new-cdr (cons (car lst) new-cdr))))])))
 
 
