@@ -1464,7 +1464,7 @@
   #t)
 
 
-;	query (redo-k subst id ...) A SE ... -> result or #f
+;	query (redo-k subst id ...) A SE ... -> result or '()
 ; The macro 'query' runs the antecedent A in the empty
 ; initial substitution, and reifies the resulting
 ; answer: the substitution and the redo-continuation bound
@@ -2037,13 +2037,11 @@
      (promise-one-answer
        (project/no-check (var0 ...)
          (predicate
-           (begin
-             (display title)
-             (display " ")
-             (display '(var0 ...))
-             (display " ")
-             (display (concretize `(,var0 ...)))
-             (newline)))))]))
+	   (for-each 
+	     (lambda (name val)
+	       (cout title " " name ": " val nl))
+             '(var0 ...) (concretize `(,var0 ...)))
+	   )))]))
 
 (define grandpa
   (relation (grandad grandchild)
@@ -3662,23 +3660,36 @@
       [(var? y) #f]                     ; x is not a var
       [else (equal? x y)])))
 
-(define depth-counter-var (let-lv (*depth-counter-var*) *depth-counter-var*))
-
-; Run the antecedent no more than n times, recursively
-(define with-depth
-  (lambda (limit ant)
-    (lambda@ (sk fk subst)
-      (cond
-        [(assq depth-counter-var subst)
-         => (lambda (cmt)
-              (let ([counter (commitment->term cmt)])
-                (if (= counter limit)
-                  (fk)
-                  (let ([s (extend-subst depth-counter-var (+ counter 1) subst)])
-                    (@ ant sk fk s)))))]
-        [else
-          (let ([s (extend-subst depth-counter-var 0 subst)])
-            (@ ant sk fk s))]))))
+; extend-relation-with-recur-limit LIMIT VARS RELS -> REL
+; This is a variation of 'extend-relation' that makes sure
+; that the extended relation is not recursively entered more
+; than LIMIT times. The form extend-relation-with-recur-limit
+; can be used to cut a left-recursive relation, and to implement
+; an iterative deepening strategy.
+; extend-relation-with-recur-limit must be a special form
+; because we need to define the depth-counter-var
+; outside of relations' lambda (so we count the recursive invocations
+; for all arguments).
+(define-syntax extend-relation-with-recur-limit
+  (syntax-rules ()
+    ((_ limit ids rel ...)
+      (let ((depth-counter-var (logical-variable '*depth-counter*)))
+	(lambda ids
+	  (let ((ant (any (rel . ids) ...)))
+	    (lambda@ (sk fk subst)
+	      (cond
+		[(assq depth-counter-var subst)
+		  => (lambda (cmt)
+		       (let ([counter (commitment->term cmt)])
+			 (if (>= counter limit)
+			   (fk)
+			   (let ([s (extend-subst depth-counter-var
+				      (+ counter 1) subst)])
+			     (@ ant sk fk s)))))]
+		[else
+		  (let ([s (extend-subst depth-counter-var 0 subst)])
+		    (@ ant sk fk s))]))))))
+    ))
 
 (cout nl "Append with limited depth" nl)
 ; In Prolog, we normally write:
@@ -3698,11 +3709,9 @@
     (extend-rel l1 l2 l3)))
 
 (define extend-rel
-  (lambda (a b c)
-    (with-depth 5
-      (any
-	(extend-clause-1 a b c)
-        (extend-clause-2 a b c)))))
+  (extend-relation-with-recur-limit 5 (a b c)
+    extend-clause-1
+    extend-clause-2))
 
 ; Note (solve 100 ...)
 ; Here 100 is just a large number: we want to print all solutions
@@ -3711,11 +3720,9 @@
   nl)
 
 (define extend-rel
-  (lambda (a b c)
-    (with-depth 3
-      (any
-	(extend-clause-2 a b c)
-        (extend-clause-1 a b c)))))
+  (extend-relation-with-recur-limit 3 (a b c)
+    extend-clause-2
+    extend-clause-1))
 
 (cout nl "Extend: clause2 first. In Prolog, it would diverge!: " 
   (solve 100 (a b c) (extend-rel a b c)) nl)

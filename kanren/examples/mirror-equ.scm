@@ -121,18 +121,27 @@
 ;     (!pf (goal (root t1 t2)) [(goal t1) (goal t2)  mirror-axiom-2])))
 
 
+
+(define-syntax un@ ; uncurry 
+  (syntax-rules ()
+    ((_ proc arg1 ...)
+      (lambda (arg1 ...) (@ proc arg1 ...)))))
+
 ; The initial assumptions: just the btree
 ;(define init-kb (Y btree))
+; Note that in order to be effective, 
+; extend-relation-with-recur-limit should not be under lambda!
+; We want to use the same recursion count for all
+; entrances to init-kb-coll.
+; Also note that the limit 5 is the number of axioms in init-kb-coll
+; plus one. This count will guarantee that each axiom will be tried
+; once, but not more than twice.
 (define init-kb-coll
-  (lambda (kb)
-    (lambda (t)
-      (with-depth 5
-	(any
-	  ((btree kb) t)
-	  ((myeq-axioms kb) t)
-	  ((myeq-axioms-mirror kb) t)
-	  ((myeq-axioms-trees kb) t)
-	)))))
+  (extend-relation-with-recur-limit 5 (kb t)
+    (un@ btree kb t)
+    (un@ myeq-axioms kb t)
+    (un@ myeq-axioms-mirror kb t)
+    (un@ myeq-axioms-trees kb t)))
 
 (test-check "First check the base case, using goal-fwd"
   (query (_ subst)
@@ -140,7 +149,7 @@
 	    (Y (lambda (kb)
 		 (extend-relation (t) 
 		   (mirror-axiom-eq-1 kb)
-		   (init-kb-coll kb))))))
+		   (lambda (t) (init-kb-coll kb t)))))))
       (let ((kb1
 	      (extend-relation (t) (goal-fwd kb0) kb0)))
 	(kb1 '(goal (leaf x))))) ; note, x is an eigenvariable!
@@ -155,7 +164,7 @@
 	    (Y
 	      (lambda (kb)
 		(extend-relation (t)
-		  (init-kb-coll kb)
+		  (lambda (t) (init-kb-coll kb t))
 		  (goal-rev kb)
 		  (fact () '(goal t1))
 		  (fact () '(goal t2)))))))
@@ -171,7 +180,7 @@
 	    (Y
 	      (lambda (kb)
 		(extend-relation (t)
-		  (init-kb-coll kb)
+		  (lambda (t) (init-kb-coll kb t))
 		  (goal-rev kb)
 		  (mirror-axiom-eq-2 kb)
 		  (fact () '(goal t1))
@@ -186,7 +195,7 @@
           (Y
             (lambda (kb)
               (extend-relation (t)
-                (init-kb-coll kb)
+                (lambda (t) (init-kb-coll kb t))
                 (fact () '(goal t1))
                 (fact () '(goal t2))
                 (mirror-axiom-eq-2 kb)
@@ -203,7 +212,7 @@
 	    (Y
 	      (lambda (kb)
 		(extend-relation (t)
-		  (init-kb-coll kb)
+		  (lambda (t) (init-kb-coll kb t))
 		  (fact () '(goal t1))
 		  (fact () '(goal t2))
 		  (mirror-axiom-eq-2 kb)

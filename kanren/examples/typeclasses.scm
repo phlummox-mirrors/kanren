@@ -45,11 +45,9 @@
      typeclass-C-instance-2))
 
 (define typeclass-C
-  (lambda (a b c)
-    (with-depth 2
-      (any
-	(typeclass-C-instance-1 a b c)
-        (typeclass-C-instance-2 a b c)))))
+  (extend-relation-with-recur-limit 2 (a b c)
+    typeclass-C-instance-1
+    typeclass-C-instance-2))
 
 (printf "~%Counter-example: ~s~%"
   (solution (a b c1 c2)
@@ -67,14 +65,12 @@
 ;
 
 (define typeclass-F
-  (lambda (a b)
-    (with-depth 10
-      (any
-	((relation (a b)
-	   (to-show `(list ,a) `(list ,b))
-	   (typeclass-F a b)) a b)
-	((relation (a)
-	   (to-show `(list ,a) a)) a b)))))
+  (extend-relation-with-recur-limit 10 (a b)
+    (relation (a b)
+      (to-show `(list ,a) `(list ,b))
+      (typeclass-F a b))
+    (relation (a)
+      (to-show `(list ,a) a))))
 
 
 ; Run the checker for the dependency a -> b
@@ -110,11 +106,8 @@
 
 ; This is a closed-world assumption
 (define typeclass-F
-  (lambda (a b)
-    (with-depth 10
-      (any
-	(typeclass-F-instance-1 a b)
-	))))
+  (extend-relation-with-recur-limit 10 (a b)
+    typeclass-F-instance-1))
 
 (test-check "Typechecking (closed world)" 
   (solve 4 (a)
@@ -123,17 +116,15 @@
 
 ; This is an open-world assumption
 (define typeclass-F
-  (lambda (a b)
-    (with-depth 2
-      (any
-	(typeclass-F-instance-1 a b)
-	((relation (a b1 b2)	; a relation under constraint a->b
-	   (to-show a b1)
-	   (fails
-	     (all!
-	       (typeclass-F a b2)
-	       (fails (project/no-check (b1 b2) (predicate (*equal? b1 b2)))))))
-         a b)))))
+  (extend-relation-with-recur-limit 2 (a b)
+    typeclass-F-instance-1
+    (relation (a b1 b2)	; a relation under constraint a->b
+      (to-show a b1)
+      (fails
+	(all!
+	  (typeclass-F a b2)
+	  (fails (project/no-check (b1 b2) (predicate (*equal? b1 b2)))))))
+    ))
 
 (printf "~%Typechecking (open world): ~s~%" 
   (solve 4 (a) (typeclass-F-instance-1 `(list ,a) a)))
