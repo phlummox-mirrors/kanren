@@ -80,8 +80,19 @@
 ; Therefore, our arithmetic relations are not only sound
 ; (e.g., if (**o X Y Z) holds then it is indeed X*Y=Z) but also
 ; complete (if X*Y=Z is true then (**o X Y Z) holds) and
-; nearly refutationally complete (if X*Y=Z is false and Z is fully
-; instantiated, then (**o X Y Z) fails, in finite time).
+; nearly refutationally complete (if X*Y=Z is false and X, Y, and Z
+; are either fully instantiated, or not instantiated, then (**o X Y Z) fails,
+; in finite time). The refutational completeness
+; claim is limited to the case when all terms passed to arithmetical
+; functions do not share variables, are either fully instantiated or not
+; instantiated at all. Indeed, sharing of variables or partial
+; instantiation essentially imposes the constraint: e.g.,
+;   (solution (q) (**o `(1 . ,q) `(1 1) `(1 . ,q)))
+; is tantamount to
+; (solution (q) (exist (q1)
+;         (all (**o `(1 . ,q) `(1 1) `(1 . ,q1)) (== q q1))))
+; That conjunction will never succeed. See the corresponding Prolog
+; code for justification and relation to the 10th Hilbert problem.
 ;
 ; The numerals are represented in the binary little-endian
 ; (least-significant bit first) notation. The higher-order bit must be 1.
@@ -92,6 +103,8 @@
 ; (0 0 1) represents 4
 ; etc.
 ;
+
+
 ; There is a Prolog version of this code, which has termination proofs.
 ;
 ; $Id$
@@ -155,13 +168,15 @@
 	    ))))))
 
 ; (<ol2 p n m) holds iff
-; if length(p) <= length(n) + length(m)
+; length(n) + length(m) -1 <= length(p) <= length(n) + length(m)
 ; This predicate has nice properties: see the corresponding Prolog
 ; code for proofs.
 (define <ol2
   (relation (head-let p n m)
     (any-interleave
-      (== p '())
+      (all (== p '()) (== n '()) (== m '()))
+      (all (== p '()) (== n '()) (== m '(1)))
+      (all (== p '()) (== n '(1)) (== m '()))
       (exists (pr mr)
 	(all
 	  (== p `(,_ . ,pr)) (== n '()) (== m `(,_ . ,mr))
@@ -169,7 +184,8 @@
       (exists (pr nr)
 	(all
 	  (== p `(,_ . ,pr)) (== n `(,_ . ,nr))
-	  (<ol2 pr nr m))))))
+	  (<ol2 pr nr m)))
+      )))
 
 
 ; Half-adder: carry-in a b r carry-out
@@ -559,7 +575,6 @@
 ; 	         (== m1 `(_, . ,_))
 ; 	         (**o m1 q p)
 ; 	         (--o n r `(0 . ,p))))
-
 
 (define-syntax test
   (syntax-rules ()
