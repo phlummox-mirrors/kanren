@@ -223,11 +223,11 @@
 
 (define == 
   (lambda (x y)
-    (lambda@ (sk fk subst cutk)
+    (lambda@ (sk fk subst)
       (cond
         [(unify x y subst)
          => (lambda (subst)
-              (@ sk fk subst cutk))]
+              (@ sk fk subst))]
         [else (fk)]))))
 
 (define-syntax ==
@@ -238,14 +238,13 @@
          [(unify t u subst)
           => (lambda (subst)
                (@ sk fk subst))]
-         [else (lambda (cutk-ign) (fk))]))]))
+         [else (fk)]))]))
 
 ;(load "plprelims.ss")
 
 ;  Fk  = () -> Ans
-;  Cutk = Fk
 ;  Ans =  Nil + [Subst,Fk]
-;  Sk = Fk -> Subst -> Cutk -> Ans  
+;  Sk = Fk -> Subst -> Ans  
 ;  Antecedent = Sk -> Sk
 ;  Rule = Antecedent -> [Goal-fn,Int] -> Antecedent
 
@@ -393,20 +392,19 @@
   '((x.0 . 3) (x.1 . 4)))
 
 (define initial-fk (lambda () '()))
-(define initial-cutk initial-fk)
-(define initial-sk (lambda@ (fk subst cutk)
+(define initial-sk (lambda@ (fk subst)
 		     ;(pretty-print subst)
-		     (cons (cons subst cutk) fk)))
+		     (cons subst fk)))
 
 (define-syntax binary-extend-relation-interleave
   (syntax-rules ()
     [(_ (id ...) rel-exp1 rel-exp2)
      (let ([rel1 rel-exp1] [rel2 rel-exp2])
        (lambda (id ...)
-         (lambda@ (sk fk subst cutk)
+         (lambda@ (sk fk subst)
            ((interleave sk fk (finish-interleave sk fk))
-            (@ (rel1 id ...) initial-sk initial-fk subst cutk)
-            (@ (rel2 id ...) initial-sk initial-fk subst cutk)))))]))
+            (@ (rel1 id ...) initial-sk initial-fk subst)
+            (@ (rel2 id ...) initial-sk initial-fk subst)))))]))
 
 (define finish-interleave
   (lambda (sk fk)
@@ -415,8 +413,8 @@
          (lambda (q)
            (cond
              [(null? q) (fk)]
-             [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
-                     (@ sk (lambda () (finish (fk))) subst cutk))]))])
+             [else (let ([fk (cdr q)] [subst (car q)])
+                     (@ sk (lambda () (finish (fk))) subst))]))])
       finish)))
 
 (define interleave
@@ -426,8 +424,8 @@
          (lambda (q1 q2)
            (cond
              [(null? q1) (if (null? q2) (fk) (finish q2))]
-             [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
-                     (@ sk (lambda () (interleave q2 (fk))) subst cutk))]))])
+             [else (let ([fk (cdr q1)] [subst (car q1)])
+                     (@ sk (lambda () (interleave q2 (fk))) subst))]))])
       interleave)))
 
 (define-syntax binary-extend-relation-interleave-non-overlap
@@ -435,11 +433,11 @@
     [(_ (id ...) rel-exp1 rel-exp2)
      (let ([rel1 rel-exp1] [rel2 rel-exp2])
        (lambda (id ...)
-         (lambda@ (sk fk subst cutk)
+         (lambda@ (sk fk subst)
            (let ([ant2 (rel2 id ...)])
              ((interleave-non-overlap sk fk)
-              (@ (rel1 id ...) initial-sk initial-fk subst cutk)
-              (@ ant2 initial-sk initial-fk subst cutk)
+              (@ (rel1 id ...) initial-sk initial-fk subst)
+              (@ ant2 initial-sk initial-fk subst)
               ; means in case of overlap, prefer (rel2 ...) over (rel1 ...)
               fail
               ant2)))))]))
@@ -451,22 +449,22 @@
          (lambda (q)
            (cond
              [(null? q) (fk)]
-             [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
-                     (@ sk (lambda () (finish (fk))) subst cutk))]))]
+             [else (let ([fk (cdr q)] [subst (car q)])
+                     (@ sk (lambda () (finish (fk))) subst))]))]
        [interleave
          (lambda (q1 q2 ant1 ant2)
            (cond
              [(null? q1) (if (null? q2) (fk) (finish q2))]
-             [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
+             [else (let ([fk (cdr q1)] [subst (car q1)])
 		(if (satisfied? ant2 subst) ; the solution of q1
    					    ; satisfies ant2. Skip it
 		  (interleave q2 (fk) ant2 ant1)
-		  (@ sk (lambda () (interleave q2 (fk) ant2 ant1)) subst cutk)))]))])
+		  (@ sk (lambda () (interleave q2 (fk) ant2 ant1)) subst)))]))])
       interleave)))
 
 (define satisfied?
   (lambda (ant subst)
-    (not (null? (@ ant initial-sk initial-fk subst initial-fk)))))
+    (not (null? (@ ant initial-sk initial-fk subst)))))
 
 ; make extend-relation behave as a CBV function, that is,
 ; evaluate rel-exp early.
@@ -540,50 +538,51 @@
 	(exists (ex-id ...)
 	  (all! (== g x) ... (all ant ...))))]))
 
-(define-syntax relation/cut
-  (syntax-rules (to-show)
-    [(_ cut-id (ex-id ...) (to-show x ...) ant ...)
-     (relation/cut cut-id (ex-id ...) () (x ...) (x ...) ant ...)]
-    [(_ cut-id ex-ids (var ...) (x0 x1 ...) xs ant ...)
-     (relation/cut cut-id ex-ids (var ... g) (x1 ...) xs ant ...)]
-    [(_ cut-id (ex-id ...) (g ...) () (x ...) ant ...)
-     (lambda (g ...)
-       (exists (ex-id ...)
-         (all! (== g x) ...
-           (lambda@ (sk fk subst cutk)
-             (let ([cut-id (!! cutk)])
-               (@ (all ant ...) sk fk subst cutk))))))]))
+; (define-syntax relation/cut
+;   (syntax-rules (to-show)
+;     [(_ cut-id (ex-id ...) (to-show x ...) ant ...)
+;      (relation/cut cut-id (ex-id ...) () (x ...) (x ...) ant ...)]
+;     [(_ cut-id ex-ids (var ...) (x0 x1 ...) xs ant ...)
+;      (relation/cut cut-id ex-ids (var ... g) (x1 ...) xs ant ...)]
+;     [(_ cut-id (ex-id ...) (g ...) () (x ...) ant ...)
+;      (lambda (g ...)
+;        (exists (ex-id ...)
+;          (all! (== g x) ...
+;            (lambda@ (sk fk subst cutk)
+;              (let ([cut-id (!! cutk)])
+;                (@ (all ant ...) sk fk subst cutk))))))]))
 
 (define-syntax fact
   (syntax-rules ()
     [(_ (ex-id ...) x ...)
      (relation (ex-id ...) (to-show x ...))]))
 
-(define !!
-  (lambda (exiting-fk)
-    (lambda@ (sk fk)
-      (@ sk exiting-fk))))
+; rename into once
+; (define !!
+;   (lambda (exiting-fk)
+;     (lambda@ (sk fk)
+;       (@ sk exiting-fk))))
 
 (define-syntax splice-in-ants/any
   (syntax-rules ()
-    [(_ sk fk subst cutk ant1) (@ ant1 sk fk subst cutk)]
-    [(_ sk fk subst cutk ant1 ant2 ...)
+    [(_ sk fk subst ant1) (@ ant1 sk fk subst)]
+    [(_ sk fk subst ant1 ant2 ...)
      (@ ant1 sk (lambda ()
-                  (splice-in-ants/any sk fk subst cutk ant2 ...))
-       subst cutk)]))
+                  (splice-in-ants/any sk fk subst ant2 ...))
+       subst)]))
 
 (define-syntax any
   (syntax-rules ()
     [(_) fail]
     [(_ ant) ant]
     [(_ ant ...)
-      (lambda@ (sk fk subst cutk)
-	(splice-in-ants/any sk fk subst cutk ant ...))]))
+      (lambda@ (sk fk subst)
+	(splice-in-ants/any sk fk subst ant ...))]))
 
 ; (define initial-fk (lambda () '()))
 ; (define initial-sk
-;   (lambda@ (fk subst cutk)
-;     (cons (cons subst cutk) fk)))
+;   (lambda@ (fk subst)
+;     (cons subst fk)))
 
 ;;;;; Starts the real work of the system.
 
@@ -594,9 +593,9 @@
 (test-check 'test-father0
   (let ([result
           (@ (father 'jon 'sam)
-             initial-sk initial-fk empty-subst initial-fk)])
+             initial-sk initial-fk empty-subst)])
     (and
-      (equal? (caar result) '())
+      (equal? (car result) '())
       (equal? ((cdr result)) '())))
   #t)
 
@@ -609,8 +608,8 @@
 
 (test-check 'test-child-of-male-0
   (concretize-subst
-    (caar (@ (child-of-male 'sam 'jon)
-	    initial-sk initial-fk empty-subst initial-fk)))
+    (car (@ (child-of-male 'sam 'jon)
+	    initial-sk initial-fk empty-subst)))
   ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))))
   '())  ; variables shouldn't leak
 
@@ -622,8 +621,8 @@
     (child-of-male dad child)))
 (test-check 'test-child-of-male-1
   (concretize-subst
-    (caar (@ (child-of-male 'sam 'jon)
-	    initial-sk initial-fk empty-subst initial-fk)))
+    (car (@ (child-of-male 'sam 'jon)
+	    initial-sk initial-fk empty-subst)))
   ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))))
   '())
 
@@ -637,24 +636,24 @@
 (test-check 'test-father-1
   (let ([result
 	  (@ (new-father 'rob 'sal)
-	    initial-sk initial-fk empty-subst initial-fk)])
+	    initial-sk initial-fk empty-subst)])
     (and
-      (equal? (caar result) '())
+      (equal? (car result) '())
       (equal? ((cdr result)) '())))
   #t)
 
 
 (define query
   (let ([initial-fk (lambda () '())]
-        [initial-sk (lambda@ (fk subst cutk) (cons (cons subst cutk) fk))])
+        [initial-sk (lambda@ (fk subst) (cons subst fk))])
     (lambda (antecedent)
-      (@ antecedent initial-sk initial-fk empty-subst initial-fk))))
+      (@ antecedent initial-sk initial-fk empty-subst))))
 
 (test-check 'test-father-2
   (let-lv (x)
     (let ([result (query (new-father 'rob x))])
       (and
-	(equal? (caar result) `(,(commitment x 'sal)))
+	(equal? (car result) `(,(commitment x 'sal)))
 	(equal? ((cdr result)) '()))))
   #t)
 
@@ -684,14 +683,14 @@
 (test-check 'test-father-3
   (let-lv (x)
     (let ([answer (query (new-father 'rob x))])
-      (let ([subst (caar answer)])
+      (let ([subst (car answer)])
         (concretize-subst/vars subst x))))
   '((x.0 sal)))
 
 (test-check 'test-father-4
   (let-lv (x y)
     (let ([answer (query (new-father x y))])
-      (let ([subst (caar answer)])
+      (let ([subst (car answer)])
         (concretize-subst/vars subst x y))))
   '((x.0 jon) (y.0 sam)))
 
@@ -708,21 +707,21 @@
       (equal?
 	(let ([answer1 (query (newer-father 'rob x))])
 	  (pretty-print answer1)
-	  (let ([subst (caar answer1)])
+	  (let ([subst (car answer1)])
             (list
               (concretize-subst/vars subst x)
               (let ([answer2 ((cdr answer1))])
                 (pretty-print answer2)
-                (let ([subst (caar answer2)])
+                (let ([subst (car answer2)])
                   (concretize-subst/vars subst x))))))
 	'(((x.0 sal)) ((x.0 pat))))
       (equal?
 	(let ([answer1 (query (newer-father 'rob x))])
-	  (let ([subst (caar answer1)])
+	  (let ([subst (car answer1)])
 	    (cons
               (concretize-subst/vars subst x)
 	      (let ([answer2 ((cdr answer1))])
-		(let ([subst (caar answer2)])
+		(let ([subst (car answer2)])
 		  (cons
                     (concretize-subst/vars subst x)
 		    (let ([answer3 ((cdr answer2))])
@@ -751,9 +750,8 @@
   (syntax-rules ()
     [(_ n (var ...) ant)
      (let-lv (var ...)
-       (map (lambda (subst/cutk)
-              (let ([subst (car subst/cutk)])
-                (concretize-subst/vars subst var ...)))
+       (map (lambda (subst)
+	      (concretize-subst/vars subst var ...))
          (stream-prefix (- n 1) (query ant))))]))
 
 (define sam/rob
@@ -1039,11 +1037,11 @@
     ((x.0 sam) (y.0 pat))))
 
 (define fail
-  (lambda@ (sk fk subst cutk) (fk)))
+  (lambda@ (sk fk subst) (fk)))
 
 (define succeed
-  (lambda@ (sk fk subst cutk)
-    (@ sk fk subst cutk)))
+  (lambda@ (sk fk subst)
+    (@ sk fk subst)))
 
 (define no-grandma
   (relation/cut cut (grandad grandchild)
@@ -1198,11 +1196,11 @@
 
 (define fails
   (lambda (ant)
-    (lambda@ (sk fk subst cutk)
+    (lambda@ (sk fk subst)
       (@ ant
-        (lambda@ (current-fk subst cutk) (fk))
-        (lambda () (@ sk fk subst cutk))
-        subst cutk))))
+        (lambda@ (current-fk subst) (fk))
+        (lambda () (@ sk fk subst))
+        subst))))
 
 (define-syntax succeeds
   (syntax-rules ()
@@ -1227,10 +1225,10 @@
 
 (define view-subst
   (lambda (t)
-    (lambda@ (sk fk subst cutk)
+    (lambda@ (sk fk subst)
       (pretty-print (subst-in t subst))
       (pretty-print (concretize-subst subst))
-      (@ sk fk subst cutk))))
+      (@ sk fk subst))))
 
 (define grandpa
   (relation (grandad grandchild)
@@ -1565,9 +1563,8 @@
       (letrec
           ([move
              (extend-relation (a1 a2 a3 a4)
-               (relation/cut cut ()
-                 (to-show 0 _ _ _)
-                 cut)
+               (relation ()
+                 (to-show 0 _ _ _))
                (relation (n a b c)
                  (to-show n a b c)
                  (all
@@ -2571,8 +2568,8 @@
   (syntax-rules ()
     ((_ (global-var ...) clause0 clause1 ...)
       (lambda (global-var ...)
-	(lambda@ (sk fk subst cutk)
-	  (relation-cond-clause (sk fk subst cutk)
+	(lambda@ (sk fk subst)
+	  (relation-cond-clause (sk fk subst)
 	    clause0 clause1 ...))))))
 
 (define-syntax once
@@ -2581,8 +2578,8 @@
 
 (define-syntax relation-cond-clause
   (syntax-rules ()
-    ((_ (sk fk subst cutk)) (fk)) ; no more choices: fail
-    ((_ (sk fk subst cutk) 
+    ((_ (sk fk subst)) (fk)) ; no more choices: fail
+    ((_ (sk fk subst) 
        (local-vars (condition ...) conseq)
        clause ...)
       (let-lv local-vars			; a bit sloppy, need exists...
@@ -2592,9 +2589,8 @@
 	  (lambda@ (fk-ign)
 	    (@ conseq sk fk))
 	; fk
-	  (lambda () (relation-cond-clause (sk fk subst cutk) clause ...))
-	  subst
-	  cutk)))))
+	  (lambda () (relation-cond-clause (sk fk subst) clause ...))
+	  subst)))))
 
 
 (define !-
@@ -2785,7 +2781,7 @@
 
 (define grandpa-sam
   (lambda (child)
-    (lambda@ (sk fk subst cutk)
+    (lambda@ (sk fk subst)
       (let ([next (!! fk)]
             [cut (!! cutk)])
         (let-lv (grandfather)
@@ -2794,7 +2790,7 @@
                cut
                (exists (x)
                  (all (father grandfather x) (father x child))))
-             sk fk subst cutk))))))
+             sk fk subst ))))))
 
 (test-check 'grandpa-sam-1
   (solve 5 () (grandpa-sam 'sal))
@@ -3218,7 +3214,7 @@
 ; Run the antecedent no more than n times, recursively
 (define with-depth
   (lambda (limit ant)
-    (lambda@ (sk fk subst cutk)
+    (lambda@ (sk fk subst)
       (cond
         [(assq depth-counter-var subst)
          => (lambda (cmt)
@@ -3226,10 +3222,10 @@
                 (if (= counter limit)
                   (fk)
                   (let ([s (extend-subst depth-counter-var (+ counter 1) subst)])
-                    (@ ant sk fk s cutk)))))]
+                    (@ ant sk fk s)))))]
         [else
           (let ([s (extend-subst depth-counter-var 0 subst)])
-            (@ ant sk fk s cutk))]))))
+            (@ ant sk fk s))]))))
 
 ; This does loop
 '(define typeclass-C
@@ -4019,20 +4015,6 @@
 ;   ((root t1 t2) 
 ;     (!pf (goal (root t1 t2)) [(goal t1) (goal t2)  mirror-axiom-2])))
 
-(define with-depth
-  (lambda (limit ant)
-    (lambda@ (sk fk subst cutk)
-      (cond
-        [(assq depth-counter-var subst)
-         => (lambda (cmt)
-              (let ([counter (commitment->term cmt)])
-                (if (= counter limit)
-                  (fk)
-                  (let ([s (extend-subst depth-counter-var (+ counter 1) subst)])
-                    (@ ant sk fk s cutk)))))]
-        [else
-          (let ([s (extend-subst depth-counter-var 0 subst)])
-            (@ ant sk fk s cutk))]))))
 
 '(define mirror-axiom-eq-1
   (lambda (kb)
@@ -4137,8 +4119,8 @@
                              (or (occurs-check? id (commitment->term cmt))
                                  ...))
                       ps)
-                    (lambda (ign-cutk) (fk))
-                    (@ sk fk ps))))
+		  (fk)
+		  (@ sk fk ps))))
             fk in-subst)))]))
 
 ; partially-eval-sant: Partially evaluate a semi-antecedent
@@ -4146,7 +4128,7 @@
 ; two arguments, sk fk, can produce zero, one, or
 ; more answers.
 ; Any antecedent can be turned into a semi-antecedent if partially applied
-; to subst and cutk.
+; to subst.
 ; The following higher-order semi-antecedent takes an
 ; antecedent and yields the first answer and another, residual
 ; antecedent. The latter, when evaluated, will give the rest
@@ -4165,20 +4147,20 @@
 
 (define (partially-eval-sant sant)
   (@ sant
-    (lambda@ (fk subst cutk a b)
+    (lambda@ (fk subst a b)
       (@ a subst 
 	(lambda@ (sk1 fk1)
 	  (@
 	    (fk) 
 	    ; new a
-	    (lambda@ (sub11 x) (@ sk1 (lambda () (@ x sk1 fk1)) sub11 cutk))
+	    (lambda@ (sub11 x) (@ sk1 (lambda () (@ x sk1 fk1)) sub11))
 	    ; new b
 	    fk1))))
     (lambda () (lambda@ (a b) (b)))))
 
-(define (ant->sant ant subst cutk)
+(define (ant->sant ant subst)
   (lambda@ (sk fk)
-    (@ ant sk fk subst cutk)))
+    (@ ant sk fk subst)))
 
 (define parents-of-scouts
   (extend-relation (a1 a2)
@@ -4219,12 +4201,12 @@
     [(_) fail]
     [(_ ant) ant]
     [(_ ant ...)
-      (lambda@ (sk fk subst cutk)
-	(interleave sk fk cutk
-	  (list (ant->sant ant subst cutk) ...)))]))
+      (lambda@ (sk fk subst)
+	(interleave sk fk
+	  (list (ant->sant ant subst) ...)))]))
 
 ; we treat sants as a sort of a circular list
-(define (interleave sk fk cutk sants)
+(define (interleave sk fk sants)
   (cond
     ((null? sants) (fk))		; all of the sants are finished
     ((null? (cdr sants))
@@ -4233,7 +4215,7 @@
     (else
       (let loop ((curr sants) (residuals '()))
 	; check if the current round is finished
-	(if (null? curr) (interleave sk fk cutk (reverse residuals))
+	(if (null? curr) (interleave sk fk (reverse residuals))
 	  (@
 	    partially-eval-sant (car curr)
 	    ; (car curr) had an answer
@@ -4241,7 +4223,7 @@
 	      (@ sk
 	        ; re-entrance cont
 		(lambda () (loop (cdr curr) (cons residual residuals)))
-		subst cutk))
+		subst))
 	  ; (car curr) is finished - drop it, and try next
 	  (lambda () (loop (cdr curr) residuals))))))))
 
