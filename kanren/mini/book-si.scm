@@ -152,8 +152,7 @@
 	(case-ans (f)
 	  (incomplete-f i)
 	  ((b) (choice b i))
-	  ((b f^^) (incomplete (interleave (i) f)))
-;	  ((b f^^) (incomplete (interleave (i) (choice b f^^))))
+	  ((b f^^) (incomplete (interleave (choice b f^^) i)))
 	  ((j) (incomplete (interleave (i) j)))))
 )))
 
