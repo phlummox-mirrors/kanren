@@ -45,6 +45,27 @@
     (lambda (data out)
       (nreverse data out))))
 
+(define benchmark
+  (letrec
+    ((nreverse
+       (extend-relation (a b)
+	 (relation (x l0 (once l))
+	   (to-show `(,x . ,l0) l)
+	   (exists (l1)
+	     (all!
+	       (nreverse l0 l1)
+	       (concatenate l1 (list x) l))))
+	 (fact () '() '())))
+      (concatenate
+	(extend-relation (a b c)
+	  (relation (x l1 (once l2) l3)
+	    (to-show `(,x . ,l1) l2 `(,x . ,l3))
+	    (concatenate l1 l2 l3))
+	  (fact (l) '() l l)))
+      )
+    (lambda (data out)
+      (nreverse data out))))
+
 ; In the following, the problem comes from (list x) in
 ; (concatenate l1 (list x) l)
 ; x is a logic variable, so (list x) is an unground term
@@ -52,7 +73,7 @@
 ; causes term constructions. And because concatenate is deliberately
 ; gets invoked many times, the list of the substitution grows and grows.
 
-(define benchmark
+'(define benchmark
   (letrec
     ((nreverse
        (relation (head-let lh l)
@@ -76,7 +97,7 @@
 ; If we had applied Proposition 9, the latter would not have been
 ; necessary. But it is in the interim.
 
-(define benchmark
+'(define benchmark
   (letrec
     ((nreverse
        (relation (head-let lh l)
@@ -139,6 +160,12 @@
 ;     2737 ms elapsed cpu time, including 31 ms collecting
 ;     2819 ms elapsed real time, including 36 ms collecting
 ;     67719576 bytes allocated, including 68176072 bytes reclaimed
+; kanren.ss version 4.1, using once annotations.
+;     47 collections
+;     2259 ms elapsed cpu time, including 7 ms collecting
+;     2281 ms elapsed real time, including 10 ms collecting
+;     51278152 bytes allocated, including 50663288 bytes reclaimed
+
 
 ; dobench(Count) :-
 ; 	data(Data),
