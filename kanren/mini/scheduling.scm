@@ -214,25 +214,12 @@
   (syntax-rules ()
     ((_ a f) (cons a f))))
 
-(define-syntax comm-choice
-  (syntax-rules ()
-    ((_ c) (cons #f c))))
-
-
-(define-syntax case-cchoice
-  (syntax-rules ()
-    ((_ e (c on-cchoice) (r on-rchoice))
-     (let ((v e))
-       (if (and (pair? v) (not (car v)))
-	 (let ((c (cdr v))) on-cchoice)
-	 (let ((r v)) on-rchoice))))))
-
 
 ; ``Operating system calls''
 (define (yield)
   (shift f (H 'yield (lambda () (f #f)))))
-(define (choice-fork a n)
-  ((shift f (H 'choice (cons f (cons a n))))))
+(define (choice-fork chooser c1 c2) ; both c1 and c2 are thunks
+  ((shift f (H 'choice (cons f (list chooser c1 c2))))))
 
 (define scheduling-quantum 10)
 (define max-queue-size 5)
@@ -241,6 +228,7 @@
 ; The high-priority queue has the size of one.
 ; The other queue has a limited capacity to prevent unbridled speculation
 ; (unbridled breadth-first search)
+; The tic-counter counts logical operations (essentially, unifications)
 
 (define (scheduler body)
   (let loop ((tic-counter 0)
@@ -249,7 +237,7 @@
 	     (r (reset (HV (body)))))
 
     (define (switch k)
-      (display "Switch thread") (newline)
+      ;(display "Switch thread") (newline)
       (cond
 	(high-priority-thread
 	  ; If we have a high-priority-thread, run it
@@ -276,37 +264,39 @@
 	  ((yield)
 	    ;  advance the counter
 	    (let ((new-counter (+ 1 tic-counter)))
-	      (display "yield req: ")
-	      (display new-counter)
-	      (display "queue: ")
-	      (display (length queue))
-	      (newline)
+	      ;(display "yield req: ")
+	      ;(display new-counter)
+	      ;(display "queue: ")
+	      ;(display (length queue))
+	      ;(newline)
 	      (if (> new-counter scheduling-quantum)
 		(switch k)
 		(loop new-counter high-priority-thread queue (k)))))
 	  ((choice)
 	    (let ((k (car k)) (choice (cdr k)))
-	      (display "choice req: ") (newline)
 	      (if  (> (length queue) max-queue-size)
 		; decline to fork
+		; No children should fork either
 		(loop tic-counter high-priority-thread queue
-		  (k (lambda () choice)))
+		  (k 
+		    (lambda ()
+		      (intercept-deny-thread-launch
+			(lambda () (apply (car choice) ((cadr choice))
+				    (cddr choice)))))))
 		; fork a new thread for the alternative
-		(let* ((a (car choice)) (f (cdr choice))
+		(let* ((chooser (car choice))
+		       (c1 (cadr choice)) 
+		       (c2 (caddr choice))
 		       (new-thread
-			 (lambda () (k 
-				      (lambda ()
-					(comm-choice (f)))))))
+			 (lambda () (k c2))))
 		(loop tic-counter high-priority-thread
 		  (append queue (list new-thread))
-		  (k (lambda () a)))))))
+		  (k c1))))))
 	  (else
 	    (error "~s ~s~n" "unknown scheduler request" request))))
       ; We're finished and have an answer
-      (v
-	(begin (display "v:") (display v) (newline)
-	(let ((v (case-cchoice v (c c) (a a))))
-	  (case-ans v
+      (v 
+	(case-ans v
 	  ; if we have other pending threads, run them now
 	  (other-answers)
 	  ((a) (choice a other-answers))
@@ -314,60 +304,64 @@
 	    (choice a
 	      (lambdaf@ ()
 		(loop 0 high-priority-thread queue
-		  (reset (HV (f))))))))))))))
+		  (reset (HV (f))))))))))))
 
+
+; Intercept ``operating system'' calls within a thunk
+; that ask for launching a thread -- and deny them
+(define (intercept-deny-thread-launch thunk)
+  (let loop ((r (reset (HV (thunk)))))
+    (case-H r
+      ((request k)
+	(case request
+	  ((choice)
+	    ;(display "intercepted choice...") (newline)
+	    (let ((k (car k)) (choice (cdr k)))
+	      (loop (k (lambda () (apply (car choice) ((cadr choice))
+				    (cddr choice)))))))
+	  ((yield)
+	    ; send upstairs
+	    ;(display "yield...") (newline)
+	    (yield)
+	    (loop (k)))
+	  (else
+	    (error "~s ~s~n" "unknown scheduler request" request))))
+      (v v))))
+
+ 
 		
 ;------------------
-(define bind-1
-  (lambda (r k)
-    (case-ans r 
-      (mzero) 
-      ((a) (k a))
-      ((a f) (mplus (k a)
-               (lambdaf@ () (bind (f) k)))))))
-
 (define bind
   (lambda (r k)
-    (case-cchoice r
-      (c (comm-choice (bind-1 c k)))
-      (a (bind-1 a k)))))
-
-
-(define mplus
-  (lambda (rw f)
-    (case-cchoice rw
-      (c rw)
-      (r
-	(case-ans r
-	  (f) 
-	  ((a) (choice-fork a f))
-	  ((a f0) (choice-fork a
-		    (lambdaf@ () (mplus (f0) f)))))))))
-
-(define bindi-1
-  (lambda (r k)
     (case-ans r 
       (mzero) 
       ((a) (k a))
-      ((a f) (interleave (k a)
-               (lambdaf@ () (bindi (f) k)))))))
+      ((a f) (choice-fork mplus (lambda () (k a))
+               (lambdaf@ () (bind (f) k)))))))
+
+(define mplus
+  (lambda (r f)
+    (case-ans r 
+      (f) 
+      ((a) (choice a f))
+      ((a f0) (choice a
+                (lambdaf@ () (choice-fork mplus f0 f)))))))
 
 (define bindi
   (lambda (r k)
-    (case-cchoice r
-      (c (comm-choice (bindi-1 c k)))
-      (a (bindi-1 a k)))))
+    (case-ans r 
+      (mzero) 
+      ((a) (k a))
+      ((a f) (choice-fork interleave (lambda () (k a))
+               (lambdaf@ () (bindi (f) k)))))))
 
 (define interleave
-  (lambda (rw f)
-    (case-cchoice rw
-      (c rw)
-      (r
-	(case-ans r 
-	  (f) 
-	  ((a) (choice-fork a f))
-	  ((a f0) (choice-fork a
-		    (lambdaf@ () (interleave (f) f0)))))))))
+  (lambda (r f)
+    (case-ans r 
+      (f) 
+      ((a) (choice a f))
+      ((a f0) (choice a
+                (lambdaf@ () (choice-fork interleave f f0)))))))
 
 (define prefix                   
   (lambda (n)
@@ -483,16 +477,14 @@
     ((_ chopper (g0 g ...) c ...)
      (let ((g^ g0))
        (lambdag@ (s)
-         (let ((r (g^ s)))
-	       (case-ans r
-		 ((cu chopper c ...) s)  
-		 ((s) ((all g ...) s))
-		 ((s f) (bind (chopper r s) 
-			  (lambdag@ (s)
-			    ((all g ...) s)))))))))))
-; 	   (case-cchoice rw
-; 	     (c rw)
-; 	     (r
+         (let ((r (intercept-deny-thread-launch (lambda () (g^ s)))))
+	   ;(display "cu: ") (display r) (newline)
+           (case-ans r
+             ((cu chopper c ...) s)  
+             ((s) ((all g ...) s))
+             ((s f) (bind (chopper r s) 
+                      (lambdag@ (s)
+                        ((all g ...) s)))))))))))
 
 (define-syntax conda
   (syntax-rules ()
@@ -513,7 +505,7 @@
     ((_ combiner (g ...) c ...)
      (let ((g^ (all g ...)))
        (lambdag@ (s)
-         (combiner (g^ s)
+         (choice-fork combiner (lambda () (g^ s))
            (lambdaf@ () 
              ((ce combiner c ...) s))))))))
 
@@ -524,9 +516,7 @@
 (define-syntax lambda-limited 
   (syntax-rules ()
     ((_ n formals g)                                          
-     (let ((x (var 'x)))                                               
-       (lambda formals
-         (ll n x g))))))
+      (lambda formals g))))
 
 (define ll 
   (lambda (n x g)
