@@ -775,7 +775,7 @@
          (lambda (sk)
            ((rel1 id ...) ((rel2 id ...) sk)))))]))
 
-(define-syntax binary-intersect-relation
+'(define-syntax binary-intersect-relation
   (syntax-rules ()
     [(_ (id ...) rel-exp1 rel-exp2)
      (let ([rel1 rel-exp1] [rel2 rel-exp2])
@@ -1823,7 +1823,9 @@
 (define unify
   (lambda (t u subst)
     (cond
-      [(trivially-equal? t u) subst]
+      [(eq? t u) subst]
+      [(eq? t _) subst]
+      [(eq? u _) subst]
       [(var? t) (if (var? u) (unify-var/var t u subst) (unify-var/value t u subst))]
       [(var? u) (unify-var/value u t subst)]
       [(and (pair? t) (pair? u))
@@ -1832,7 +1834,7 @@
           => (lambda (car-subst)
                (unify (cdr t) (cdr u) car-subst))]
          [else #f])]
-      [else #f])))
+      [else (and (equal? t u) subst)])))
 
 (define unify-var/var
   (lambda (t-var u-var s)
@@ -1896,116 +1898,138 @@
             (let ([t-term (commitment->term ct)]) 
               (unify t-term u-value s)))]
       [(pair? u-value)
-       (let ([car-var (var '*a)]
+       (if (null? (cdr u-value))
+	 (let ([car-var (var '*a)])
+            (unify car-var (car u-value)
+	      (extend-subst t-var (list car-var) s)))
+        (let ([car-var (var '*a)]
              [cdr-var (var '*d)])
          (cond
            [(unify car-var (car u-value)
               (extend-subst t-var (cons car-var cdr-var) s))
             => (lambda (s)
                  (unify cdr-var (cdr u-value) s))]
-           [else #f]))]
+           [else #f])))]
       [else (extend-subst t-var u-value s)])))
 
 ;------------------------------------------------------------------------
 (test-check 'test-unify/pairs-oleg
-  (exists (w x y z u)
-      (and
-        (and
-          (equal?
-            (unify `(,x ,4) `(3 ,x) empty-subst)
-            #f)
-          (equal?
-            (unify `(,x ,x) '(3 4) empty-subst)
-            #f))
-        (and
-          (equal?
-            (unify `(,x ,y) '(3 4) empty-subst)
-            `(,(commitment y 4) ,(commitment x 3)))
-          (equal?
-            (unify `(,x 4) `(3 ,y) empty-subst)
-            `(,(commitment y 4) ,(commitment x 3))))
-        (and
-          (equal?
-            (let ([s (normalize-subst
-                       (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst))])
-              (let ([vars (list w y x)])
-                (map commitment
-                  vars
-                  (subst-vars-recursively vars s))))
-            `(,(commitment w z)
-              ,(commitment y 4)
-              ,(commitment x 3)))
-          (equal?
-            (let ([s (normalize-subst
-                       (unify `(,x 4) `(,y ,y) empty-subst))])
-              (let ([vars (list y x)])
-                (map commitment
-                  vars
-                  (subst-vars-recursively vars s))))
-            `(,(commitment y 4) ,(commitment x 4)))
-          (equal?
-            (unify `(,x 4 3) `(,y ,y ,x) empty-subst)
-            #f)
-          (equal?
-            (let ([s (normalize-subst
-                       (unify
-                         `(,w (,x (,y ,z) 8))
-                         `(,w (,u (abc ,u) ,z))
-                         empty-subst))])
-              (let ([vars (list u z y x)])
-                (map commitment
-                  vars
-                  (subst-vars-recursively vars s))))
-            `(,(commitment u 8)
-              ,(commitment z 8)
-              ,(commitment y 'abc)
-              ,(commitment x 8)))
-          (equal?
-            (let ([s (normalize-subst
-                       (unify `(p (f a) (g ,x)) `(p ,x ,y) empty-subst))])
-              (let ([vars (list y x)])
-                (map commitment
-                  vars
-                  (subst-vars-recursively vars s))))
-            `(,(commitment y '(g (f a)))
-              ,(commitment x '(f a))))
-          (equal?
-            (let ([s (normalize-subst
-                       (unify `(p (g ,x) (f a)) `(p ,y ,x) empty-subst))])
-              (let ([vars (list x y)])
-                (map commitment
-                  vars
-                  (subst-vars-recursively vars s))))
-            `(,(commitment x '(f a))
-              ,(commitment y '(g (f a)))))
-          (equal?
-            (let ([s (normalize-subst
-                       (unify
-                         `(p a ,x (h (g ,z)))
-                         `(p ,z (h ,y) (h ,y))
-                         empty-subst))])
-              (let ([vars (list y x z)])
-                (map commitment
-                  vars
-                  (subst-vars-recursively vars s))))
-            `(,(commitment y '(g a))
-              ,(commitment x '(h (g a)))
-              ,(commitment z 'a)))
-          (equal?
-            (concretize-subst ;;; was #f
-              (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
-                (let ([var (map commitment->var s)])
-                  (map commitment
-                    var
-                    (subst-vars-recursively var s)))))
-            `(,(commitment '*d.0 '())
-              ,(commitment '*a.0 '(f *a.0))
-              ,(commitment '*d.1 '((f . *d.1)))
-              ,(commitment '*a.1 'f)
-              ,(commitment 'y.0  '(f (f . *d.1)))
-              ,(commitment 'x.0  '(f (f . *d.1)))))
-          #t)))
-  #t)
+  (exists (x y)
+    (unify `(,x ,4) `(3 ,x) empty-subst))
+  #f)
+
+(test-check 'test-unify/pairs-oleg
+  (exists (x y)
+    (unify `(,x ,x) '(3 4) empty-subst))
+  #f)
+
+(exists (x y)
+  (test-check 'test-unify/pairs-oleg
+    (unify `(,x ,y) '(3 4) empty-subst)
+    `(,(commitment y 4) ,(commitment x 3))))
+
+(exists (x y)
+  (test-check 'test-unify/pairs-oleg
+    (unify `(,x 4) `(3 ,y) empty-subst)
+    `(,(commitment y 4) ,(commitment x 3))))
+
+(exists (x y w z)
+  (test-check 'test-unify/pairs-oleg
+    (let ([s (normalize-subst
+	       (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst))])
+      (let ([vars (list w y x)])
+	(map commitment
+	  vars
+	  (subst-vars-recursively vars s))))
+    `(,(commitment w z)
+       ,(commitment y 4)
+       ,(commitment x 3))))
+
+(exists (x y w z)
+  (test-check 'test-unify/pairs-oleg
+    (let ([s (normalize-subst
+	       (unify `(,x 4) `(,y ,y) empty-subst))])
+      (let ([vars (list y x)])
+	(map commitment
+	  vars
+	  (subst-vars-recursively vars s))))
+    `(,(commitment y 4) ,(commitment x 4))))
+
+(test-check 'test-unify/pairs-oleg
+  (exists (x y)
+    (unify `(,x 4 3) `(,y ,y ,x) empty-subst))
+    #f)
+
+(exists (x y w z u)
+  (test-check 'test-unify/pairs-oleg
+    (let ([s (normalize-subst
+	       (unify
+		 `(,w (,x (,y ,z) 8))
+		 `(,w (,u (abc ,u) ,z))
+		 empty-subst))])
+      (let ([vars (list u z y x)])
+	(map commitment
+	  vars
+	  (subst-vars-recursively vars s))))
+    `(,(commitment u 8)
+       ,(commitment z 8)
+       ,(commitment y 'abc)
+       ,(commitment x 8))))
+
+(exists (x y w z u)
+  (test-check 'test-unify/pairs-oleg
+    (let ([s (normalize-subst
+	       (unify `(p (f a) (g ,x)) `(p ,x ,y) empty-subst))])
+      (let ([vars (list y x)])
+	(map commitment
+	  vars
+	  (subst-vars-recursively vars s))))
+    `(,(commitment y '(g (f a)))
+       ,(commitment x '(f a)))))
+
+(exists (x y w z u)
+  (test-check 'test-unify/pairs-oleg
+    (let ([s (normalize-subst
+	       (unify `(p (g ,x) (f a)) `(p ,y ,x) empty-subst))])
+      (let ([vars (list x y)])
+	(map commitment
+	  vars
+	  (subst-vars-recursively vars s))))
+    `(,(commitment x '(f a))
+       ,(commitment y '(g (f a))))))
+
+(exists (x y w z u)
+  (test-check 'test-unify/pairs-oleg
+    (let ([s (normalize-subst
+	       (unify
+		 `(p a ,x (h (g ,z)))
+		 `(p ,z (h ,y) (h ,y))
+		 empty-subst))])
+      (let ([vars (list y x z)])
+	(map commitment
+	  vars
+	  (subst-vars-recursively vars s))))
+    `(,(commitment y '(g a))
+       ,(commitment x '(h (g a)))
+       ,(commitment z 'a))))
+
+(exists (x y w z u)
+  (test-check 'test-unify/pairs-oleg
+    (concretize-subst ;;; was #f
+      (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
+	(let ([var (map commitment->var s)])
+	  (map commitment
+	    var
+	    (subst-vars-recursively var s)))))
+    `(;,(commitment '*d.0 '())
+       ,(commitment '*a.0 '(f *a.0))
+       ;,(commitment '*d.1 '((f . *d.1)))
+       ,(commitment '*d.0 '((f . *d.0)))
+       ,(commitment '*a.1 'f)
+       ;,(commitment 'y.0  '(f (f . *d.1)))
+       ,(commitment 'y.0  '(f (f . *d.0)))
+       ,(commitment 'x.0  '(f (f . *d.0))))))
+
 
 (test-check 'test-fun-resubst-oleg
   (concretize
