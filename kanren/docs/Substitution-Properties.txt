@@ -65,8 +65,8 @@ A function (shallow-subst-in Term Subst) is defined as follows:
          [else t])]
       [(pair? t)
        (cons
-         (subst-in (car t) subst)
-         (subst-in (cdr t) subst))]
+         (shallow-subst-in (car t) subst)
+         (shallow-subst-in (cdr t) subst))]
       [else t])))
 
 The function replaces each variable that occurs in a term with the
