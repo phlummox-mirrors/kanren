@@ -1889,6 +1889,12 @@
 ;;; Don't add the commitment of an uncommited variable x to a pair (a . b)
 ; instead, add the commitment x = (var1 . var2) and
 ; unify var1 with a and var2 with b.
+; However, if either 'a' or 'b' are atomic values (that is, do not contain
+; variables), we can avoid introducing var1 or var2 and bind x
+; to the correspondingly specvialized pair,
+; Note, if either 'a' or 'b' are _, the current algorithm _effectively_
+; replaces _ with a fresh variable. We do a lazy replacement.
+; A neat accident!
 
 (define unify-var/value
   (lambda (t-var u-value s)
@@ -1898,18 +1904,26 @@
             (let ([t-term (commitment->term ct)]) 
               (unify t-term u-value s)))]
       [(pair? u-value)
-       (if (null? (cdr u-value))
-	 (let ([car-var (var '*a)])
-            (unify car-var (car u-value)
-	      (extend-subst t-var (list car-var) s)))
-        (let ([car-var (var '*a)]
-             [cdr-var (var '*d)])
-         (cond
-           [(unify car-var (car u-value)
-              (extend-subst t-var (cons car-var cdr-var) s))
-            => (lambda (s)
-                 (unify cdr-var (cdr u-value) s))]
-           [else #f])))]
+	(let*
+	  ((car-val (car u-value))
+	   (cdr-val (cdr u-value))
+	   (car-var
+	     (if (or (symbol? car-val)
+		   (not (or (var? car-val) (pair? car-val))))
+	       car-val
+	       (var '*a)))
+	    (cdr-var
+	     (if (or (null? cdr-val)
+		   (not (or (var? cdr-val) (pair? cdr-val))))
+	       cdr-val
+	       (var '*d)))
+	    (s (extend-subst t-var (cons car-var cdr-var) s))
+	    (s (if (eq? car-var car-val) s
+		 (unify car-var car-val s)))
+	    )
+	  (and s
+	    (if (eq? cdr-var cdr-val) s
+	      (unify cdr-var cdr-val s))))]
       [else (extend-subst t-var u-value s)])))
 
 ;------------------------------------------------------------------------
@@ -2025,7 +2039,7 @@
        ,(commitment '*a.0 '(f *a.0))
        ;,(commitment '*d.1 '((f . *d.1)))
        ,(commitment '*d.0 '((f . *d.0)))
-       ,(commitment '*a.1 'f)
+       ;,(commitment '*a.1 'f)
        ;,(commitment 'y.0  '(f (f . *d.1)))
        ,(commitment 'y.0  '(f (f . *d.0)))
        ,(commitment 'x.0  '(f (f . *d.0))))))
@@ -3892,3 +3906,57 @@
      zero
      (succ (succ (succ (succ (succ zero))))))))
 
+; The puzzle
+(define member 
+  (extend-relation (a1 a2)
+    (fact (item rest) item `(,item . ,rest))
+    (relation (item rest)
+      (to-show item `(,_ . ,rest))
+      (member item rest))))
+
+(define next-to
+  (relation (item1 item2 rest)
+    (to-show item1 item2 rest)
+    (any
+      (on-right item1 item2 rest)
+      (on-right item2 item1 rest))))
+
+(define on-right
+  (extend-relation (a0 a1 a2)
+    (fact (item1 item2 rest) item1 item2 `(,item1 ,item2 . ,rest))
+    (relation (item1 item2 rest)
+      (to-show item1 item2 `(,_ . ,rest))
+      (on-right item1 item2 rest))))
+        
+;house nationality cigarettes drink pet color
+(define zebra
+  (relation/cut cut (h)
+    (to-show h)
+    (all
+      (== h `((norwegian ,_ ,_ ,_ ,_) ,_ (,_ ,_ milk ,_ ,_) ,_ ,_))
+      (member `(englishman ,_ ,_ ,_ red) h)
+      (on-right `(,_ ,_ ,_ ,_ ivory) `(,_ ,_ ,_ ,_ green) h)
+      (next-to `(norwegian ,_ ,_ ,_ ,_) `(,_ ,_ ,_ ,_ blue) h)
+      (member `(,_ kools ,_ ,_ yellow) h)
+      (member `(spaniard ,_ ,_ dog ,_) h)
+      (member `(,_ ,_ coffee ,_ green) h) 
+      (member `(ukraninian ,_ tea ,_ ,_) h)
+      (member `(,_ luckystrikes oj ,_ ,_) h)
+      (member `(japanese parliaments ,_ ,_ ,_) h)
+      (member `(,_ oldgolds ,_ snails ,_) h)
+      (next-to `(,_ ,_ ,_ horse ,_) `(,_ kools ,_ ,_ ,_) h)
+      (next-to `(,_ ,_ ,_ fox ,_) `(,_ chesterfields ,_ ,_ ,_) h)
+      cut
+      (member `(,_ ,_ water ,_ ,_) h)
+      (member `(,_ ,_ ,_ zebra ,_) h))))
+
+(define timedSolution
+  (lambda ()
+    (time
+      (exists (h) 
+        (solution (zebra h))))))
+
+(pretty-print (timedSolution))
+(newline)
+
+(exit 0)
