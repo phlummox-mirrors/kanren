@@ -96,7 +96,7 @@
 ; If we locate IN-SUBST in SUBST, we know that everything below the
 ; mark can't possibly contain ID ...
 
-(define do-subst
+(define compose-subst/own-survivors
   (lambda (to-subst remove-subst clean)
     (let loop ([subst to-subst])
       (if (null? subst) clean
@@ -117,10 +117,10 @@
   (lambda (vars in-subst clean to-remove to-subst current)
     (let loop ([current current] [to-remove to-remove] [clean clean] [to-subst to-subst])
       (cond
-        [(null? current) (do-subst to-subst to-remove clean)]
+        [(null? current) (compose-subst/own-survivors to-subst to-remove clean)]
         [(eq? current in-subst)         ; found the mark
                                         ; (printf "found the mark~%")
-         (do-subst to-subst to-remove (append clean current))]
+         (compose-subst/own-survivors to-subst to-remove (append clean current))]
         [(memq (commitment->var (car current)) vars)
          (loop (cdr current) (cons (car current) to-remove) clean to-subst)]
         [(relatively-ground? (commitment->term (car current)) vars)
@@ -159,7 +159,7 @@
                 (subst-in (commitment->term (car base)) refining)
                 (refine (cdr base)
                   (cond
-                    [(assv (commitment->var (car base)) survivors)
+                    [(assq (commitment->var (car base)) survivors)
                      => (lambda (c) (remv c survivors))]
                     [else survivors])))]))))
 
@@ -178,7 +178,7 @@
     (cond
       [(var? t)
        (cond
-         [(assv t subst) => commitment->term]
+         [(assq t subst) => commitment->term]
          [else t])]
       [else t])))
 
@@ -318,11 +318,11 @@
 (define concretize-var    ;;; returns two values
   (lambda (var env)
     (cond
-      [(assv var env)
+      [(assq var env)
        => (lambda (var-c)
             (values (artificial-id var-c) env))]
       [else (let ([var-c `(,var . ,(cond
-                                     [(assv/var-id (var-id var) env)
+                                     [(assq/var-id (var-id var) env)
                                       => (lambda (var-c) (+ (cdr var-c) 1))]
                                      [else 0]))])
               (values (artificial-id var-c) (cons var-c env)))])))
@@ -356,12 +356,12 @@
       (string-append
         (symbol->string (var-id (car var-c))) "." (number->string (cdr var-c))))))
 
-(define assv/var-id
+(define assq/var-id
   (lambda (id env)
     (cond
       [(null? env) #f]
-      [(eqv? (var-id (caar env)) id) (car env)]
-      [else (assv/var-id id (cdr env))])))
+      [(eq? (var-id (caar env)) id) (car env)]
+      [else (assq/var-id id (cdr env))])))
 
 (define-syntax trace-lambda@
   (syntax-rules ()
@@ -745,8 +745,8 @@
   (syntax-rules ()
     [(_ n (rel t0 ...))
      (map (lambda (subst/cutk)
-	    ;(pretty-print (car subst/cutk))
-            (concretize-sequence (subst-in t0 (car subst/cutk)) ...))
+	    (let ([subst (car subst/cutk)])
+              (concretize-sequence (subst-in t0 subst) ...)))
        (stream-prefix (- n 1) (query (rel t0 ...))))]))
 
 (define sam/pete
@@ -1092,23 +1092,33 @@
     (solve 1 (no-grandma-grandpa 'polly x)))
   '())
 
-(define-syntax let*-inject
+(define-syntax if/bc
   (syntax-rules ()
-    ((_ ([t (var ...) exp] ...) body ...)
+    [(_ #t conseq alt) conseq]
+    [(_ #f conseq alt) alt]))
+
+(define-syntax let*-inject/everything
+  (syntax-rules ()
+    ((_ ([t ([var bool] ...) exp] ...) body ...)
      (lambda@ (sk fk subst)
        (@ (introduce-vars (t ...)
-	    (all! (== t (let ([var (nonvar! (subst-in var subst))] ...) exp)) ... 
+	    (all! (== t (let ([var (if/bc bool
+				     (nonvar! (subst-in var subst))
+				     (subst-in var subst))]
+			      ...)
+			  exp)) ...
 	      (all body ...)))
           sk fk subst)))))
 
+(define-syntax let*-inject
+  (syntax-rules ()
+    [(_ ([t (var ...) exp] ...) body ...)
+     (let*-inject/everything ([t ([var #t] ...) exp] ...) body ...)]))
+
 (define-syntax let*-inject/no-check
   (syntax-rules ()
-    ((_ ([t (var ...) exp] ...) body ...)
-     (lambda@ (sk fk subst)
-       (@ (introduce-vars (t ...)
-	    (all! (== t (let ([var (subst-in var subst)] ...) exp)) ...
-	      (all body ...)))
-          sk fk subst)))))
+    [(_ ([t (var ...) exp] ...) body ...)
+     (let*-inject/everything ([t ([var #f] ...) exp] ...) body ...)]))
 
 (define-syntax pred-call
   (syntax-rules ()
@@ -1473,7 +1483,7 @@
     (cond
       [(var? t)
        (cond
-         [(assv t subst) => commitment->term]
+         [(assq t subst) => commitment->term]
          [else t])]
       [(pair? t)
        (cons
@@ -1525,7 +1535,7 @@
 (define occurs?
   (lambda (var term)
     (cond
-      [(var? term) (eqv? term var)]
+      [(var? term) (eq? term var)]
       [(pair? term) (or (occurs? var (car term)) (occurs? var (cdr term)))]
       [else #f])))
 
@@ -1668,7 +1678,7 @@
 (define unify/var
   (lambda (t-var u subst)
     (cond
-      [(assv t-var subst) (unify (subst-in t-var subst) u subst)] 
+      [(assq t-var subst) (unify (subst-in t-var subst) u subst)] 
       [(occurs? t-var u) #f]
       [else (compose-subst subst (unit-subst t-var u))])))
 
@@ -1779,7 +1789,7 @@
     (cond
       [(var? t)
        (cond
-         [(assv t subst) =>
+         [(assq t subst) =>
           (lambda (c)
             (subst-vars-recursively
               (commitment->term c) (remq c subst)))]
@@ -1798,7 +1808,7 @@
     (cond
       [(var? t)
        (cond
-         [(assv t subst)
+         [(assq t subst)
 	  => (lambda (c)
 	       (subst-in (commitment->term c) subst))]
          [else t])]
@@ -1827,25 +1837,25 @@
 (define unify-var/var
   (lambda (t-var u-var s)
     (cond
-;       [(assv t-var s)
+;       [(assq t-var s)
 ;        => (lambda (ct) ;;; This is bound/var
 ;             (let ([t-term (commitment->term ct)])
 ;               (unify u-var t-term s)))]
       
-      [(assv t-var s)
+      [(assq t-var s)
        => (lambda (ct) ;;; This is bound/var
             (cond
-              [(assv u-var s)
+              [(assq u-var s)
                => (lambda (cu)
                     (let ([u-term (commitment->term cu)]
                           [t-term (commitment->term ct)])
                       (unify t-term u-term s)))]
               [else ((unbound/bound u-var s) ct)]))]
-;     [(assv u-var s) ;;; This is bound/unbound.
+;     [(assq u-var s) ;;; This is bound/unbound.
 ;      => (lambda (cu)
 ;           (let ([u-term (commitment->term cu)])
 ;             (compose-subst (unit-subst t-var u-term) s)))]
-      [(assv u-var s) => (unbound/bound t-var s)]
+      [(assq u-var s) => (unbound/bound t-var s)]
       [else (extend-subst t-var u-var s)])))
 
 (define unbound/bound
@@ -1854,10 +1864,10 @@
       (let loop ([cm cu])
         (let ([u-term (commitment->term cm)])
           (cond
-            [(eqv? u-term t-var) s]
+            [(eq? u-term t-var) s]
             [(var? u-term)
              (cond
-               [(assv u-term s) => loop]
+               [(assq u-term s) => loop]
                [else (unify-var/value t-var u-term s)])]
             [else (extend-subst t-var u-term s)]))))))
   
@@ -1881,7 +1891,7 @@
 (define unify-var/value
   (lambda (t-var u-value s)
     (cond
-      [(assv t-var s)
+      [(assq t-var s)
        => (lambda (ct)
             (let ([t-term (commitment->term ct)]) 
               (unify t-term u-value s)))]
@@ -2210,7 +2220,7 @@
            (cond
              [(var? t)
               (cond
-                [(assv t env)
+                [(assq t env)
                  => (lambda (pr)
                       (values (cdr pr) env))]
                 [else (let ([new-var (var (var-id t))])
@@ -3168,7 +3178,7 @@
 (define *equal?
   (lambda (x y)
     (cond
-      [(and (var? x) (var? y)) (eqv? x y)]
+      [(and (var? x) (var? y)) (eq? x y)]
       [(var? x) #f]                     ; y is not a var
       [(var? y) #f]                     ; x is not a var
       [else (equal? x y)])))
@@ -3192,7 +3202,7 @@
   (lambda (limit ant)
     (lambda@ (sk fk subst cutk)
       (cond
-        [(assv depth-counter-var subst)
+        [(assq depth-counter-var subst)
          => (lambda (cmt)
               (let ([counter (commitment->term cmt)])
                 (printf "~%counter ~d" counter)
@@ -3818,4 +3828,43 @@
 ; phase of the proof checks.
 
 ;(exit 0)
+
+(define base-+-as-relation
+  (fact (n) 'zero n n))
+
+(define recursive-+-as-relation
+  (relation (n1 n2 n3)
+    (to-show `(succ ,n1) n2 `(succ ,n3))
+    (+-as-relation n1 n2 n3)))
+
+(define +-as-relation
+  (extend-relation (a1 a2 a3)
+    base-+-as-relation
+    recursive-+-as-relation))
+
+(newline)
+
+(test-check "Addition" 
+  (exists (x y)
+    (solve 20
+      (+-as-relation x y
+	'(succ (succ (succ (succ (succ zero))))))))
+  '((zero
+     (succ (succ (succ (succ (succ zero)))))
+     (succ (succ (succ (succ (succ zero))))))
+    ((succ zero)
+     (succ (succ (succ (succ zero))))
+     (succ (succ (succ (succ (succ zero))))))
+    ((succ (succ zero))
+     (succ (succ (succ zero)))
+     (succ (succ (succ (succ (succ zero))))))
+    ((succ (succ (succ zero)))
+     (succ (succ zero))
+     (succ (succ (succ (succ (succ zero))))))
+    ((succ (succ (succ (succ zero))))
+     (succ zero)
+     (succ (succ (succ (succ (succ zero))))))
+    ((succ (succ (succ (succ (succ zero)))))
+     zero
+     (succ (succ (succ (succ (succ zero))))))))
 
