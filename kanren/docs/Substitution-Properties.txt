@@ -1,0 +1,366 @@
+The following are a few properties of substitutions and
+unifications. The most interesting stuff is at the end.
+
+Preliminaries: 
+
+Term: a scheme term which may include _logical_ variables, which are
+distinct from any other datatype. Like symbols, logical variables are
+atomic, have a name, and can be told apart by eq?  A distinguished variable
+_ is called anonymous variable.  A term without logical variables is called
+ground.  When it is not confusing, in the present document we will use
+low-case roman letters to represent variables, uppercase letters to denote
+terms. We will use the common Scheme notation for pairs and lists.  The
+notes give more details.
+
+A substitution: a list of _ordered_ associations (also called bindings or
+commitments) of logical variables to terms. Substitutions are represented
+by association lists.
+
+A variable is called bound in a substitution if there is an association for
+that variable in a substitution.  A variable is called freely occurring in
+a substitution if there is a binding to a term that contains that variable.
+A variable may be both bound and freely occurring in a substitution, e.g.,
+in a substitution
+
+  ((x . (x 1 z)) (y . 2))
+
+variable y is bound but not freely occurring, variable z is freely
+occurring but not bound, and variable x is both bound and freely occurring.
+A variable is called (freely) occurring in a term if the term contains that
+variable.
+
+The function (assq v subst) returns the commitment for a variable v in
+subst, if any.  (commitment->var c) gives the variable bound by commitment
+c (commitment->term c) gives the term that the commitment variable is bound
+to.
+        (commitment v T) is a commitment constructor.
+	(commitment->var (commitment v T)) is v
+	(commitment->term (commitment v T)) is T
+        (binding-of v subst) returns the term of a bound variable v.
+	   This function is a composition of 'assq' and commitment->term.
+
+        (unit-subst v term) returns a substitution with only one
+	   binding:  of v to term.
+
+        (extend-subst v term subst) returns a substitution that
+	   prepends a binding of v to the term to subst.
+
+        (del-binding v subst) returns a substitution without the
+           binding to variable v. The order of bindings is preserved.
+        (remq c subst) deletes the commitment c from the substitution
+           and returns the new substitution, with the other bindings
+	   in the same order.
+
+A substitution is called well-formed if each variable bound in the
+substitution has only one binding, and the variable _ is never bound.
+
+A function (shallow-subst-in Term Subst) is defined as follows:
+
+(define shallow-subst-in
+  (lambda (t subst)
+    (cond
+      [(var? t)
+       (cond
+         [(assq t subst) => commitment->term]
+         [else t])]
+      [(pair? t)
+       (cons
+         (subst-in (car t) subst)
+         (subst-in (cdr t) subst))]
+      [else t])))
+
+The function replaces each variable that occurs in a term with the
+corresponding binding.
+
+A function (subst-in Term Subst) is defined as follows:
+
+> (define asssq
+    (lambda (x ass k)
+      (cond
+        [(null? ass) #f]
+        [(eq? (car (car ass)) x)
+         (k (car ass) (cdr ass))]
+        [else (asssq x (cdr ass)
+                (lambda (item front)
+                  (k item (cons (car ass) front))))])))
+> (asssq 'a '((q . w) (v . u) (a . 5) (b . 6) (c . 7) (a . 8)) cons)
+((a . 5) (q . w) (v . u) (b . 6) (c . 7) (a . 8))
+
+(define subst-in
+  (lambda (t subst)
+    (cond
+      [(var? t)
+       (cond
+         [(asssq t subst cons)
+	  => (lambda (c/substr)
+	       (let ([c (car c/substr)]
+		     [substr (cdr c/substr)])
+  	         (subst-in (commitment->term c) substr)))]
+         [else t])]
+      [(pair? t)
+       (cons
+         (subst-in (car t) subst)
+         (subst-in (cdr t) subst))]
+      [else t])))
+
+Note that this definition for subst-in differs from the current one in
+kanren.ss. The difference is (remq c subst). Without it, the
+definition in kanren.ss loops if subst contains a circular definition
+like ((v . (u1 u2)) (u1 . v)). The definition here does not loop.
+
+For an acyclic substitution Subst, (subst-in Term Subst) is a fixpoint
+of (lambda (s) (shallow-subst-in Term s)) over Subst.
+
+Definition 1. Two substitutions s1 and s2 are weakly equivalent,
+s1 ==weq== s2,
+if for any term T,
+	(subst-in T s1) identical-to (subst-in T s2)
+
+Obviously, ==weq== is an equivalence relation.
+
+Definition 2. For a substitution subst, define flatten-subst as follows
+(define flatten-subst
+  (lambda (subst)
+    (map
+      (lambda (c)
+        (commitment
+          (commitment->var c)
+          (subst-in (commitment->term c) (remq c subst))))
+      subst)))
+
+Here is a simple example:
+
+> (define test-subst
+    (let-lv (x y)
+      `((,x . (,y)) (,y . (,x ,y)))))
+> (concretize-subst (flatten-subst test-subst))
+((x.0 (x.0 y.0)) (y.0 (y.0) y.0))
+> (concretize-subst (flatten-subst (flatten-subst test-subst)))
+((x.0 (x.0 ((y.0) y.0))) (y.0 (y.0) y.0))
+
+In the following assume (define flattened-subst (flatten-subst subst))
+
+Properties of the flattened-subst:
+	The domain of flattened-subst is the same as the domain of subst.
+	For each variable u in the domain of flattened-subst
+	(binding-of u flattened-subst) is a term whose free
+	variables are either not bound in subst or a part of a cycle.
+	If subst is acyclic,
+	(flatten-subst flattened-subst) is the same as flattened-subst.
+	If subst is acyclic, flattened-subst is invariant (with respect
+	to ==weq==) under any permutation of the commitments.
+
+Proposition 1. For any subst and any term T,
+  (subst-in T subst) identical-to (shallow-subst-in T flattened-subst)
+       
+By definition of subst and flatten-subst.
+
+Proposition 2. If subst is acyclic, subst ==weq== flattened-subst.
+
+Proposition 3. For any acyclic substitution 'subst' and a committed variable v,
+(extend-subst v (binding-of v subst) (prune-subst v subst)) ==weq== subst
+(This uses the invariant of permutation mentioned above.)
+
+Here
+(define prune-subst
+  (lambda (v subst)
+    (cond
+      [(asssq v subst cons)
+       => (lambda (c/substr)
+	    (let ([substv (list (car c/substr))]
+		  [substr (cdr c/substr)])
+	      (map (lambda (c)
+		     (commitment (commitment->var c) 
+		       (subst-in (commitment->term c) substv)))
+		substr)))]
+      [else subst])))
+            
+In the following, let c = (car c/substr) be the commitment associated with v
+                      substr = (cdr c/substr) = (remq c subst)
+		      substp be (prune-subst v subst)
+		      tv     be (commitment->term c)
+		      substo be (extend-subst v tv substp)
+
+Proof. We will actually prove that substo is acyclical and 
+(flatten-subst substo) is ==weq== to (flatten-subst subst).
+We then use Proposition 2.
+
+Acyclicity: suppose substo contains a cycle of substitutions. If the
+cycle includes 'v', then v must freely occur in 'tv' (because if tv does
+not contain v, substp cannot contain v by construction), which means
+subst is cyclic. If the cycle does not include v, then there is a
+variable u in substp that participates in a cycle. It would've been in
+a cycle in subst as well.
+
+In flattened-subst, v is committed to (subst-in tv substr).
+
+In (flatten-subst substo), v is committed to (subst-in tv substp)
+due to the lack of cycles (tv does not mention v directly or
+transitively), the two commitments are the same.
+
+For other variable u, in flattened-subst, u is committed to
+	(subst-in (commitment->term (assq u subst)) (del-binding u subst))
+In (flatten substo), we have
+	(subst-in (commitment->term (assq u substo)) (del-binding u substo))
+
+Again, if (commitment->term (assq u substo)) does not directly or
+indirectly mention v, the results are the same. If (commitment->term
+(assq u substo)) does mention v, tv cannot mention u nor any other
+variable on the path from u to tv.  Therefore, the identity holds.
+
+Oleg conjectures that Proposition 3 can be extended to cyclic substitutions
+if only we define even weaker equivalence of substitutions appropriately.
+
+Proposition 4. Let v be a fresh logical variable and let A be a term. Then
+(unify v A subst) always succeeds, and v becomes bound, with the sole
+exception of the case when A is _.  Furthermore, the resulting substitution
+does not contain a binding whose term includes v (that is, v never 
+freely occurs in the resulting subst).
+
+The following enumerates all possible cases for A, and the result of
+the unification:
+
+A may be one of the following: _, free-var, bound-var, ground, a pair
+(whose components may be again _, free-var, bound-var, ground, a pair).
+
+If A is _, the result is subst.
+If A is a free variable, result: (extend-subst v A subst)
+
+If A is a bound variable in subst then it is either
+	(extend-subst v free-var subst) or
+	(extend-subst v non-var subst)
+where free-var (or non-var) is the "eventual target" of binding A.
+
+If A is ground, the result is (extend-subst v A subst)
+If A is a pair (A1 A2)
+	(extend-subst v (cons vA1 vA2)
+	  (unify vA1 A1 (unify vA2 A2 subst)))
+	where vA1 and vA2 are fresh variables
+	Here we rely on the fact that v is unique and thus may
+	appear in neither A1 nor A2.  Since vA1 and vA2 are fresh
+        variables, there is no reason to worry about unification
+        failing.
+
+Proposition 5. Unification never returns a substitution that includes
+the anonymous variable _.
+Proof: by inspection.
+
+Proposition 6. Unification never returns a substitution of the
+form
+	... (commitment v1 v2) subst
+where v1 or v2 are variables committed in subst.
+Proof: by inspection.
+
+Corollary from Propositions 5 and 6: Unification makes
+well-formed substitutions:
+If subst is well-formed, (unify T1 T2 subst) is also well-formed
+provided that it succeeds.
+
+Proposition 7. If v is a variable committed to a term tv in a
+substitution subst, which is the result of unification, then subst
+can be partitioned as follows:
+	subst-after (commitment v tv) subst-before
+Then if v does not freely occur in tv nor in subst-before then it does 
+not freely occur in subst-after.
+Proof: examining all occurrences of extend-subst, and induction
+in unify-free/bound and unify-free/value (These are undefined words)
+
+Corollary: (prune-subst v subst) should check if v freely occurs on or
+before (to the right of) its associated commitment. If it does not,
+prune-subst can merely remove the commitment to v and elide any subst-in
+(doing any compositions of substitutions).  (This requires a cleaner
+characterization.  It implies that prune-subst can be more efficient
+than it is above.)
+
+Corollary: prune-subst preserves Proposition 7. prune-subst preserves
+the order or commitments. 
+
+Corollary: A variable v may freely occur in a substitution subst that
+resulted from unification or pruning only if in the history of subst
+there was a unification (unify free-var v some-subst) where v is not
+committed in some-subst.
+
+Proposition 8. Let v be a variable committed to a term tv
+in a substitution subst that resulted from unification/pruning. subst
+can be partitioned as
+	subst-after (commitment v tv) subst-before
+
+Assume that v neither freely occurs in tv nor in subst-before.
+Let B1 and B2 be two arbitrary terms. Let
+        substv = (unit-subst v tv)
+	sb  = (unify B1 B2 subst)
+	sb' = (unify (subst-in B1 substv)
+		     (subst-in B2 substv)
+		     (del-binding v subst))
+Then if sb is not #f then neither is sb', and vice versa.
+
+The proof is simple. By definition of unification, if sb is not #f,
+then
+	(subst-in B1 sb) === (subst-in B2 sb)
+By Proposition 7, sb can be factored just as well into
+	subst-after' (commitment v tv) subst-before
+
+Let us prove a commitment commutation lemma: given subst as in
+Proposition 7, 
+	(subst-in T subst) === 
+	(subst-in (subst-in T substv) (del-binding v subst))
+for any term T. By Proposition 7, v does not freely occur in subst
+(and also is not bound in (del-binding v subst)). If v does not
+freely occur in T, (subst-in T subst) === (subst-in T (del-binding v subst))
+and (subst-in T (unit-subst v tv)) === T
+If v does occur in T, the lemma holds just by the construction of
+subst.
+
+
+Proposition 9. Let T be a term other than _. Then
+
+(let ([t T])
+  (exists (u)
+    (all (== u t) A)))
+is observationally equivalent to
+(let ([u T]) A)
+
+where A is an arbitrary antecedent. So, we can convert a logical
+variable into a Scheme variable.
+
+Proof: Propositions 4 and 8, keeping in mind that (exists (u) ...)
+creates a unique variable 'u' and by the form of the expression, u
+cannot occur in T. We also use the fact that (== u t) is
+deterministic.
+
+Corollary: Early pruning. The most general expression call in KANREN
+can be represented as
+
+(let ((t T))
+  (exists (x y z)
+    (all (== C t) A)))
+
+where T and C are terms and A is an antecedent. Suppose the unification of
+C and t succeeds and (some of) logical variables x, y, z ...  become
+committed in a way that does not create a cycle among them. Then the
+expression above is observationally equivalent to
+
+(let ((t T))
+  (lambda@ (sk fk in-subst)
+    (let-values
+      ([(x y z pruned-subst)
+        (exists (x y z)
+          (let ((out-subst (unify C t subst)))
+            (if out-subst
+                (values (subst-in x out-subst)
+		        (subst-in y out-subst)
+			(subst-in z out-subst)
+                        (prune (x y z) out-subst))
+                (fk))))])
+      (@ A sk fk pruned-subst))))
+
+The benefit of doing an early pruning: evaluation of A might add
+more commitments to the substitution. It's faster to prune when there
+are fewer commitments.
+
+Mostly, if x, y, etc, are bound as the result of (== C t), then
+when these variables are mentioned in A, Scheme will replace
+the occurrence of x, for example, with (binding-of x subst') rather
+than with a logical variable, whose binding should be looked up in the
+current subst later. So, we get "normalization by evaluation'.
+
