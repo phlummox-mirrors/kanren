@@ -58,8 +58,7 @@
 ; Auxiliary functions to build and show binary numerals
 ;
 
-(define errorf (lambda x (for-each pretty-print x)))
-(load "sempublic.scm")
+(load "sempublic.ss")
 
 (define tex #f)
 
@@ -277,7 +276,7 @@
 
 ; (<ol3 q p n m) holds iff
 ; q = '() and (pos p) or
-; width(q) < width(p) <= width(n) + width(m)
+; width(q) < (min width(p), width(n) + width(m) + 1)
 ; The way that n is counted down is subtle.  When
 ; it hits 0, m takes the role of n, since it may have some
 ; bits left.  When n and m are both 0, both cases fail.
@@ -285,7 +284,7 @@
 (define <ol3
   (lambda (q p n m)
     (cond@
-      [(== q '()) (pos p)]
+      [(== '() q) (pos p)]
       [else
         (fresh (qr pr _ __)
           (== `(,_ . ,qr) q)
@@ -299,22 +298,27 @@
                 (== `(,_ . ,nr) n) 
                 (<ol3 qr pr nr m))]
             [else fail]))])))
+    
 
-; n * m = p
-
-(define oddo
-  (lambda (n)
-    (fresh (_)
-      (== `(1 . ,_) n))))
-
-(define poseveno
-  (lambda (n)
-    (fresh (_)
-      (== `(0 . ,_) n))))
-
-;;; infinite loop (no answer)
-;;; (run (q) (fresh (x y) (*o '(1 1) `(0 0 1 ,x . ,y) `(1 0 0 ,x . ,y)) (== `(,x ,y) q)))
-;;; (solution (q x y) (**o '(1 1) `(0 0 1 ,x . ,y) `(1 0 0 ,x . ,y)))
+;; infinite loop (no answer)
+;; (run (q) (fresh (x y) (*o '(1 1) `(0 0 1 ,x . ,y) `(1 0 0 ,x . ,y)) (== `(,x ,y) q)))
+;; (solution (q x y) (**o '(1 1) `(0 0 1 ,x . ,y) `(1 0 0 ,x . ,y)))
+;;
+;; or
+;;
+;; (run (q) (fresh (x y z) (*o `(1 . ,x) `(0 1 . ,y) `(1 . ,z))))
+;;
+;; or even worse
+;;
+;; (run (q) (fresh (x y) (*o `(1 . ,x) `(0 1) `(1 . ,y))))
+;;
+;; or worst of all
+;;
+;; (run (q) (*o `(1 . ,q) `(0 1) `(1 . ,q)))
+;;
+;; and
+;;
+;; (run (q) (*o `(1 . ,q) `(1 1) `(1 . ,q)))
 
 (define *o
   (lambda (n m p)
@@ -325,18 +329,67 @@
       [(== '(1) n) (== '(1) m) (== '(1) p)]
       [(== '(1) n) (gt1 m) (== m p)]
       [(== '(1) m) (gt1 n) (== n p)]
-      [(gt1 n) (gt1 m)
-         (fresh (n/2 p/2)
-           (== `(0 . ,n/2) n)
-	       (== `(0 . ,p/2) p)
-	       (*o n/2 m p/2))]
-      [(gt1 n) (gt1 m)
-       (fresh (<n-1>/2 res)
-	 (== `(1 . ,<n-1>/2) n)
-         (<ol3 res p n m)
-	 (*o <n-1>/2 m res)
-	 (+o `(0 . ,res) m p))]
+      [(gt1 n) (gt1 m) (gen-mult n m p)]
       [else fail])))
+
+(define gen-mult
+  (lambda (n m p)
+    (condi
+      [(gen-mult-even/even n m p) succeed]
+      [(gen-mult-even/odd n m p) succeed]
+      [(gen-mult-even/odd m n p) succeed]
+      [(gen-mult-odd/odd m n p) succeed]
+      [else fail])))
+
+(define gen-mult-even/even
+  (lambda (n m p)
+    (fresh (n/2 m/2 p/4)
+      (== `(0 . ,n/2) n)
+      (== `(0 . ,m/2) m)         
+      (== `(0 0 . ,p/4) p)
+      (*o n/2 m/2 p/4))))
+
+(define gen-mult-even/odd
+  (lambda (n m p)
+    (condi
+      [(gen-mult-two/odd n m p) succeed]
+      [(gen-mult-gt2even/odd n m p) succeed]
+      [else fail])))
+
+(define gen-mult-two/odd
+  (lambda (n m p)
+    (fresh (<m-1>/2 p/4 res)
+      (== `(0 1) n)
+      (== `(1 . ,<m-1>/2) m)         
+      (== `(0 0 . ,p/4) res)
+      (*o '(1) <m-1>/2 p/4)
+      (+o res n p))))
+
+(define gen-mult-gt2even/odd
+  (lambda (n m p)
+    (fresh (n/2 <m-1>/2 p/4 res)
+      (gt2 n)
+      (== `(0 . ,n/2) n)
+      (== `(1 . ,<m-1>/2) m)         
+      (== `(0 0 . ,p/4) res)
+      (<ol3 p/4 p n m)
+      (*o n/2 <m-1>/2 p/4)
+      (+o res n p))))
+
+
+(define gen-mult-odd/odd
+  (lambda (n m p)
+    (fresh (<n-1>/2 <m-1>/2 p/4 res res2 res3)
+      (== `(1 . ,<n-1>/2) n)
+      (== `(1 . ,<m-1>/2) m)
+      (== `(0 0 . ,p/4) res)
+      (<ol3 p/4 p n m)
+      (*o <n-1>/2 <m-1>/2 p/4)
+      (+o res `(0 . ,<n-1>/2) res2)
+      (+o res2 `(0 . ,<m-1>/2) res3)
+      (+o res3 '(1) p))))
+
+
 
 (define comp-l
   (lambda (n m base-comp)
@@ -394,103 +447,21 @@
 (define divo
   (lambda (n m q r)
     (condi
-      [(== '() q) (== r n) (<=ol n m) (<o n m)] ; n < m
-      [(== n m) (pos m) (== '(1) q) (== '() r)] ; n = m
-      ; n the same size as m, but n > m
-      [(== q '(1)) (=ol m n) (<o m n) (<o r m) (-o n m r)]
-      ; n is larger in size than m
-      ; n = m*q + r
+      [(== '() q) (<=ol n m) (== r n) (<o n m)]
+      [(== '(1) q) (== '(1) m) (<o m n) (=ol m n) (<o r m) (-o n m r)]
+      [(== '(1) q) (gt2 m) (<o m n) (=ol m n) (<o r m) (-o n m r)]  ; overlaps when x is 2 or more
+      [(== n m) (pos m) (== '(1) q) (== '() r)]      
+      [(gt1 q) (== '(1) m) (== n q) (== '() r)]
+      [(fresh (x) (== `(0 . ,x) n) (== '(0 1) m) (gt1 x) (== x q)) (== '() r)]
+      [(fresh (x) (== `(1 . ,x) n) (== '(0 1) m) (== x q)) (== '(1) r)]  ; overlap when x is 1
+      [(== '(1) q) (fresh (x) (== `(1 . ,x) n) (== `(0 . ,x) m) (pos x)) (== '(1) r)] ; the new rule      
       [else (fresh (res)
-	      (alli
-              (pos m)
+              (gt2 m)
               (<ol m n)
               (<o r m)
-	      ;(trace-vars 1 (n m q r))
-	      (<ol3 n `(0 . ,n) `(0 . ,m) `(0 . ,q))
               (<ol res `(0 . ,n))
               (-o n res r)
-              (*o q m res)))]
-      )))
-
-(define divo
-  (lambda (n m q r)
-    (condi
-      [(== n m) (pos m) (== '(1) q) (== '() r)] ; n = m
-      ; n the same size as m, but n > m
-      ; Split the following into three sub-cases
-      ;[(== q '(1)) (=ol m n) (<o m n) (<o r m) (-o n m r)]
-      [(fresh (x) (== q '(1)) (pos x) (== r '(1))
-	 (== n `(1 . ,x)) (== m `(0 . ,x)))]
-
-      [(fresh (b n1 m1) (== q '(1)) (pos n1) (pos m1)
-	 (== n `(,b . ,n1)) (== m `(0 . ,m1))
-	 (alli (=ol m1 n1) (<o m1 n1) (<o r m) (-o n m r)))]
-
-      [(fresh (x) (== q '(1)) (pos x) 
-	 (== m `(1 . ,x))
-	 (=ol m n) (<o m n) (<o r m) (-o n m r))]
-      [(== '() q) (== r n) (<=ol n m) (<o n m)] ; n < m
-	 
-      ; n is larger in size than m
-      ; n = m*q + r
-      [else (fresh (res)
-	      (alli
-              (pos m)
-              (<ol m n)
-              (<o r m)
-	      ;(trace-vars 1 (n m q r))
-	      (<ol3 n `(0 . ,n) `(0 . ,m) `(0 . ,q))
-              (<ol res `(0 . ,n))
-              (-o n res r)
-              (*o q m res)))]
-      )))
-; n and m have the same size; if n has 0 bit, m must have it too.
-(define =ol<=
-  (lambda (m n)
-    (condi
-      ((== n '(1)) (== m '(1)))
-      ((fresh (b n1 m1) (== n `(,b . ,n1)) (== m `(,b . ,m1))
-	 (=ol<= m1 n1)))
-      ((fresh (n1 m1) (== m `(0 . ,m1)) (== n `(1 . ,n1))
-	 (=ol<= m1 n1)))
-      (else fail))))
-(define =ol<<
-  (lambda (m n)
-    (condi
-      ((fresh (b n1 m1) (== n `(,b . ,n1)) (== m `(,b . ,m1))
-	 (=ol<< m1 n1)))
-      ((fresh (n1 m1) (== m `(0 . ,m1)) (== n `(1 . ,n1))
-	 (=ol<= m1 n1)))
-      (else fail))))
-
-;
-
-; n is the same size than m, but is greater
-(define =ol<
-  (lambda (m n)
-    (condi
-      ((fresh (b n1 m1) (== m `(,b . ,m1)) (== n `(,b . ,n1))
-	 (=ol< m1 n1)))
-      ((fresh (n1 m1) (== m `(0 . ,m1)) (== n `(1 . ,n1))
-	 (=ol<= m1 n1)))
-      ((fresh (n1 m1) (== m `(1 . ,m1)) (== n `(0 . ,n1))
-	 (=ol< m1 n1)))
-      (else fail))))
-
-      
-;       [(== '(1) q) (== '(1) m) (<o m n) (=ol m n) (<o r m) (-o n m r)]
-;       [(== '(1) q) (gt2 m) (<o m n) (=ol m n) (<o r m) (-o n m r)]  ; overlaps when x is 2 or more
-;       [(gt1 q) (== '(1) m) (== n q) (== '() r)]
-;       [(fresh (x) (== `(0 . ,x) n) (== '(0 1) m) (gt1 x) (== x q)) (== '() r)]
-;       [(fresh (x) (== `(1 . ,x) n) (== '(0 1) m) (== x q)) (== '(1) r)]  ; overlap when x is 1
-;       [(== '(1) q) (fresh (x) (== `(1 . ,x) n) (== `(0 . ,x) m) (pos x)) (== '(1) r)] ; the new rule      
-;       [else (fresh (res)
-;               (gt2 m)
-;               (<ol m n)
-;               (<o r m)
-;               (<ol res `(0 . ,n))
-;               (-o n res r)
-;               (*o q m res))])))
+              (*o q m res))])))
 
 (define 1or>2
   (lambda (n)
@@ -867,7 +838,7 @@
         (*o y z (build 24))
         (project (y z)
           (== `(,(trans y) ,(trans z)) x)))))
-  '((1 24) (24 1) (2 12) (3 8) (4 6) (6 4) (8 3) (12 2)))
+  '((1 24) (24 1) (2 12) (8 3) (12 2) (3 8) (4 6) (6 4)))
 
 (test-check "multiplication-all-3"
   (prefix 7
@@ -888,7 +859,7 @@
   '((0 0) (1 3) (2 6) (3 9) (4 12)))
 
 (test-check "multiplication-all-5"
-  (prefix 7
+  (prefix 26
     (run-stream (q)        
       (fresh (x y z)
         (*o x y z)
@@ -899,17 +870,39 @@
     ((1) (1) (1))
     ((1) (_.0 __.0 . ___.0) (_.0 __.0 . ___.0))
     ((_.0 __.0 . ___.0) (1) (_.0 __.0 . ___.0))
-    ((0 1) (_.0 __.0 . ___.0) (0 _.0 __.0 . ___.0))))
+    ((0 1) (0 1) (0 0 1))
+    ((0 1) (1 1) (0 1 1))
+    ((0 1) (0 __.0 __.1 . ___.0) (0 0 __.0 __.1 . ___.0))
+    ((1 1) (0 1) (0 1 1))
+    ((0 __.0 __.1 . ___.0) (0 1) (0 0 __.0 __.1 . ___.0))
+    ((0 0 1) (1 1) (0 0 1 1))
+    ((0 0 1) (0 0 1) (0 0 0 0 1))
+    ((1 1) (1 1) (1 0 0 1))
+    ((0 0 1) (0 1 1) (0 0 0 1 1))
+    ((0 1) (1 __.0 __.1 . ___.0) (0 1 __.0 __.1 . ___.0))
+    ((0 0 1) (0 0 __.0 __.1 . ___.0) (0 0 0 0 __.0 __.1 . ___.0))
+    ((1 1) (0 0 1) (0 0 1 1))
+    ((0 1 1) (0 0 1) (0 0 0 1 1))
+    ((0 1 1) (1 1) (0 1 0 0 1))
+    ((0 0 __.0 __.1 . ___.0) (0 0 1) (0 0 0 0 __.0 __.1 . ___.0))
+    ((1 0 1) (1 1) (1 1 1 1))
+    ((0 0 0 1) (0 1 1) (0 0 0 0 1 1))
+    ((0 0 0 1) (1 1) (0 0 0 1 1))
+    ((0 0 0 1) (0 0 0 1) (0 0 0 0 0 0 1))
+    ((1 __.0 __.1 . ___.0) (0 1) (0 1 __.0 __.1 . ___.0))))
 
 (test-check "multiplication-even-1"
-  (prefix 5
+  (prefix 10
     (run-stream (q)        
       (fresh (y z)
         (*o (build 2) y z)
         (== `(,y ,z) q))))
   '((() ())
     ((1) (0 1))
-    ((_.0 __.0 . ___.0) (0 _.0 __.0 . ___.0))))
+    ((0 1) (0 0 1))
+    ((1 1) (0 1 1))
+    ((0 __.0 __.1 . ___.0) (0 0 __.0 __.1 . ___.0))
+    ((1 __.0 __.1 . ___.0) (0 1 __.0 __.1 . ___.0))))
 
 (test-check "division-1"
   (run (q)
@@ -1023,9 +1016,11 @@
       (fresh (z _)
         (divo (build 5) z (build 1) _)
         (project (z) (== (trans z) q)))))
-  '(5 4 3))
+  '(4 5 4 3))
+;; Should not have any duplicates!
 
-'(test-check "all inexact factorizations of 12"
+
+(test-check "all inexact factorizations of 12"
   (run* (w)
     (fresh (m q r n)
       (== n (build 12))
@@ -1070,22 +1065,24 @@
 
 
 
-;#!eof
-'(test-check "div-even"
+
+(test-check "div-even"
   (run* (w)
     (fresh (y z r)
       (divo `(0 . ,y) (build 2) z r)
       (== `(,y ,z ,r) w)))
   '(((1) (1) ()) ((_.0 __.0 . ___.0) (_.0 __.0 . ___.0) ())))
-;#!eof
 
 (test-check "mul-even"
-  (prefix 4
-    (run-stream (q)
-      (fresh (x y)
-        (*o x (build 2) `(0 . ,y))
-        (== `(,x ,y) q))))
-  '(((1) (1)) ((0 1) (0 1)) ((1 1) (1 1)) ((0 0 1) (0 0 1))))
+  (run* (q)
+    (fresh (x y)
+      (*o x (build 2) `(0 . ,y))
+      (== `(,x ,y) q)))
+  '(((1) (1))
+    ((0 1) (0 1))
+    ((1 1) (1 1))
+    ((0 __.0 __.1 . ___.0) (0 __.0 __.1 . ___.0))
+    ((1 __.0 __.1 . ___.0) (1 __.0 __.1 . ___.0))))
 
 
 (cout "Testing strong multiplicative commutativity" nl)
