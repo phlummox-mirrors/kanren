@@ -2514,9 +2514,86 @@
              #f))]
       [else (and (equal? t u) subst)])))
 
+; ct is a commitment to a bound variable, u can be anything
+(define unify-bound/any
+  (lambda (ct u subst)
+    (cond
+      [(eq? u _) subst]
+      [(var? u) 
+       (let ([cu (assq u subst)])
+	 (if cu
+	   ; both t and u are bound...
+	   (unify-bound/bound ct cu subst)
+	   ; t is bound, u is free
+	   (unify-free/bound u ct subst)))]
+      [else ; unify bound and a value
+	(unify (commitment->term ct) u subst)])))
+
+; Unify two already bound variables represented by their commitments
+; ct and cu.
+; We single out this case because in the future we may wish
+; to unify the classes of these variables, by making a redundant
+; binding of (commitment->var ct) to (commitment->term cu) or
+; the other way around.
+; Aside from the above, this function can take advantage of the following
+; facts about (commitment->term cx) (where cx is an existing commitment):
+;   - it is never _
+;   - it never contains _
+;   - if it is a complex term (a pair), it is either ground
+;     or contain variables only at the top (spine) level.
+; Most importantly, if, for example, (commitment->term ct) is a free variable,
+; we enter its binding to (commitment->term cu) with fewer checks.
+; in particular, we never need to call unify-free/list nor
+; unify-free/any as we do need to rebuild any terms.
+
+(define unify-bound/bound
+  (lambda (ct cu subst)
+    (let unify-internal ((t (commitment->term ct))
+			 (u (commitment->term cu))
+			 (subst subst))
+      (cond
+	[(eq? t u) subst]			; quick tests first
+	[(var? t)
+	  (let ([ct (assq t subst)])
+	    (if ct
+	      (cond			; t is a bound variable
+		[(var? u) 
+		  (let ([cu (assq u subst)])
+		    (if cu
+			; both t and u are bound...
+		      (unify-bound/bound ct cu subst)
+			; t is bound, u is free
+		      (unify-free/bound u ct subst)))]
+		[else ; unify bound and a value
+		  (unify-internal (commitment->term ct) u subst)])
+	      (cond			; t is a free variable
+		[(var? u) 
+		  (let ([cu (assq u subst)])
+		    (if cu
+			; t is free, u is bound...
+		      (unify-free/bound t cu subst)
+			; both are free
+		      (extend-subst t u subst)))]
+		[else ; t is free, u is not a var: done
+		  (extend-subst t u subst)])))]
+	[(var? u)				; t is not a variable...
+	  (let ([cu (assq u subst)])
+	    (cond
+	      [cu (unify-internal (commitment->term cu) t subst)]
+              ; u is free, t is not a var: done
+	      [else (extend-subst u t subst)]))]
+      [(and (pair? t) (pair? u))
+       (let ([car-subst (unify-internal (car t) (car u) subst)])
+         (if car-subst
+             (unify-internal (cdr t) (cdr u) car-subst)
+             #f))]
+      [else (and (equal? t u) subst)]))))
+
 ; t-var is a free variable, u can be anything
 ; This is analogous to get_variable instruction of Warren Abstract Machine
 ; (WAM).
+; This function always succeeds. See the theorem below.
+; It is mutually recursive only with unify-free/list.
 (define unify-free/any
   (lambda (t-var u subst)
     (cond
@@ -2529,21 +2606,6 @@
       [(pair? u) (unify-free/list t-var u subst)]
       [else ; u is not a var and is not a pair: it's atomic
 	(extend-subst t-var u subst)])))
-
-; ct is a commitment to a bound variable, u can be anything
-(define unify-bound/any
-  (lambda (ct u subst)
-    (cond
-      [(eq? u _) subst]
-      [(var? u) 
-       (let ([cu (assq u subst)])
-	 (if cu
-	   ; both t and u are bound...
-	   (unify (commitment->term ct) (commitment->term cu) subst)
-	   ; t is bound, u is free
-	   (unify-free/bound u ct subst)))]
-      [else ; unify bound and a value
-	(unify (commitment->term ct) u subst)])))
 
 ; On entrance: t-var is free.
 ; we are trying to unify it with a bound variable (commitment->var cu)
