@@ -185,7 +185,7 @@
 (define app-rel
   (relation (g t rand rator)
     (to-show g `(app ,rator ,rand) t)
-    (let-lv (t-rand)
+    (exists (t-rand)
       (all!! (!- g rator `(--> ,t-rand ,t)) (!- g rand t-rand)))))
 
 (define fix-rel
@@ -196,7 +196,7 @@
 (define polylet-rel
   (relation (g v rand body t)
     (to-show g `(let ([,v ,rand]) ,body) t)
-    (let-lv (t-rand)
+    (exists (t-rand)
       (all!!
         (!- g rand t-rand)
         (!- `(generic ,v ,t-rand ,g) body t)))))

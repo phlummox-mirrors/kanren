@@ -126,7 +126,7 @@
 
 (define ind-kb-gen
   (lambda (t)
-    (let-lv (ind)
+    (exists (ind)
       (all! (== t ind)
 	(lambda@ (sk fk subst)
 	  (let* ([indc (subst-in ind subst)]
