@@ -86,7 +86,7 @@
 ; perhaps we should use memq and eq when applied to vars ...
 (define (occur-vars? term vars)
   (cond
-    ((var? term) (memv term vars))
+    ((var? term) (memq term vars))
     ((pair? term) (or (occur-vars? (car term) vars)
 		      (occur-vars? (cdr term) vars)))
     (else #f)))
@@ -119,10 +119,12 @@
 	    (cond
 	      ((eq? current in-subst)	; found the mark
 		;(printf "found the mark~%")
-		(do-subst (append clean current) to-remove to-subst))
+		(do-subst 
+		  (if (null? current) clean (append clean current))
+		  to-remove to-subst))
 	      ((null? current) 
 		(do-subst clean to-remove to-subst))
-	      ((memv (commitment->var (car current)) vars)
+	      ((memq (commitment->var (car current)) vars)
 		(loop clean (cons (car current) to-remove) to-subst 
 		  (cdr current)))
 	      ((occur-vars? (commitment->term (car current)) vars)
@@ -1128,6 +1130,21 @@
                (@ sk fk subst cutk))]
          [else (fk)]))]))
 
+(define-syntax let-inject
+  (syntax-rules ()
+    ((_ ((t (var ...) exp) ...) body ...)
+      (lambda@ (sk fk subst)
+	(@ 
+	  (introduce-vars (t ...)
+	    (all!
+	      (== t (let ((var (nonvar! (subst-in var subst))) ...) exp)) ... 
+	      body ...)) sk fk subst)))))
+
+; (define-syntax pred-call
+;   (syntax-rules ()
+;     [(_ p t ...)
+;      (let-inject ((res (t ...) (p t ...))) (== res #t))]))
+
 (define nonvar!
   (lambda (t)
     (if (var? t)
@@ -1409,6 +1426,32 @@
                  (move m a c b)
                  (pred-call printf "Move a disk from ~s to ~s~n" a b)
                  (move m c b a)))))])
+    (relation (n)
+      (to-show n)
+      (move n 'left 'middle 'right))))
+
+(begin
+  (printf "~s with 3 disks~n~n" 'test-towers-of-hanoi)
+  (solution (towers-of-hanoi 3))
+  (void))
+
+(define towers-of-hanoi
+  (letrec
+      ([move
+         (extend-relation (a1 a2 a3 a4)
+           (relation/cut cut ()
+             (to-show 0 _ _ _)
+             cut)
+           (relation (n a b c)
+             (to-show n a b c)
+               (all
+                 (pred-call positive? n)
+                 (let-inject ((m (n) (- n 1)))
+                   (move m a c b)
+                   (let-inject
+		       ((dummy (a b)
+			    (printf "Move a disk from ~s to ~s~n" a b))))
+                   (move m c b a)))))])
     (relation (n)
       (to-show n)
       (move n 'left 'middle 'right))))
