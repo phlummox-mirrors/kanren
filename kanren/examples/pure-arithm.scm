@@ -8,9 +8,9 @@
 ; That relation is more remarkable than it may look. First, it's possible to
 ; ask (//o 1 0 q). Obviously, such q does not exist. The relation
 ; thus fail -- it does not try to enumerate all natural numbers.
-; Furthermore, one can invoke the relation like
-; (//o 5 m 1), where n is a free variable. The answers are (5 4 3).
-; Again, (//o 5 m 7) simply fails and does not loop forever.
+; A more general relation is (divo n m q r). We can invoke it like
+; (divo 5 m 1 _), where n is a free variable. The answers are (5 4 3).
+; Again, (divo 5 m 7 _) simply fails and does not loop forever.
 ; We can even try (//o x y z), which returns a stream of triples
 ; (((x.0 ()) (y.0 (() . *anon.0)) (z.0 ()))
 ;  meaning 0/n = 0 for any n >0
@@ -111,11 +111,25 @@
 
 ; n = q*m + r
 ; where 0<=r<m
+; The following however loops if 'm' is not defined. See divo below
+; for a more general and better behaving relation.
 (define //o
   (relation (head-let n m q)
     (exists (r p)
       (all (<o r m)  (++o p r n) ;(trace-vars 1 (p r n))
 	(**o q m p)))))
+
+; n = q*m + r
+; where 0<=r<m
+(define divo
+  (relation (head-let n m q r)
+    (any-interleave
+      (all (== q '()) (== r n) (<o n m))      ; if n < m, then q=0, n=r
+      (all (== n m) (== q '(())) (== r '()))  ; n = 1*n + 0
+      (exists (p)
+	(all (<o m n) (<o r m)  (++o p r n) ;(trace-vars 1 (p r n))
+	  (**o q m p))))))
+
 
 
 (define-syntax test
@@ -193,18 +207,46 @@
 (test (x) (//o (build 33) x (build 11)))
 (test (x) (//o x (build 3) (build 11)))
 
-; Check later
-'(test-check 'div-all-1
-  (solve 7 (w) 
-    (exists (z) (all (//o (build 5) z (build 1))
-		    (project (z) (== `(,(trans z)) w)))))
-  '())
-
 (test-check 'div-all-1
   (solve 3 (x y z) (//o x y z))
 '(((x.0 ()) (y.0 (() . *anon.0)) (z.0 ())) ; 0/n = 0 for any n >0
  ((x.0 (() . *anon.0)) (y.0 (() . *anon.0)) (z.0 (())))
  ((x.0 x.0) (y.0 (())) (z.0 x.0)))
+)
+
+(cout nl "division, general" nl)
+
+(test (x) (divo (build 4) (build 2) x _))
+(test-check 'div-fail-1 (test (x) (divo (build 4) (build 0) x _)) '())
+(test (x) (divo (build 4) (build 3) x _))
+(test (x) (divo (build 4) (build 4) x _))
+(test (x) (divo (build 4) (build 5) x _))
+(test (x) (divo (build 4) (build 5) _ x))
+
+(test (x) (divo (build 33) (build 3) x _))
+(test (x) (divo (build 33) x (build 11) _))
+(test (x) (divo x (build 3) (build 11) _))
+
+(test (x) (divo x (build 5) _ (build 4)))
+(test (x) (divo x (build 5) (build 3) (build 4)))
+(test (x) (divo x _ (build 3) (build 4)))
+(test-check 'div-fail-2 (test (x) (divo (build 5) x (build 7) _)) '())
+
+; Check later
+(test-check 'div-all-2
+  (solve 7 (w) 
+    (exists (z) (all (divo (build 5) z (build 1) _)
+		    (project (z) (== `(,(trans z)) w)))))
+  '(((w.0 (5))) ((w.0 (3))) ((w.0 (4)))))
+
+(test-check 'div-all-3
+  (solve 3 (x y z r) (divo x y z r))
+'(((x.0 ()) (y.0 (() . *anon.0)) (z.0 ()) (r.0 ())) ; 0 = 1*0 + 0
+ ((x.0 y.0) (y.0 y.0) (z.0 (())) (r.0 ()))
+ ((x.0 (() () . *anon.0))
+  (y.0 (()))
+  (z.0 (() () . *anon.0))
+  (r.0 ())))
 )
 
 ; the following take a long time
