@@ -186,7 +186,7 @@
 ; as an eigenvariable (skolem function) rather than a logical variable
 
 (define goal-rev
-  (let* ((sk (symbol-append 'sk ': (gensym)))
+  (let* ((sk (eigen-variable 'sk))
 	 (t1-sk (lambda (t) `(,sk ,t))))
     (lambda (kb)
       (extend-relation (t)
