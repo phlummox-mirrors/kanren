@@ -268,8 +268,8 @@
                    ((f x) x))))
         ?)))
   '((?.0 (-->
-           (--> t.0 (--> t.0 t.1))
-           (--> t.0 t.1)))))
+           (--> t-rand.0 (--> t-rand.0 t.0))
+           (--> t-rand.0 t.0)))))
 
 (test-check 'everything-but-polymorphic-let
   (solution (?)

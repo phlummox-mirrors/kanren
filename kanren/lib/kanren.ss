@@ -204,6 +204,8 @@
         [(var? u) (compose-subst subst (unit-subst u t))]
         [else #f]))))
 
+(define unify-free/any unify)		; will be re-defined later
+
 (define trivially-equal?
   (lambda (t u)
     (or (eqv? t u) ;;; must stay eqv?
@@ -1047,6 +1049,54 @@
 ; (relation (a c) (to-show term1 (once c) term2) body)
 ; Makes it easier to deal with. But it is unsatisfactory:
 ; to-show becomes a binding form...
+;
+; When ``compiling'' a relation, we now look through the
+; (to-show ...) pattern for a top-level occurrence of the logical variable
+; introduced by the relation. For example:
+;	(relation (x y) (to-show `(,x . ,y) x) body)
+; we notice that the logical variable 'x' occurs at the top-level. Normally we
+; compile the relation like that into the following
+;    (lambda (g1 g2)
+;      (exists (x y)
+;        (lambda@ (sk fk subst)
+; 	 (let*-and (fk) ((subst (unify g1 `(,x . ,y)  subst))
+; 			 (subst (unify g2 x subst)))
+; 	     (@ body sk fk subst)))))
+;
+; However, that we may permute the order of 'unify g...' clauses
+; to read
+;    (lambda (g1 g2)
+;      (exists (x y)
+;        (lambda@ (sk fk subst)
+; 	 (let*-and (fk) ((subst (unify x g2 subst))
+; 			 (subst (unify g1 `(,x . ,y)  subst))
+; 			 )
+; 	     (@ body sk fk subst)))))
+;
+; We may further note that according to the properties of the unifier
+; (see below), (unify x g2 subst) must always succeed, 
+; because x is a fresh variable.
+; Furthermore, the result of (unify x g2 subst) is either subst itself,
+; or subst with the binding of x. Therefore, we can check if
+; the binding at the top of (unify x g2 subst) is the binding to x. If
+; so, we can remove the binding and convert the variable x from being logical
+; to being lexical. Thus, we compile the relation as
+;
+;    (lambda (g1 g2)
+;      (exists (x y)
+;        (lambda@ (sk fk subst)
+; 	 (let* ((subst (unify-free/any x g2 subst))
+; 	        (fast-path? (and (pair? subst)
+; 			         (eq? x (commitment->var (car subst)))))
+; 	        (x (if fast-path? (commitment->term (car subst)) x))
+; 	        (subst (if fast-path? (cdr subst) subst)))
+; 	 (let*-and (fk) ((subst (unify g1 `(,x . ,y)  subst))
+; 			 )
+; 	     (@ body sk fk subst))))))
+;
+; The benefit of that approach is that we limit the growth of subst and avoid
+; keeping commitments that had to be garbage-collected later.
+
 
 (define-syntax relation
   (syntax-rules (to-show head-let once _)
@@ -1054,7 +1104,7 @@
      (relation-head-let (head-term ...) ant)]
     [(_ (head-let head-term ...))	; not particularly useful without body
      (relation-head-let (head-term ...))]
-    [(_ () (to-show term ...) ant)		; pattern with no vars _is_ linear
+    [(_ () (to-show term ...) ant)	; pattern with no vars _is_ linear
      (relation-head-let (`,term ...) ant)]
     [(_ () (to-show term ...))		; the same without body: not too useful
      (relation-head-let (`,term ...))]
@@ -1068,45 +1118,64 @@
     [(_ "a" vars once-vars (id . ids) terms . ant)
      (relation "a" (id . vars) once-vars ids terms . ant)]
     [(_ "a" vars once-vars () terms . ant)
-     (relation "g" vars once-vars () () terms . ant)]
+     (relation "g" vars once-vars () () () (subst) terms . ant)]
     ; generating temp names for each term in the head
     ; don't generate if the term is a variable that occurs in
     ; once-vars
     ; For _ variables in the pattern, generate unique names for the lambda
     ; parameters, and forget them
-    [(_ "g" vars once-vars (gs ...) gunis (_ . terms) . ant)
-     (relation "g" vars once-vars (gs ... anon) gunis terms . ant)]
-    [(_ "g" vars once-vars (gs ...) gunis (term . terms) . ant)
+    ; also, note and keep track of the first occurrence of a term
+    ; that is just a var (bare-var) 
+    [(_ "g" vars once-vars (gs ...) gunis bvars bvar-cl (_ . terms) . ant)
+     (relation "g" vars once-vars (gs ... anon) gunis
+       bvars bvar-cl terms . ant)]
+    [(_ "g" vars once-vars (gs ...) gunis bvars (subst . cls)
+           (term . terms) . ant)
      (id-memv?? term once-vars 
        ; success continuation: term is a once-var
-       (relation "g" vars once-vars (gs ... term) gunis terms . ant)
+       (relation "g" vars once-vars (gs ... term) gunis bvars (subst . cls)
+	 terms . ant)
        ; failure continuation: term is not a once-var
-       (relation "g" vars once-vars  (gs ... g) ((g . term) . gunis) 
-	 terms . ant))]
-    [(_ "g" vars once-vars gs gunis () . ant)
-     (relation "f" vars once-vars gs gunis . ant)]
+       (id-memv?? term vars
+	 ; term is a bare var
+	 (id-memv?? term bvars
+	   ; term is a bare var, but we have seen it already: general case
+	   (relation "g" vars once-vars  (gs ... g) ((g . term) . gunis) 
+	     bvars (subst . cls) terms . ant)
+	   ; term is a bare var, and we have not seen it
+	   (relation "g" vars once-vars (gs ... g) gunis
+	     (term . bvars)
+	     (subst
+	       (subst (unify-free/any term g subst))
+	       (fast-path? (and (pair? subst)
+			      (eq? term (commitment->var (car subst)))))
+	       (term (if fast-path? (commitment->term (car subst)) term))
+	       (subst (if fast-path? (cdr subst) subst))
+	       . cls)
+	     terms . ant))
+	 ; term is not a bare var
+	 (relation "g" vars once-vars  (gs ... g) ((g . term) . gunis) 
+	   bvars (subst . cls) terms . ant)))]
+    [(_ "g" vars once-vars gs gunis bvars bvar-cl () . ant)
+     (relation "f" vars once-vars gs gunis bvar-cl . ant)]
 
     ; Final: writing the code
-    [(_ "f" vars () () () ant)	   ; no arguments (no head-tests)
+    [(_ "f" vars () () () (subst) ant)   ; no arguments (no head-tests)
       (lambda ()
 	(exists vars ant))]
-    [(_ "f" (ex-id ...) () (g ...) ((gv . term) ...) ) ; no body, no once-vars!
-     (lambda (g ...)
-       (exists (ex-id ...)
-	 (lambda@ (sk fk subst)
-	   (let*-and (fk) ((subst (unify gv term subst)) ...)
-	     (@ sk fk subst)))))]
-                                   ; no tests but pure binding
-    [(_ "f" (ex-id ...) once-vars (g ...) () ant)
+                                    ; no tests but pure binding
+    [(_ "f" (ex-id ...) once-vars (g ...) () (subst) ant)
      (lambda (g ...)
        (exists (ex-id ...) ant))]
 				    ; the most general
-    [(_ "f" (ex-id ...) once-vars (g ...) ((gv . term) ...) ant)
+    [(_ "f" (ex-id ...) once-vars (g ...) ((gv . term) ...) 
+       (subst let*-clause ...) ant ...)
      (lambda (g ...)
        (exists (ex-id ...)
 	 (lambda@ (sk fk subst)
-	   (let*-and (fk) ((subst (unify gv term subst)) ...)
-	     (@ ant sk fk subst)))))]))
+	   (let* (let*-clause ...)
+	     (let*-and (fk) ((subst (unify gv term subst)) ...)
+	       (@ ant ... sk fk subst))))))]))
 
 ; A macro-expand-time memv function for identifiers
 ;	id-memv?? FORM (ID ...) KT KF
@@ -1344,8 +1413,8 @@
   (concretize-subst
     (car (@ (child-of-male 'sam 'jon)
 	    initial-sk initial-fk empty-subst)))
-  `(,(commitment 'dad.0 'jon) ,(commitment 'child.0 'sam)))
-  ;'())  ; variables shouldn't leak
+  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))
+  '())  ; variables shouldn't leak
 
 
 ; The mark should be found here...
@@ -1357,8 +1426,8 @@
   (concretize-subst
     (car (@ (child-of-male 'sam 'jon)
 	    initial-sk initial-fk empty-subst)))
-  `(,(commitment 'dad.0 'jon) ,(commitment 'child.0 'sam)))
-  ;'())
+  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))
+  '())
 
 (define rob/sal
   (relation ()
@@ -3056,16 +3125,16 @@
           ((q.0 (a b c u v)) (r.0 ()))))
       (equal?
         (solve 6 (q r s) (concat q r s))
-        '(((q.0 ()) (r.0 xs.0) (s.0 xs.0))
-          ((q.0 (x.0)) (r.0 xs.0) (s.0 (x.0 . xs.0)))
-          ((q.0 (x.0 x.1)) (r.0 xs.0) (s.0 (x.0 x.1 . xs.0)))
-          ((q.0 (x.0 x.1 x.2)) (r.0 xs.0) (s.0 (x.0 x.1 x.2 . xs.0)))
+        '(((q.0 ()) (r.0 r.0) (s.0 r.0))
+          ((q.0 (x.0)) (r.0 r.0) (s.0 (x.0 . r.0)))
+          ((q.0 (x.0 x.1)) (r.0 r.0) (s.0 (x.0 x.1 . r.0)))
+          ((q.0 (x.0 x.1 x.2)) (r.0 r.0) (s.0 (x.0 x.1 x.2 . r.0)))
           ((q.0 (x.0 x.1 x.2 x.3))
-           (r.0 xs.0)
-           (s.0 (x.0 x.1 x.2 x.3 . xs.0)))
+           (r.0 r.0)
+           (s.0 (x.0 x.1 x.2 x.3 . r.0)))
           ((q.0 (x.0 x.1 x.2 x.3 x.4))
-           (r.0 xs.0)
-           (s.0 (x.0 x.1 x.2 x.3 x.4 . xs.0)))))
+           (r.0 r.0)
+           (s.0 (x.0 x.1 x.2 x.3 x.4 . r.0)))))
       (equal?
         (solve 6 (q r) (concat q '(u v) `(a b c . ,r)))
         '(((q.0 (a b c)) (r.0 (u v)))

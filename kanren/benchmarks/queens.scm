@@ -166,3 +166,9 @@
 ;     137652 ms elapsed cpu time, including 1631 ms collecting
 ;     138948 ms elapsed real time, including 1618 ms collecting
 ;     6723336032 bytes allocated, including 6722051232 bytes reclaimed
+; kanren.ss version 4.1
+; (time (solve 1000 ...))
+;     6295 collections
+;     128446 ms elapsed cpu time, including 1602 ms collecting
+;     130004 ms elapsed real time, including 1642 ms collecting
+;     6811773760 bytes allocated, including 6810404512 bytes reclaimed

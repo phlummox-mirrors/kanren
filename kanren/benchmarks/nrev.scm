@@ -106,7 +106,7 @@
   '(((out.0 (30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1)))))
 
 ; Evaluate the following to see the resulting substitutions
-(write (concretize-subst (car (query (benchmark data _)))))
+'(write (concretize-subst (car (query (benchmark data _)))))
 (newline)
 
 (display "Timing per iterations: ") (display benchmark_count) (newline)
@@ -133,6 +133,12 @@
 ;     2704 ms elapsed cpu time, including 31 ms collecting
 ;     2737 ms elapsed real time, including 26 ms collecting
 ;     67721072 bytes allocated, including 68242512 bytes reclaimed
+; kanren.ss version 4.1
+; (time (do ((...)) ...))
+;     63 collections
+;     2737 ms elapsed cpu time, including 31 ms collecting
+;     2819 ms elapsed real time, including 36 ms collecting
+;     67719576 bytes allocated, including 68176072 bytes reclaimed
 
 ; dobench(Count) :-
 ; 	data(Data),
