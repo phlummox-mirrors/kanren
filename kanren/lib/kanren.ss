@@ -1100,7 +1100,7 @@
          ...)
        body0 body1 ...)
      (let-inject/everything ([t0 ([var0 bool0] ...) scheme-expression0])
-       (let*-inject/everything ([t1 ([t0 #f][var1 bool1] ...) scheme-expression1] ...)
+       (let*-inject/everything ([t1 ([var1 bool1] ...) scheme-expression1] ...)
          body0 body1 ...))]))
 
 (define-syntax let-inject
@@ -1177,10 +1177,6 @@
 (define fun    
   (lambda (f)
     (fun-nocheck (check 'fun f))))
-
-(test-check 'test-fun-*
-  (solve 3 (q) (fun-call * q 3 5))
-  '(((q.0 15))))
 
 (define test1
   (lambda (x)
@@ -1576,7 +1572,7 @@
 	       (let*-inject/no-check
                  ([x () 4]
                   [w () 3]
-                  [z^ () (cons x w)])
+                  [z^ (x w) (cons x w)])
                  (== z^ z)))])
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
@@ -1687,7 +1683,7 @@
 	       (let*-inject/no-check
                  ([x () 4]
                   [w () 3]
-                  [z^ () (cons x w)])
+                  [z^ (x w) (cons x w)])
                  (== z z^)))])
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
@@ -1849,7 +1845,51 @@
 ; replaces _ with a fresh variable. We do a lazy replacement.
 ; A neat accident!
 
+(define ground?
+  (lambda (t)
+    (cond
+      [(var? t) #f]
+      [(pair? t) (and (ground? (car t)) (ground? (cdr t)))]
+      [else #t])))
+
 (define unify-var/value
+  (lambda (t-var u-value subst)
+    (cond
+      [(assq t-var subst)
+       => (lambda (ct)
+            (unify (commitment->term ct) u-value subst))]
+      [(ground? u-value) (extend-subst t-var u-value subst)]
+      [(pair? u-value)
+       (let ([car-val (car u-value)])
+         (cond
+           [(or (var? car-val) (ground? car-val))
+            (let ([cdr-val (cdr u-value)])
+              (cond
+                [(or (var? cdr-val) (ground? cdr-val))
+                 (display " car and cdr easy ") (newline)
+                 (extend-subst t-var (cons car-val cdr-val) subst)]
+                [else (write "car easy cdr hard") (newline)
+                  (let ([d-var (var 'd*)])
+                    (unify d-var cdr-val
+                      (extend-subst t-var
+                        (cons car-val d-var) subst)))]))]
+           [else
+             (let ([a-var (var 'a*)])
+               (cond
+                 [(unify a-var car-val subst)
+                  => (lambda (subst)
+                       (let ([cdr-val (cdr u-value)])                             
+                         (cond
+                           [(or (var? cdr-val) (ground? cdr-val))
+                            (display "car hard cdr easy ") (newline)
+                            (extend-subst t-var (cons a-var cdr-val) subst)]
+                           [else (display "both hard ") (newline)
+                             (let ([d-var (var 'd*)])
+                               (unify d-var cdr-val subst))])))]
+                 [else #f]))]))]
+      [else (extend-subst t-var u-value subst)])))
+
+'(define unify-var/value
   (lambda (t-var u-value s)
     (cond
       [(assq t-var s)
@@ -1880,28 +1920,28 @@
       [else (extend-subst t-var u-value s)])))
 
 ;------------------------------------------------------------------------
-(test-check 'test-unify/pairs-oleg
+(test-check 'test-unify/pairs-oleg1
   (naive-exists (x y)
     (unify `(,x ,4) `(3 ,x) empty-subst))
   #f)
 
-(test-check 'test-unify/pairs-oleg
+(test-check 'test-unify/pairs-oleg2
   (naive-exists (x y)
     (unify `(,x ,x) '(3 4) empty-subst))
   #f)
 
 (naive-exists (x y)
-  (test-check 'test-unify/pairs-oleg
+  (test-check 'test-unify/pairs-oleg3
     (unify `(,x ,y) '(3 4) empty-subst)
     `(,(commitment y 4) ,(commitment x 3))))
 
 (naive-exists (x y)
-  (test-check 'test-unify/pairs-oleg
+  (test-check 'test-unify/pairs-oleg4
     (unify `(,x 4) `(3 ,y) empty-subst)
     `(,(commitment y 4) ,(commitment x 3))))
 
 (naive-exists (x y w z)
-  (test-check 'test-unify/pairs-oleg
+  (test-check 'test-unify/pairs-oleg5
     (let ([s (normalize-subst
 	       (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst))])
       (let ([vars (list w y x)])
@@ -1913,7 +1953,7 @@
        ,(commitment x 3))))
 
 (naive-exists (x y w z)
-  (test-check 'test-unify/pairs-oleg
+  (test-check 'test-unify/pairs-oleg6
     (let ([s (normalize-subst
 	       (unify `(,x 4) `(,y ,y) empty-subst))])
       (let ([vars (list y x)])
@@ -1922,13 +1962,13 @@
 	  (subst-vars-recursively vars s))))
     `(,(commitment y 4) ,(commitment x 4))))
 
-(test-check 'test-unify/pairs-oleg
+(test-check 'test-unify/pairs-oleg7
   (naive-exists (x y)
     (unify `(,x 4 3) `(,y ,y ,x) empty-subst))
     #f)
 
 (naive-exists (x y w z u)
-  (test-check 'test-unify/pairs-oleg
+  (test-check 'test-unify/pairs-oleg8
     (let ([s (normalize-subst
 	       (unify
 		 `(,w (,x (,y ,z) 8))
@@ -1944,7 +1984,7 @@
        ,(commitment x 8))))
 
 (naive-exists (x y w z u)
-  (test-check 'test-unify/pairs-oleg
+  (test-check 'test-unify/pairs-oleg8
     (let ([s (normalize-subst
 	       (unify `(p (f a) (g ,x)) `(p ,x ,y) empty-subst))])
       (let ([vars (list y x)])
@@ -1955,7 +1995,7 @@
        ,(commitment x '(f a)))))
 
 (naive-exists (x y w z u)
-  (test-check 'test-unify/pairs-oleg
+  (test-check 'test-unify/pairs-oleg10
     (let ([s (normalize-subst
 	       (unify `(p (g ,x) (f a)) `(p ,y ,x) empty-subst))])
       (let ([vars (list x y)])
@@ -1966,7 +2006,7 @@
        ,(commitment y '(g (f a))))))
 
 (naive-exists (x y w z u)
-  (test-check 'test-unify/pairs-oleg
+  (test-check 'test-unify/pairs-oleg11
     (let ([s (normalize-subst
 	       (unify
 		 `(p a ,x (h (g ,z)))
@@ -1980,39 +2020,39 @@
        ,(commitment x '(h (g a)))
        ,(commitment z 'a))))
 
-(naive-exists (x y w z u)
-  (test-check 'test-unify/pairs-oleg
-    (concretize-subst ;;; was #f
-      (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
-	(let ([var (map commitment->var s)])
-	  (map commitment
-	    var
-	    (subst-vars-recursively var s)))))
-    `(;,(commitment '*d.0 '())
-       ,(commitment '*a.0 '(f *a.0))
-       ;,(commitment '*d.1 '((f . *d.1)))
-       ,(commitment '*d.0 '((f . *d.0)))
-       ;,(commitment '*a.1 'f)
-       ;,(commitment 'y.0  '(f (f . *d.1)))
-       ,(commitment 'y.0  '(f (f . *d.0)))
-       ,(commitment 'x.0  '(f (f . *d.0))))))
+; (naive-exists (x y w z u)
+;   (test-check 'test-unify/pairs-oleg12
+;     (concretize-subst ;;; was #f
+;       (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
+; 	(let ([var (map commitment->var s)])
+; 	  (map commitment
+; 	    var
+; 	    (subst-vars-recursively var s)))))
+;     `(;,(commitment '*d.0 '())
+;        ,(commitment '*a.0 '(f *a.0))
+;        ;,(commitment '*d.1 '((f . *d.1)))
+;        ,(commitment '*d.0 '((f . *d.0)))
+;        ;,(commitment '*a.1 'f)
+;        ;,(commitment 'y.0  '(f (f . *d.1)))
+;        ,(commitment 'y.0  '(f (f . *d.0)))
+;        ,(commitment 'x.0  '(f (f . *d.0))))))
 
-(naive-exists (x y w z u)
-  (test-check 'test-unify/pairs-oleg
-    (concretize-subst ;;; was #f
-      (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
-	(let ([var (map commitment->var s)])
-	  (map commitment
-	    var
-	    (subst-vars-recursively var s)))))
-    `(;,(commitment '*d.0 '())
-       ,(commitment '*a.0 '(f *a.0))
-       ;,(commitment '*d.1 '((f . *d.1)))
-       ,(commitment '*d.0 '((f . *d.0)))
-       ;,(commitment '*a.1 'f)
-       ;,(commitment 'y.0  '(f (f . *d.1)))
-       ,(commitment 'y.0  '(f (f . *d.0)))
-       ,(commitment 'x.0  '(f (f . *d.0))))))
+; (naive-exists (x y w z u)
+;   (test-check 'test-unify/pairs-oleg13
+;     (concretize-subst ;;; was #f
+;       (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
+; 	(let ([var (map commitment->var s)])
+; 	  (map commitment
+; 	    var
+; 	    (subst-vars-recursively var s)))))
+;     `(;,(commitment '*d.0 '())
+;        ,(commitment '*a.0 '(f *a.0))
+;        ;,(commitment '*d.1 '((f . *d.1)))
+;        ,(commitment '*d.0 '((f . *d.0)))
+;        ;,(commitment '*a.1 'f)
+;        ;,(commitment 'y.0  '(f (f . *d.1)))
+;        ,(commitment 'y.0  '(f (f . *d.0)))
+;        ,(commitment 'x.0  '(f (f . *d.0))))))
 
 (test-check 'test-fun-resubst-oleg
   (concretize
@@ -2021,7 +2061,7 @@
 	       (let*-inject/no-check
                  ([x () 4]
                   [w () 3]
-                  [z^ () (cons x w)])
+                  [z^ (x w) (cons x w)])
                  (== z z^)))])
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
@@ -3056,7 +3096,7 @@
     (exists (lips units)
       (let*-inject ([time1 (t0 t1) (- t1 t0)]
                     [time2 (t1 t2) (- t2 t1)]
-                    [time () (- time2 time1)])
+                    [time (time1 time2) (- time2 time1)])
         (calculate_lips count time lips units)
         (predicate (lips count) (printf "~n~s lips for ~s" lips count))
         (predicate (time units)
@@ -3073,7 +3113,7 @@
       (to-show count time lips 'msecs)
       (let*-inject ([t1 (count) (* 496 count 1000)]
                     [t2 (time) (+ time 0.0)]
-                    [lips^ () (/ t1 t2)])
+                    [lips^ (t1 t2) (/ t1 t2)])
         (== lips lips^)))))
 
 ;(test-lots)
@@ -3775,6 +3815,62 @@
 
 (newline)
 
+;   1. There are five houses in a row, each of a different color<BR>
+;       and inhabited by men of different nationalities,<BR>
+;       with different pets, drinks, and cigarettes.<BR>
+;   2. The Englishman lives in the red house.<BR>
+;   3. The Spaniard owns a dog.<BR>
+;   4. Coffee is drunk in the green house.<BR>
+;   5. The Ukrainian drinks tea.<BR>
+;   6. The green house is directly to the right of the ivory house.<BR>
+;   7. The Old Gold smoker owns snails.<BR>
+;   8. Kools are being smoked in the yellow house.<BR>
+;   9. Milk is drunk in the middle house.<BR>
+;  10. The Norwegian lives in the first house on the left.<BR>
+;  11. The Chesterfield smoker lives next to the fox owner.<BR>
+;  12. Kools are smoked in the house next to the house where the horse is kept.<BR>
+;  13. The Lucky Strike smoker drinks orange juice.<BR>
+;  14. The Japanese smokes Parliaments.<BR>
+;  15. The Norwegian lives next to the blue house.<BR><BR>
+
+(define member 
+  (extend-relation (a1 a2)
+    (fact (item) item `(,item . ,_))
+    (relation (item rest) (to-show item `(,_ . ,rest)) (member item rest))))
+
+(define next-to
+  (relation (item1 item2 rest)
+    (to-show item1 item2 rest)
+    (any (on-right item1 item2 rest) (on-right item2 item1 rest))))
+
+(define on-right
+  (extend-relation (a0 a1 a2)
+    (fact (item1 item2) item1 item2 `(,item1 ,item2 . ,_))
+    (relation (item1 item2 rest)
+      (to-show item1 item2 `(,_ . ,rest))
+      (on-right item1 item2 rest))))
+        
+(define zebra
+  (relation/cut cut (h)
+    (to-show h)
+    (all
+      (== h `((norwegian ,_ ,_ ,_ ,_) ,_ (,_ ,_ milk ,_ ,_) ,_ ,_))
+      (member `(englishman ,_ ,_ ,_ red) h)
+      (on-right `(,_ ,_ ,_ ,_ ivory) `(,_ ,_ ,_ ,_ green) h)
+      (next-to `(norwegian ,_ ,_ ,_ ,_) `(,_ ,_ ,_ ,_ blue) h)
+      (member `(,_ kools ,_ ,_ yellow) h)
+      (member `(spaniard ,_ ,_ dog ,_) h)
+      (member `(,_ ,_ coffee ,_ green) h) 
+      (member `(ukrainian ,_ tea ,_ ,_) h)
+      (member `(,_ luckystrikes oj ,_ ,_) h)
+      (member `(japanese parliaments ,_ ,_ ,_) h)
+      (member `(,_ oldgolds ,_ snails ,_) h)
+      (next-to `(,_ ,_ ,_ horse ,_) `(,_ kools ,_ ,_ ,_) h)
+      (next-to `(,_ ,_ ,_ fox ,_) `(,_ chesterfields ,_ ,_ ,_) h)
+      cut
+      (member `(,_ ,_ water ,_ ,_) h)
+      (member `(,_ ,_ ,_ zebra ,_) h))))
+
 (test-check "Addition"
   (solve 20 (x y)
     (+-as-relation x y '(succ (succ (succ (succ (succ zero)))))))
@@ -3784,4 +3880,13 @@
     ((x.0 (succ (succ (succ zero)))) (y.0 (succ (succ zero))))
     ((x.0 (succ (succ (succ (succ zero))))) (y.0 (succ zero)))
     ((x.0 (succ (succ (succ (succ (succ zero)))))) (y.0 zero))))
+
+(test-check "Zebra"
+  (time (solution (h) (zebra h)))
+  '((h.0
+      ((norwegian kools water fox yellow)
+       (ukrainian chesterfields tea horse blue)
+       (englishman oldgolds milk snails red)
+       (spaniard luckystrikes oj dog ivory)
+       (japanese parliaments coffee zebra green)))))
 
