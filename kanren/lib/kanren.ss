@@ -2480,6 +2480,36 @@
 		(subst-vars-recursively vars s))))))))
   (list (void) (void) (void)))
 
+(test-check 'unification-of-free-vars-1
+  (solve 1 (x)
+    (let-lv (y)
+      (all!! (== x y) (== y 5))))
+  '(((x.0 5))))
+
+(test-check 'unification-of-free-vars-2
+  (solve 1 (x)
+    (let-lv (y)
+      (all!! (== y 5) (== x y))))
+  '(((x.0 5))))
+
+(test-check 'unification-of-free-vars-3
+  (solve 1 (x)
+    (let-lv (y)
+      (all!! (== y x) (== y 5))))
+  '(((x.0 5))))
+
+(test-check 'unification-of-free-vars-3
+  (solve 1 (x)
+    (let-lv (y)
+      (all!! (== x y) (== y 5) (== x y))))
+  '(((x.0 5))))
+
+(test-check 'unification-of-free-vars-4
+  (solve 1 (x)
+    (exists (y)
+      (all! (== y x) (== y 5) (== x y))))
+  '(((x.0 5))))
+
 (define concat
   (lambda (xs ys)
     (cond
@@ -4846,6 +4876,42 @@
 (time (p-test 32 64))
 (time (p-test 64 128))
 (time (p-test 96 192))
+
+(printf "~ndetailed prune-subst~n")
+(define prune-subst
+  (lambda (vars in-subst subst)
+    (printf "vars ~a in-subst: ~a~nsubst ~a~n" vars in-subst subst)
+    subst))
+(define prune-subst
+  (lambda (vars in-subst subst)
+    (printf "vars ~a in-subst: ~a~nsubst ~a~n" vars in-subst subst)
+    (if (eq? subst in-subst)
+        subst
+        (let loop ([current subst] [to-remove '()] [clean '()] [to-subst '()])
+          (cond
+            [(null? current) (compose-subst/own-survivors to-subst to-remove clean)]
+            [(eq? current in-subst)
+             (compose-subst/own-survivors to-subst to-remove (append clean current))]
+            [(memq (commitment->var (car current)) vars)
+             (loop (cdr current) (cons (car current) to-remove) clean to-subst)]
+            [(relatively-ground? (commitment->term (car current)) vars)
+             (loop (cdr current) to-remove (cons (car current) clean) to-subst)]
+            [else (loop (cdr current) to-remove clean (cons (car current) to-subst))])))))
+
+(define (p-test m n)
+  (letrec
+    ((e (make-e n))
+      (t (make-t m))
+      (p
+	(lambda (x z)
+	  (any
+	    (exists (y)
+	      (if-only (e x y) (p y z)))
+	    (if-only (promise-one-answer (== x n))
+	      (t z))))))
+    (solve (+ m  1) (x) (p 1 x))))
+(pretty-print (p-test 4 5))
+
 
 (exit 0)
 
