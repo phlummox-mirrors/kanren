@@ -185,12 +185,6 @@
 ; Because t1 now appears on the left-hand side, it is represented
 ; as an eigenvariable (skolem function) rather than a logical variable
 
-(define symbol-append
-  (lambda symbs
-    (string->symbol
-      (apply string-append
-        (map symbol->string symbs)))))
-
 (define goal-rev
   (let* ((sk (symbol-append 'sk ': (gensym)))
 	 (t1-sk (lambda (t) `(,sk ,t))))
@@ -207,13 +201,6 @@
 	  (kb `(goal ,t)))
 	))))
       
-      
-      
-(define Y
-  (lambda (f)
-    ((lambda (u) (u (lambda (x) (lambda (n) ((f (u x)) n)))))
-     (lambda (x) (x x)))))
-
 ; The initial assumptions: just the btree
 (define init-kb (Y btree))
 
@@ -232,15 +219,6 @@
 ; A better version of concretize that replaces each variable
 ; with a _unique_! symbol. The unique symbol symbolizes universal
 ; quantification, as usual.
-
-; get the free vars of term
-(define free-vars
-  (lambda (term)
-    (let loop ([term term] [fv '()])
-      (cond
-        [(var? term) (if (memq term fv) fv (cons term fv))]
-        [(pair? term) (loop (cdr term) (loop (car term) fv))]
-        [else fv]))))
 
 (define concretize*
   (lambda (term)
@@ -292,17 +270,20 @@
 ; ?- goal(leaf(X),C),verify(C,[]).
 ; Here how it looks in our system:
 (printf "~%First check the base case ~s~%"
-  (query
+  (concretize
+   (query
     (verify-goal (goal '(leaf x))
-      (extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb))))
+      (extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb)))))
+
 
 (printf "~%First check the base case, using goal-fwd ~s~%"
-  (query
+  (concretize
+   (query
     (let ((kb0
 	    (extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb)))
       (let ((kb1
 	      (extend-relation (t) (goal-fwd kb0) kb0)))
-	(kb1 '(goal (leaf x))))))) ; note, x is an eigenvariable!
+	(kb1 '(goal (leaf x)))))))) ; note, x is an eigenvariable!
 
 
 ; that is, we obtain the list of subgoals to verify '(leaf x)
@@ -325,16 +306,17 @@
 ; for root(t1,t2)
 ;?- goal(t1,A1),goal(t2,A2), append(A1,A2,A), goal(root(t1,t2),C), verify(C,A).
 
-(printf "~%Some preliminary checks ~s~%"
-  (query
+(test-check "Some preliminary checks"
+  (solution (foo)
     (verify-goal '((btree t2)) ; (goal t2) => (btree t2)
       (let ((kb0
 	      (extend-kb (goal 't1) 
 		(extend-kb (goal 't2) init-kb))))
-	kb0))))
+	kb0)))
+  '((foo.0 foo.0)))
 
-(printf "~%Some preliminary checks, using goal-rev ~s~%"
-  (query
+(test-check "Some preliminary checks, using goal-rev"
+  (solution (foo)
     (let ((kb
 	    (Y
 	      (lambda (kb)
@@ -343,13 +325,14 @@
 		  (goal-rev kb)
 		  (fact () '(goal t1))
 		  (fact () '(goal t2)))))))
-      (kb '(btree t2)))))
+      (kb '(btree t2))))
+  '((foo.0 foo.0)))
 
 ; the above two expressions should give the same result: a non-empty stream
 ; (with an empty substitution: no variables leak)
 
-(printf "~%Another check ~s~%"
-  (query
+(test-check "Another check"
+  (solution (foo)
 	;(goal t1), (goal t2) => (btree (root t1 t2))
     (verify-goal '((btree t1) (btree t2)
 		   (btree (root t1 t2)))
@@ -362,10 +345,11 @@
 	    (extend-relation (t)
 	      kb0
 	      (btree kb)
-	      (mirror-axiom-eq-2 kb))))))))
+	      (mirror-axiom-eq-2 kb)))))))
+  '((foo.0 foo.0)))
 
-(printf "~%Another checks, using goal-rev ~s~%"
-  (query
+(test-check "Another check, using goal-rev"
+  (solution (foo)
     (let ((kb
 	    (Y
 	      (lambda (kb)
@@ -375,13 +359,15 @@
 		  (mirror-axiom-eq-2 kb)
 		  (fact () '(goal t1))
 		  (fact () '(goal t2)))))))
-      (kb '(btree (root t1 t2))))))
+      (kb '(btree (root t1 t2)))))
+  '((foo.0 foo.0)))
 
 ; now we really need Y because we rely on the clause
 ;	btree(root(T1,T2)) :- btree(T1),btree(T2).
 ; which is recursive.
 
 (printf "~%Check the inductive case ~s~%"
+ (concretize
   (query
     (verify-goal (goal '(root t1 t2))
       (let ((kb0
@@ -393,7 +379,7 @@
 	    (extend-relation (t)
 	      kb0
 	      (btree kb)
-	      (mirror-axiom-eq-2 kb))))))))
+	      (mirror-axiom-eq-2 kb)))))))))
 
 (printf "~%Check particulars of the inductive case, using goal-rev, goal-fwd ~s~%"
   (let ((kb
@@ -410,19 +396,25 @@
       (solve 1 (x) (kb `(myeq (root t1 t2)  (mirror ,x))))
       (solve 1 (x) (kb `(myeq ,x (mirror (root t1 t2))))))))
 
-(printf "~%Check the inductive case, using goal-rev, goal-fwd ~s~%"
-  (query
-    (let ((kb
-	    (Y
-	      (lambda (kb)
-		(extend-relation (t)
-		  (btree kb)
-		  (fact () '(goal t1))
-		  (fact () '(goal t2))
-		  (mirror-axiom-eq-2 kb)
-		  (goal-rev kb))))))
-      (let ((kb1 (goal-fwd kb)))
-	(kb1 '(goal (root t1 t2)))))))
+(test-check "Check the inductive case, using goal-rev, goal-fwd"
+ (let ((result
+	 (concretize
+	   (query
+	     (let ((kb
+		     (Y
+		       (lambda (kb)
+			 (extend-relation (t)
+			   (btree kb)
+			   (fact () '(goal t1))
+			   (fact () '(goal t2))
+			   (mirror-axiom-eq-2 kb)
+			   (goal-rev kb))))))
+	       (let ((kb1 (goal-fwd kb)))
+		 (kb1 '(goal (root t1 t2)))))))))
+   (display result) (newline)
+   (not (null? result)))
+  #t)
+
 
 ; Again, we use Y because btree and mirror-axiom-eq-2 are recursive.
 ; We need the database that is the fixpoint of all constituent

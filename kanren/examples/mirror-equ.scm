@@ -1,3 +1,4 @@
+(newline)
 (display "Structural Inductive proof with equational theory: mirror") (newline)
 
 ; $Id$
@@ -11,7 +12,7 @@
       (relation (t1 t2)
 	(to-show `(btree (root ,t1 ,t2)))
 	(all
-	  (project (t1 t2) (predicate (printf "btree ~s ~s ~n" t1 t2)))
+	  (trace-vars 'btree (t1 t2))
 	  (kb `(btree ,t1))
 	  (kb `(btree ,t2)))))))
 
@@ -22,7 +23,7 @@
       (relation (a b)
 	(to-show `(myeq ,a ,b))		; symmetry
 	(all
-	  (project/no-check (a b) (predicate (printf "symmetry: ~a ~a ~n" a b)))
+	  (trace-vars 'symmetry (a b))
 	  (kb `(myeq ,b ,a))))
       (relation (a b)			; transitivity
 	(to-show `(myeq ,a ,b))
@@ -37,7 +38,7 @@
     (relation (a b c d)
       (to-show `(myeq (root ,a ,b) (root ,c ,d)))
       (all
-	(project/no-check (a b) (predicate (printf "trees: ~a ~a ~a ~a ~n" a b c d)))
+	(trace-vars 'trees (a b))
 	(kb `(myeq ,a ,c))
 	(kb `(myeq ,b ,d))))))
   
@@ -49,7 +50,7 @@
       (relation (a b)
 	(to-show `(myeq (mirror ,a) ,b))
 	(all
-	  (project/no-check (a b) (predicate (printf "mirror: ~a ~a~n" a b)))
+	  (trace-vars 'mirror (a b))
 	  (exists (c)
 	    (all (kb `(myeq ,b (mirror ,c)))
 	         (kb `(myeq ,a ,c)))))))))
@@ -66,7 +67,7 @@
   (lambda (kb)
     (relation (val)
       (to-show `(myeq (leaf ,val) (mirror (leaf ,val))))
-      (project/no-check (val) (predicate (printf "mirror-axiom-eq-1: ~a~n" val))))))
+      (trace-vars 'mirror-axiom-eq-1 (val)))))
 
 ; The second axiom
 ; In Athena:
@@ -84,10 +85,7 @@
   (lambda (kb)
     (relation (t1 t2) 
       (to-show `(myeq (mirror (root ,t1 ,t2)) (root (mirror ,t2) (mirror ,t1))))
-      (project/no-check (t1 t2)
-	(predicate
-          (printf "mirror ax2: ~a~n"
-	    `(myeq (root ,t1 ,t2) (root (mirror ,t2) (mirror ,t1)))))))))
+      (trace-vars 'mirror-ax2 (t1 t2)))))
 
 ; Define the goal
 ; In Athena:
@@ -136,11 +134,6 @@
 	  ((myeq-axioms-mirror kb) t)
 	  ((myeq-axioms-trees kb) t)
 	)))))
-
-(define Y
-  (lambda (f)
-    ((lambda (u) (u (lambda (x) (lambda (n) ((f (u x)) n)))))
-     (lambda (x) (x x)))))
 
 (printf "~%First check the base case, using goal-fwd ~s~%"
   (query
@@ -197,16 +190,21 @@
       (solve 1 (x) (kb `(myeq ,x (mirror (root t1 t2)))))
       )))
 
-(printf "~%Check the inductive case, using goal-rev, goal-fwd ~s~%"
-  (query
-    (let ((kb
-	    (Y
-	      (lambda (kb)
-		(extend-relation (t)
-		  (init-kb-coll kb)
-		  (fact () '(goal t1))
-		  (fact () '(goal t2))
-		  (mirror-axiom-eq-2 kb)
-		  (goal-rev kb))))))
-      (let ((kb1 (goal-fwd kb)))
-	(kb1 '(goal (root t1 t2)))))))
+(test-check "Check the inductive case, using goal-rev, goal-fwd"
+ (let ((result
+	 (concretize
+	   (query
+	     (let ((kb
+		     (Y
+		       (lambda (kb)
+			 (extend-relation (t)
+			   (init-kb-coll kb)
+			   (fact () '(goal t1))
+			   (fact () '(goal t2))
+			   (mirror-axiom-eq-2 kb)
+			   (goal-rev kb))))))
+	       (let ((kb1 (goal-fwd kb)))
+		 (kb1 '(goal (root t1 t2)))))))))
+   (display result) (newline)
+   (not (null? result)))
+  #t)
