@@ -2129,6 +2129,159 @@
 
 (printff "~s ~s~%" 'everything-but-polymorphic-let (test-!-5))
 
+(define free? lv?)
+(define (bound? x) (not (free? x)))
+
+; the same as relation but consider the first term to be "frozen"
+; and thus avoid binding any variables in it.
+; This lets us implement "input-only" mode of a particular field in
+; a relation. In this hack, the first term of a relation is input-only.
+; Implementation: we scan term1 for variables and
+; add to the entering substitution the bindings of
+; term1-var -> gensym
+; where gensym is a unique constant (not a variable!)
+; We do not modify term1! We only tell the unifier that term1's variables are
+; already bounded.
+
+; A dumb match of two ordered trees, one of which may contain variables
+;
+; Match two trees. tree1 may contain variables 
+; (as decided by the lv? predicate above)
+; variables match the corresponding branch in tree2.
+; Env (bindings) contains associations of variables to values.
+; tree1 may contain several occurrences of the same variable.
+; All these occurences must match the same value.
+; A variable match is entered into the binding. A variable _ is an
+; exception: its match is never entered into the binding.
+; The function returns the resulting binding or #f if the match fails.
+
+(define (match-tree tree1 tree2 env)
+  (cond
+   ((eq? tree1 tree2) env)		; terms are identical
+   ((pair? tree1)			; Recursively match pairs
+    (and (pair? tree2)
+      (let ((env-new (match-tree (car tree1) (car tree2) env)))
+	(and env-new (match-tree (cdr tree1) (cdr tree2) env-new)))))
+   ((null? tree1) #f)			; if tree2 had been '(), see 1st cond
+   ((eq? '_ tree1) env)			; _ matches everything
+   ((lv? tree1)
+    (cond 
+     ((assv tree1 env) => 
+      (lambda (c)		; variable occurred before
+	(let ((bt (commitment->term c)))
+	  (if (eq? bt tree2) env ; try eq? first, it's faster
+	  (and (equal? bt tree2) env)))))
+     (else
+	; new variable, enter fresh binding
+      (compose-subst (unit-subst tree1 tree2) env)
+      )))
+   (else
+    (and (equal? tree1 tree2) env))))
+
+'(run-test
+ (let ((test 
+	(lambda (tree1 tree2 expected)
+	(assert (equal? expected (match-tree tree1 tree2 '()))))))
+   (test '_x '(seq 1 (seq-empty)) '((_x seq 1 (seq-empty))))
+   (test '(seq-empty) '(seq 1 (seq-empty)) #f)
+   (test '(seq 1 (seq-empty)) '(seq 1 (seq-empty)) '())
+   (test '(seq _x (seq-empty)) '(seq 1 (seq-empty)) '((_x . 1)))
+   (test '(seq _x _y) '(seq 1 (seq-empty)) '((_y seq-empty) (_x . 1)))
+   (test '(seq _x _y _z) '(seq 1 (seq-empty)) #f)
+   (test '(seq _x (seq _y _z)) '(seq 1 (seq 2 (seq-empty)))
+	 '((_z seq-empty) (_y . 2) (_x . 1)))
+   (test '(seq _x (seq _x _z)) '(seq 1 (seq 2 (seq-empty))) #f)
+   (test '(seq _x (seq _x _z)) '(seq 1 (seq 1 (seq-empty)))
+	 '((_z seq-empty) (_x . 1)))
+))
+
+
+(define (foldl f z lst)
+  (if (null? lst) z (foldl f (f (car lst) z) (cdr lst))))
+
+(define (fv-of term subst) ; free vars in term
+  (let fold ((term term) (fv '()))
+    (cond
+      ((lv? term)
+       (if (assv term subst) fv (cons term fv)))
+      ((pair? term)
+       (fold (cdr term) (fold (car term) fv)))
+      (else fv))))
+
+
+(define old-unify unify)
+(define (unify term u subst)
+  ; Freeze the variables in term 
+  (define (freeze-unify term u subst)
+    (printff "Freezing term: ~s ~s~%" term u)
+    (let ((res (match-tree u term subst)))
+      (printff "Freezing term result: ~s~%" res) res))
+  (if (and (pair? term) (pair? (cdr term)) (null? (cddr term))
+	(eq? '*freeze* (car term)))
+    (freeze-unify (cadr term) u subst)
+    (old-unify term u subst)))
+
+(printff "~% Test freezing ~%")
+(define-syntax test-pr
+  (syntax-rules ()
+    ((_ v1 v2 t1 t2)
+      (printff "~s: ~s~%" '(t1 t2)
+	(exists v2
+	  (solution
+	    ((relation v1 (t1) (show cut () cut)) t2)))))))
+
+(test-pr (a) (b) a b)
+(test-pr (a) (b) a '(1 2))
+(test-pr (a) (b) 2 '(1 2))
+(test-pr (a) (b) `(,a 1) `(2 ,b) )
+(test-pr (a) (b) `(,a 1) `(2 (*freeze* ,b)) )
+;(test-pr (a) (b) `(*freeze* ,a) '(1 2))
+;(test-pr (a b) `(,a 1) `(2 ,b) )
+(define (base-env1 a b c)
+  (printff "baseenv: ~s ~s ~s~%" a b c)
+  ((relation (g v t) (`(non-generic ,v ,t ,g) v t)
+    (show cut () (all))) 
+a ;`(*freeze* ,a) 
+b c))
+
+(printff "~%Accidental binding ~s~%"
+  (exists (g ?)
+    (solution
+      (base-env1 g
+	'a
+	?))))
+
+(printff "~%Accidental binding ~s~%"
+  (exists (g ?)
+    (solution
+      (base-env1 `(*freeze* ,g)
+	'a
+	?))))
+
+(define middle-env1
+  (relation (g v t type-w) (`(non-generic ,v ,t ,g) v type-w)
+    (show cut () (all cut (unequal? t type-w) cut fail))))
+
+(define recursive-env1
+  (relation (g v t w type-w) (`(non-generic ,w ,type-w ,g) v t)
+    (show cut () (all cut (unequal? w v) cut (instantiated g) (env1 g v t)))))
+              
+(define env1
+  (extend-relation base-env1 (extend-relation middle-env1 recursive-env1)))
+
+(printff "~%test-!-31: ~s~%"
+    (list
+      (exists (g ?)
+	(solution
+	  (env1 `(non-generic b "int" (non-generic a "bool" ,g)) 'a ?)))
+      (exists (g ?)
+	(solution
+	  (env1 `(non-generic b "int" (non-generic a "bool" ,g)) 'b ?)))
+      (exists (g ?)
+	(solution
+	  (env1 `(non-generic b "int" (non-generic a "bool" ,g)) 'c ?)))
+))
+
 #!eof
 
 (define test-!-4b
@@ -2156,6 +2309,8 @@
          ("->" "int" ("->" "int" "int"))))))
 
 (printff "~s ~s~%" 'variables-4c (test-!-4c))
+
+
 
 (define app-rel
   (relation (g exp t)
