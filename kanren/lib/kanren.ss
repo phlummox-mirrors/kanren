@@ -42,7 +42,7 @@
               [produced tested-expression])
          (or (equal? expected produced)
              (error 'test-check
-               "Failed: ~s~%Expected: ~s~%Computed: ~s~%"
+               "Failed: ~a~%Expected: ~a~%Computed: ~a~%"
                'tested-expression expected produced)))))))
 
 (test-check 'test-@-lambda@
@@ -1369,9 +1369,8 @@
   (letrec
       ([move
          (extend-relation (a1 a2 a3 a4)
-           (relation/cut cut ()
-             (to-show 0 _ _ _)
-             cut)
+           (relation ()
+             (to-show 0 _ _ _))
            (relation (n a b c)
              (to-show n a b c)
              (all
@@ -2205,9 +2204,9 @@
       (== t t^))))
 
 (define generic-recursive-env
-  (relation/cut cut (g v t)
+  (relation (g v t)
     (to-show `(generic ,_ ,_ ,g) v t)
-    (all! cut (env g v t))))
+    (all! (env g v t))))
 
 (define generic-env
   (extend-relation (a1 a2 a3) generic-base-env generic-recursive-env))
@@ -2560,10 +2559,82 @@
                      (!- `(generic ,v ,t-rand ,g) body t))))))])
       !-)))
 
-(define !-
+'(define !-
   (relation/cut cut (g exp t)
     (to-show g exp t)
     ((!-generator cut) g exp t)))
+
+; (relation-cond vars clause ...)
+; clause::= ((local-var...) (condition ...) (conseq ...))
+
+(define-syntax relation-cond
+  (syntax-rules ()
+    ((_ (global-var ...) clause0 clause1 ...)
+      (lambda (global-var ...)
+	(lambda@ (sk fk subst cutk)
+	  (relation-cond-clause (sk fk subst cutk)
+	    clause0 clause1 ...))))))
+
+(define-syntax once
+  (syntax-rules ()
+    ((_ ant ...) (all! ant ... succeed))))
+
+(define-syntax relation-cond-clause
+  (syntax-rules ()
+    ((_ (sk fk subst cutk)) (fk)) ; no more choices: fail
+    ((_ (sk fk subst cutk) 
+       (local-vars (condition ...) conseq)
+       clause ...)
+      (let-lv local-vars			; a bit sloppy, need exists...
+	(printf "running ~a~n" '(condition ...))
+	(@ (once condition ...)
+	; sk
+	  (lambda@ (fk-ign)
+	    (@ conseq sk fk))
+	; fk
+	  (lambda () (relation-cond-clause (sk fk subst cutk) clause ...))
+	  subst
+	  cutk)))))
+
+
+(define !-
+  (relation-cond (g exp t)
+    ((v) ((== exp `(var ,v)))
+      (env g v t))
+    (() ((== exp `(intc ,_)) (== t int)) succeed)
+    (() ((== exp `(boolc ,_)) (== t bool)) succeed)
+    ((x) ((== exp `(zero? ,x)) (== t bool))
+      (!- g x int))
+    ((x) ((== exp `(sub1 ,x)) (== t int))
+      (!- g x int))
+    ((x y) ((== exp `(+ ,x ,y)) (== t int))
+      (all! (!- g x int) (!- g y int)))
+    ((test conseq alt) ((== exp `(if ,test ,conseq ,alt)))
+      (all! (!- g test bool) (!- g conseq t) (!- g alt t)))
+    ((body type-v v t1) ((== exp `(lambda (,v) ,body)) 
+			 (== t `(--> ,type-v ,t1)))
+      (all (!- `(non-generic ,v ,type-v ,g) body t1)))
+    ((rand rator) ((== exp `(app ,rator ,rand)))
+      (exists (t-rand)
+	(all!
+	  (!- g rator `(--> ,t-rand ,t))
+	  (!- g rand t-rand))))
+    ((rand) ((== exp `(fix ,rand)))
+      (!- g rand `(--> ,t ,t)))
+    ((v rand body) ((== exp `(let ([,v ,rand]) ,body)))
+      (exists (t-rand)
+	(all!
+	  (!- g rand t-rand)
+	  (!- `(generic ,v ,t-rand ,g) body t))))))
+
+'(define !-
+  (relation-cond (g exp t)
+    ((v) ((== exp `(var ,v)))
+      succeed)))
+
+(pretty-print (expand '(relation-cond (g exp t)
+    ((v) ((== exp `(var ,v)))
+      succeed))))
 
 (test-check 'with-robust-syntax-but-long-jumps/poly-let
   (solution (?)
@@ -2575,6 +2646,7 @@
                (+ (app (var f) (intc 3)) (intc 7))))
         ?)))
   '((?.0 int)))
+
 
 (define invertible-binary-function->ternary-relation
   (lambda (op inverted-op)
@@ -4173,5 +4245,5 @@
 	  ; (car curr) is finished - drop it, and try next
 	  (lambda () (loop (cdr curr) residuals))))))))
 
-;(exit 0)
+(exit 0)
 
