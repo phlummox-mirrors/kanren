@@ -1,4 +1,4 @@
-;; minikanrensupport7.scm
+;; minikanrensupport.scm
 
 (define-syntax def-syntax
   (syntax-rules ()
@@ -14,8 +14,7 @@
     [(_ () body bodies ...) (begin body bodies ...)]
     ((_ ([(var ...) rhs-exp] [vars* rhs-exp*] ...) bodies ...)
      (call-with-values (lambda () rhs-exp)
-       (lambda (var ...) (let*-values ([vars* rhs-exp*] ...) bodies
-  ...))))))
+       (lambda (var ...) (let*-values ([vars* rhs-exp*] ...) bodies ...))))))
 
 (define-syntax lambda@
   (syntax-rules ()
@@ -29,8 +28,7 @@
   (syntax-rules ()
     [(_ rator) (rator)]
     [(_ rator rand) (rator rand)]
-    [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2
-  ...)]))
+    [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
 
 (define-syntax let*-and
   (syntax-rules ()
@@ -54,6 +52,17 @@
           (cond
             [(zero? n) '()]
             [else (prefix-aux (- n 1) (@ (cdr strm)))]))])))
+
+'(define prefix-aux
+  (lambda (n strm)
+    (cond
+      [(null? strm) (void)]
+      [else
+        (begin
+          (pretty-print (reify-answer (car strm)))
+          (cond
+              [(zero? n) (void)]
+              [else (prefix-aux (- n 1) (@ (cdr strm)))]))])))
 
 (define prefix*
   (lambda (strm)
@@ -198,9 +207,9 @@
     (string->symbol
       (string-append
         (symbol->string id)
-        "$_{_"
+        "$_{_{"
         (number->string index)
-        "}$"))))
+        "}}$"))))
 
 (define reify-id
   (lambda (id index)
@@ -342,4 +351,3 @@
       [else (eq? v _)])))
 
 (define count-cons 0)
-
