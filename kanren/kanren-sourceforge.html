@@ -1,0 +1,125 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN""http://www.w3.org/TR/REC-html40/loose.dtd">
+<html>
+
+<head>
+<title>A declarative logic programming system</title>
+<meta name="description" content="An applicative logic programming system with a
+declarative set-theoretical semantics, and its applications">
+<meta name="AuthorAddress" content="oleg-at-okmij.org">
+<meta name="keywords" content="Logic Programming, meta-logic programming, relations,
+iterative deepening, proof assistant, Scheme">
+<meta name="Date-Revision-yyyymmdd" content="20040126">
+<meta name="Date-Creation-yyyymmdd" content="20040121"></head><body bgcolor="#FFFFFF">
+
+<p>
+<hr size="1" noshade>
+<div align="center">
+<a href="http://kanren.sourceforge.net">Home</a>&nbsp;|&nbsp;
+<a href="#Documentation">Docs</a>&nbsp;|&nbsp;
+<a href="#Sample">Sample</a>&nbsp;|&nbsp;
+<a href="#Availability">Availability</a>&nbsp;|&nbsp;
+<a href="http://sourceforge.net/cvs/?group_id=99654">CVS</a>&nbsp;|&nbsp;
+<a href="http://sourceforge.net/projects/kanren/">Summary</a>&nbsp;|&nbsp;</div>
+<hr size="1" noshade>
+<br></p><h1 align=center>A declarative applicative logic programming system</h1>
+
+<a href="http://sourceforge.net"> 
+<img src="http://sourceforge.net/sflogo.php?group_id=99654" width="88" height="31" border="0" alt="SourceForge Logo"></a>
+<p>
+<em>KANREN</em> is a declarative logic programming system with
+first-class relations, embedded in a pure functional subset of Scheme.
+The system has a set-theoretical semantics, true unions, fair
+scheduling, first-class relations, lexically-scoped logical variables,
+depth-first and iterative deepening strategies.  The system achieves
+high performance and expressivity without cuts.</p>
+<p>Applications of the system range from expert systems to
+polymorphic type inference and overloading resolution, to model
+checking and theorem proving. The system can be used as a meta-logic
+system.</p>
+<p>
+<em>KANREN</em> works on any computer platform for which a
+Scheme implementation exists (from PalmPilot and iPAQ to
+Unix/Linux/Winxx/Mac workstations and servers to MindLego bricks). The
+system can be compiled or interpreted. Being essentially a Scheme
+library, KANREN can interact with the user through any graphical or
+command-line interface provided by the host Scheme implementation.</p>
+<ul>
+<li>
+<a href="#Sample">Sample applications</a></li>
+<li>
+<a href="#Documentation">Documentation and tutorials</a></li>
+<li>
+<a href="#Availability">Availability</a>
+<ul>
+<li>
+<a href="#CVS">CVS Tree</a></li></ul></li>
+<li>
+<a href="http://sourceforge.net/projects/kanren">KANREN project summary page at SourceForge</a></li></ul><br>&nbsp;<a name="Sample">&nbsp;</a>
+<h3>Sample applications</h3>
+
+<dl>
+<dt>
+<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/type-inference.scm">
+<code>examples/type-inference.scm</code></a></dt>
+<dd>Polymorphic type inference, including polymorphic let</dd>
+<dt>
+<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/zebra.scm">
+<code>examples/zebra.scm</code></a></dt>
+<dd>The classic Zebra puzzle</dd>
+<dt>
+<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/typeclasses.scm">
+<code>examples/typeclasses.scm</code></a></dt>
+<dd>Functional dependency satisfaction in Haskell typeclasses
+and deriving counter-examples.  Overloading resolution for
+Haskell typeclasses in open and closed worlds.  Our method can
+typecheck more programs than is currently possible in Haskell.</dd>
+<dt>
+<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/mirror.scm">
+<code>examples/mirror.scm</code></a></dt>
+<dd>Structural induction proof.  We write an outline of an
+inductive proof that mirroring a binary tree twice is the identity
+transformation. The system fills out details and verifies that the
+conclusion of the proof indeed follows from the given axioms. KANREN
+is used as a meta-logic system to implement a backwards-chaining proof
+verifier.</dd>
+<dt>
+<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/mirror-equ.scm">
+<code>examples/mirror-equ.scm</code></a></dt>
+<dd>Structural induction proof in equational theory. We can
+truly write the equivalence axioms, including the symmetry axiom
+
+<code>(myeq a b) |- (myeq b a)</code>. Try to do that in Prolog!</dd>
+<dt>
+<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/deduction.scm">
+<code>examples/deduction.scm</code></a></dt>
+<dd>Proving the Deduction Theorem for Hilbert Propositional Calculus
+ by induction. The example also demonstrates generating inductive hypotheses.</dd></dl><br>&nbsp;<a name="Documentation">&nbsp;</a>
+<h3>Documentation and tutorials</h3>
+
+<p>Detailed description of the system
+<br>&lt;
+<a href="http://www.cs.indiana.edu/l/www/classes/b521/qs.ps">http://www.cs.indiana.edu/l/www/classes/b521/qs.ps</a>&gt;
+<br>&lt;
+<a href="http://www.cs.indiana.edu/l/www/classes/b521/qs.pdf">http://www.cs.indiana.edu/l/www/classes/b521/qs.pdf</a>&gt;</p><br>&nbsp;<a name="Availability">&nbsp;</a>
+<h3>Availability</h3>
+
+<p>The current version of KANREN is 3.14. KANREN is OpenSource,
+distributed under the MIT license.</p>
+<p>KANREN has been tested on the following Scheme systems:
+<br>Petite Chez Scheme, Chez Scheme.</p><br>&nbsp;<a name="CVS">&nbsp;</a>
+<h3>CVS Tree</h3>
+
+<p>
+<a href="http://sourceforge.net/cvs/?group_id=99654">The CVS Tree</a> includes the complete KANREN code, extensive documentation, a tutorial,
+validation tests, as well as several sample applications.</p>
+<p>You can 
+<a href="http://cvs.sourceforge.net/viewcvs.py/kanren">browse the files in the CVS tree</a> from any web browser.</p>
+<br>
+<p>
+<hr></p>
+<h3>Last updated January 26, 2004</h3>
+<p>
+<address>oleg-at-pobox.com or oleg-at-acm.org or oleg-at-computer.org
+<br>Your comments, problem reports, questions are very welcome!</address></p>
+<p>
+<font size="-2">Converted from SXML by SXML-&gt;HTML</font></p></body></html>
