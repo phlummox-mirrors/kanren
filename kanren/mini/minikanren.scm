@@ -35,7 +35,7 @@
 (def-syntax (exists (id ...) ant) (let ([id (logical-variable 'id)] ...) ant))
 (def-syntax (eigen (id ...) ant) (let ([id (gensym)] ...) ant))
 (def-syntax (predicate expr) (if expr (all) (any)))
-(def-syntax (instantiated t) (project (t) (predicate (not (var? t)))))
+(def-syntax (instantiated t) (eigen (x) (fails (== x t))))
 (def-syntax (fails ant) (ef/only/forget ant (any) (all)))
 (def-syntax (only/forget ant) (ef/only/forget ant (all) (any)))
 (def-syntax (only ant) (ef/only ant (all) (any)))
