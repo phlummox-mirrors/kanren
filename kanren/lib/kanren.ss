@@ -384,13 +384,13 @@
 ; Pruning of substitutions is analogous to environment pruning (aka tail-call
 ; optimization) in WAM on _forward_ execution.
 
-; PRUNE IN-SUBST SUBST ID ....
+; LV-ELIM IN-SUBST SUBST ID ....
 ; remove the bindings of ID ... from SUBST (by composing with the
 ; rest of subst). IN-SUBST is the mark.
 ; If we locate IN-SUBST in SUBST, we know that everything below the
 ; mark can't possibly contain ID ...
 
-; prune-subst-1 VAR IN-SUBST SUBST
+; lv-elim-1 VAR IN-SUBST SUBST
 ; VAR is a logical variable, SUBST is a substitution, and IN-SUBST
 ; is a tail of SUBST (which may be '()).
 ; VAR is supposed to have non-complex binding in SUBST
@@ -403,7 +403,7 @@
 ; and the other commitments composed with the removed commitment.
 ; The order of commitments is preserved.
 
-(define prune-subst-1
+(define lv-elim-1
   (lambda (var in-subst subst)
     (if (eq? subst in-subst) subst
       ; if VAR is not bound, there is nothing to prune
@@ -438,7 +438,7 @@
 ; We should also note that the unifier will never return a substitution
 ; that contains a cycle ((x1 . x2) (x2 . x3) ... (xn . x1))
 
-(define prune-subst
+(define lv-elim
   (lambda (vars in-subst subst)
     (if (eq? subst in-subst)
       subst
@@ -453,7 +453,7 @@
 	  [(null? var-bindings) subst] ; none of vars are bound
 	  [(null? (cdr var-bindings))
 	    ; only one variable to prune, use the faster version
-	   (prune-subst-1 (commitment->var (car var-bindings))
+	   (lv-elim-1 (commitment->var (car var-bindings))
 	     in-subst subst)]
 	  [(let test ([vb var-bindings]) ; check multiple dependency
 	     (and (pair? vb)
@@ -464,7 +464,7 @@
 	   (let loop ([var-bindings var-bindings] [subst subst])
 	     (if (null? var-bindings) subst
 	       (loop (cdr var-bindings)
-		 (prune-subst-1 (commitment->var (car var-bindings))
+		 (lv-elim-1 (commitment->var (car var-bindings))
 		   in-subst subst))))]
 	  [else				; do it in parallel
 	    (let loop ([current subst])
@@ -480,7 +480,7 @@
 		     (loop (cdr current))))]
 		[else (cons (car current) (loop (cdr current)))]))])))))
 
-; when the unifier is moved up, move prune-subst test from below up...
+; when the unifier is moved up, move lv-elim test from below up...
 
 (define-syntax exists
   (syntax-rules ()
@@ -490,14 +490,14 @@
        (lambda@ (sk fk in-subst)
          (@ ant
            (lambda@ (fk out-subst)
-             (@ sk fk (prune-subst-1 ex-id in-subst out-subst)))
+             (@ sk fk (lv-elim-1 ex-id in-subst out-subst)))
            fk in-subst)))]
     [(_ (ex-id ...) ant)
      (let-lv (ex-id ...) 
        (lambda@ (sk fk in-subst)
          (@ ant
            (lambda@ (fk out-subst)
-             (@ sk fk (prune-subst (list ex-id ...) in-subst out-subst)))
+             (@ sk fk (lv-elim (list ex-id ...) in-subst out-subst)))
            fk in-subst)))]))
 
 ;-----------------------------------------------------------
@@ -1843,29 +1843,11 @@
        (let ([var (subst-in var subst)] ...)
 	 (@ ant sk fk subst)))]))
 
-(define-syntax inject
+(define-syntax predicate
   (syntax-rules ()
     [(_ scheme-expression)
      (lambda@ (sk fk subst)
        (if scheme-expression (@ sk fk subst) (fk)))]))
-
-(define-syntax predicate
-  (syntax-rules ()
-    [(_ () scheme-expression)
-     (lambda@ (sk fk subst)
-       (if scheme-expression (@ sk fk subst) (fk)))]
-    [(_ (var ...) scheme-expression) ;; both project and predicate grab state
-     (project (var ...)
-       (predicate () scheme-expression))]))
-
-(define-syntax predicate/no-check
-  (syntax-rules ()
-    [(_ () scheme-expression)
-     (lambda@ (sk fk subst)
-       (if scheme-expression (@ sk fk subst) (fk)))]
-    [(_ (var ...) scheme-expression) ;; both project and predicate grab state
-     (project/no-check (var ...)
-       (predicate () scheme-expression))]))
 
 (define nonvar!
   (lambda (t)
@@ -1878,15 +1860,28 @@
 ; Is a deterministic antecedent that prints the current values of VARS
 ; TITLE is any displayable thing.
 
+; (define-syntax trace-vars
+;   (syntax-rules ()
+;     [(trace-vars title (var0 ...))
+;      (promise-one-answer
+;        (predicate/no-check (var0 ...)
+;          (begin (display title) (display " ")
+;                 (display '(var0 ...)) (display " ") (display (list var0 ...))
+;                 (newline))))]))
+
 (define-syntax trace-vars
   (syntax-rules ()
-    [(trace-vars title (var0 ...))
+    [(_ title (var0 ...))
      (promise-one-answer
-       (predicate/no-check (var0 ...)
-         (begin (display title) (display " ")
-                (display '(var0 ...)) (display " ") (display (list var0 ...))
-                (newline))))]))
-
+       (project/no-check (var0 ...)
+         (predicate
+           (begin
+             (display title)
+             (display " ")
+             (display '(var0 ...))
+             (display " ")
+             (display (concretize `(,var0 ...)))
+             (newline)))))]))
 
 (define grandpa
   (relation (grandad grandchild)
@@ -1894,8 +1889,10 @@
     (exists (parent)
       (all 
         (father grandad parent)
-        (predicate (parent) (starts-with-r? parent))
-        (father parent grandchild)))))
+        (project (parent)
+          (all
+            (predicate (starts-with-r? parent))
+            (father parent grandchild)))))))
 
 (define starts-with-r?
   (lambda (x)
@@ -1926,7 +1923,7 @@
 
 (define test1
   (lambda (x)
-    (any (predicate () (< 4 5))
+    (any (predicate (< 4 5))
       (== x (< 6 7)))))
 
 ;;;; Here is the definition of concretize.
@@ -1937,7 +1934,7 @@
 
 (define test2
   (lambda (x)
-    (any (predicate () (< 5 4))
+    (any (predicate (< 5 4))
       (== x (< 6 7)))))
 
 (test-check 'test-test2
@@ -1960,8 +1957,10 @@
     (exists (parent)
       (all
         (father grandad parent)
-        (fails (predicate (parent) (starts-with-r? parent)))
-        (father parent grandchild)))))
+        (project (parent)
+          (all
+            (fails (predicate (starts-with-r? parent)))
+            (father parent grandchild)))))))
 
 (test-check 'test-grandpa-13
   (solve 10 (x y) (grandpa x y))
@@ -1969,7 +1968,8 @@
 
 (define instantiated
   (lambda (t)
-    (predicate/no-check (t) (not (var? t)))))
+    (project/no-check (t)
+      (predicate (not (var? t))))))
 
 (define view-subst
   (lambda (t)
@@ -2115,17 +2115,18 @@
   (letrec
       ([move
          (extend-relation (a1 a2 a3 a4)
-           (relation ()
-             (to-show 0 _ _ _))
+           (fact () 0 _ _ _)
            (relation (n a b c)
              (to-show n a b c)
-             (all
-               (predicate (n) (positive? n))
-               (project/no-check (n)
-                 (all!!
-                   (move (- n 1) a c b)
-                   (predicate (a b) (printf "Move a disk from ~s to ~s~n" a b))
-                   (move (- n 1) c b a))))))])
+             (project (n)
+               (if-only (predicate (positive? n))
+                 (let ([m (- n 1)])
+                   (all 
+                     (move m a c b)
+                     (project (a b)
+                       (begin
+                         (printf "Move a disk from ~s to ~s~n" a b)
+                         (move m c b a)))))))))])
     (relation (n)
       (to-show n)
       (move n 'left 'middle 'right))))
@@ -2148,6 +2149,7 @@
 (define subst-in
   (lambda (t subst)
     (cond
+      [(eq? t _) t]
       [(var? t)
        (cond
          [(assq t subst) => commitment->term]
@@ -2298,17 +2300,18 @@
       (letrec
           ([move
              (extend-relation (a1 a2 a3 a4)
-               (relation ()
-                 (to-show 0 _ _ _))
+               (fact () 0 _ _ _)
                (relation (n a b c)
                  (to-show n a b c)
-                 (all
-                   (predicate (n) (positive? n)) ;;; we lookup n here
-                   (project/no-check (n)         ;;; and here!!!
-                     (all!!
-                       (move (- n 1) a c b)
-                       (predicate (a b) (push-step a b))
-                       (move (- n 1) c b a))))))])
+                 (project (n)
+                   (if-only (predicate (positive? n))
+                     (let ([m (- n 1)])
+                       (all
+                         (move m a c b)
+                         (project (a b)
+                           (begin
+                             (push-step a b)
+                             (move m c b a)))))))))])
         (relation (n path)
           (to-show n path)
           (begin
@@ -3032,7 +3035,7 @@
 ; Using the properties of the unifier to do the proper garbage
 ; collection of logical vars
 
-(test-check 'prune-subst-1
+(test-check 'lv-elim-1
   (concretize
     (let-lv (x z dummy)
       (@ 
@@ -3043,7 +3046,7 @@
 	(unit-subst dummy 'dummy))))
   '((z.0 . 9) (x.0 . 5) (dummy.0 . dummy)))
 
-(test-check 'prune-subst-2
+(test-check 'lv-elim-2
   (concretize
     (let-lv (x dummy)
       (@ 
@@ -3055,7 +3058,7 @@
   '((a*.0 . 7) (x.0 5 a*.0) (dummy.0 . dummy)))
 
 ; verifying corollary 2 of proposition 10
-(test-check 'prune-subst-3
+(test-check 'lv-elim-3
   (concretize
     (let-lv (x v dummy)
       (@ 
@@ -3067,7 +3070,7 @@
   '((a*.0 . v.0) (x.0 a b c a*.0 d) (dummy.0 . dummy)))
 
 ; pruning several variables sequentially and in parallel
-(test-check 'prune-subst-4-1
+(test-check 'lv-elim-4-1
   (concretize
     (let-lv (x v b dummy)
       (@ 
@@ -3078,7 +3081,7 @@
 	(unit-subst dummy 'dummy))))
   '((y.0 . 1) (x.0 . y.0) (b.0 . x.0) (dummy.0 . dummy)))
 
-(test-check 'prune-subst-4-2
+(test-check 'lv-elim-4-2
   (concretize
     (let-lv (v b dummy)
       (@ 
@@ -3090,7 +3093,7 @@
 	  (unit-subst dummy 'dummy))))
     '((b.0 . 1) (dummy.0 . dummy)))
 
-(test-check 'prune-subst-4-3
+(test-check 'lv-elim-4-3
   (concretize
     (let-lv (v b dummy)
       (@ 
@@ -3102,7 +3105,7 @@
 	  (unit-subst dummy 'dummy))))
     '((b.0 . 1) (dummy.0 . dummy)))
 
-(test-check 'prune-subst-4-4
+(test-check 'lv-elim-4-4
   (concretize
     (let-lv (v b dummy)
       (@ 
@@ -3115,7 +3118,7 @@
 
 ; pruning several variables sequentially and in parallel
 ; for indirect (cyclic) dependency
-(test-check 'prune-subst-5-1
+(test-check 'lv-elim-5-1
   (concretize
     (let-lv (x v b dummy)
       (@ 
@@ -3126,7 +3129,7 @@
 	(unit-subst dummy 'dummy))))
   '((x.0 1 a*.0) (a*.0 . x.0) (y.0 1 a*.0) (b.0 . x.0) (dummy.0 . dummy)))
 
-(test-check 'prune-subst-5-2
+(test-check 'lv-elim-5-2
   (concretize
     (let-lv (v b dummy)
       (@ 
@@ -3138,7 +3141,7 @@
 	(unit-subst dummy 'dummy))))
   '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
 
-(test-check 'prune-subst-5-3
+(test-check 'lv-elim-5-3
   (concretize
     (let-lv (v b dummy)
       (@ 
@@ -3150,7 +3153,7 @@
 	(unit-subst dummy 'dummy))))
   '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
 
-(test-check 'prune-subst-5-4
+(test-check 'lv-elim-5-4
   (concretize
     (let-lv (v b dummy)
       (@ 
@@ -3622,7 +3625,7 @@
        (lambda@ (sk fk in-subst)
 	 (@ (all ant0 ant1 ...)
             (lambda@ (fk out-subst)
-              (let ([ps (prune-subst (list id ...) in-subst out-subst)])
+              (let ([ps (lv-elim (list id ...) in-subst out-subst)])
                 (if (ormap (lambda (cmt)
                              (or (occurs-check? id (commitment->term cmt))
                                  ...))
