@@ -979,8 +979,34 @@
 ; The current incremented unification of argument passing is quite similar to
 ; the compilation of argument unifications in WAM.
 
+; relation (VAR ...) (to-show TERM ...) [ANT]
+; Defines a relation of arity (length '(TERM ...)) with an optional body
+; ANT. VAR ... are logical variables that are local to the relation, i.e.,
+; appear in TERM or ANT. It's better to list as VAR ... only logical
+; variables that appear in TERM. Variables that appear only in ANT should
+; be introduced with exists. That makes their existential quantification
+; clearer. Variables that appear in TERM are universally quantified.
+;
+; relation (head-let TERM ...) [ANT]
+; See relation-head-let below.
+;
+; relation (ANNOT-VAR ...) (to-show TERM ...) [ANT]  (see remark below!)
+; where ANNOT-VAR is either a simple VAR or (once VAR)
+; where 'once' is a distingushed symbol. The latter form introduces
+; a once-var, aka linear variable. A linear variable appears only once in
+; TERM ... and only at the top level (that is, one and only one TERM
+; in the to-show pattern contains ONCE-VAR, and that term is ONCE-VAR
+; itself). In addition, ONCE-VAR must appear only once in the body ANT.
+; If these conditions are satisfied, we can replace a logical variable
+; ONCE-VAR with a regular Scheme variable.
+
+; Alternative notation:
+; (relation (a c) (to-show term1 (once c) term2) body)
+; Makes it easier to deal with. But it is unsatisfactory:
+; to-show becomes a binding form...
+
 (define-syntax relation
-  (syntax-rules (to-show head-let)
+  (syntax-rules (to-show head-let once)
     [(_ (head-let head-term ...) ant)
      (relation-head-let (head-term ...) ant)]
     [(_ (head-let head-term ...))	; not particularly useful without body
@@ -990,39 +1016,99 @@
     [(_ () (to-show x ...))		; the same without body: not too useful
      (relation-head-let (`,x ...))]
     [(_ (ex-id ...) (to-show x ...) ant)  ; body present
-     (relation (ex-id ...) () (x ...) (x ...) ant)]
+     (relation "a" () () (ex-id ...) (x ...) ant)]
     [(_ (ex-id ...) (to-show x ...))      ; no body
-     (relation (ex-id ...) () (x ...) (x ...))]
-    [(_ (ex-id ...) (var0 ...) (x0 x1 ...) xs ant ...) 
-     (relation (ex-id ...) (var0 ... g) (x1 ...) xs ant ...)]
-    [(_ (ex-id ...) () () () ant)	; no arguments (no head-tests)
-      (lambda ()
-	(exists (ex-id ...) ant))]
-    [(_ (ex-id ...) (g ...) () (x ...)) ; no body
-     (lambda (g ...)
-       (exists (ex-id ...)
- 	 (all!! (promise-one-answer (== g x)) ...)))]
-    [(_ (ex-id ...) (g ...) () (x ...) ant) ; the most general
-     (lambda (g ...)
-       (exists (ex-id ...)
- 	 (if-all! ((promise-one-answer (== g x)) ...) ant)))]))
+     (relation "a" () () (ex-id ...) (x ...))]
+    ; process the list of variables and handle annotations
+    [(_ "a" vars once-vars ((once id) . ids) terms . ant)
+     (relation "a" vars (id . once-vars) ids terms . ant)]
+    [(_ "a" vars once-vars (id . ids) terms . ant)
+     (relation "a" (id . vars) once-vars ids terms . ant)]
+    [(_ "a" vars once-vars () terms . ant)
+     (relation "g" vars once-vars () () terms . ant)]
+    ; generating temp names for each term in the head
+    ; don't generate if the term is a variable that occurs in
+    ; once-vars
+    [(_ "g" vars once-vars (gs ...) gunis (term . terms) . ant)
+     (id-memv?? term once-vars 
+       ; success continuation: term is a once-var
+       (relation "g" vars once-vars (gs ... term) gunis terms . ant)
+       ; failure continuation: term is not a once-var
+       (relation "g" vars once-vars  (gs ... g) ((g . term) . gunis) 
+	 terms . ant))]
+    [(_ "g" vars once-vars gs gunis () . ant)
+     (relation "f" vars once-vars gs gunis . ant)]
 
-; relation-head-let (head-term ...) ant A simpler, and more efficient
-; kind of relation. The simplicity comes from a simpler pattern at the
-; head of the relation. The pattern must be linear and shallow with
-; respect to introduced variables.  The ant is optional (although
-; omitting it doesn't make much sense in practice) There are two kinds
-; of head-terms.  One kind is an identifier. This identifier is taken
-; to be a logical identifier, to be unified with the corresponding
-; actual argument.  Each logical identifier must occur exactly once.
-; Another kind of a head-terms is anything else. That anything else
-; may be a constant, a scheme variable, or a complex term that may
-; even include logical variables such as _ -- but not logical
-; variables defined in the same head-let pattern.  To make the task of
-; distinguishing logical identifiers from anything else easier, we
-; require that anything else of a sort of a manifest constant be
-; explicitly quoted or quasiquoted. It would be OK to add `, to each
-; 'anything else' term.
+    ; Final: writing the code
+    [(_ "f" vars () () () ant)	   ; no arguments (no head-tests)
+      (lambda ()
+	(exists vars ant))]
+    [(_ "f" (ex-id ...) () (g ...) ((gv . term) ...) ) ; no body
+     (lambda (g ...)
+       (exists (ex-id ...)
+ 	 (all!! (promise-one-answer (== gv term)) ...)))]
+                                   ; no tests but pure binding
+    [(_ "f" (ex-id ...) once-vars (g ...) () ant)
+     (lambda (g ...)
+       (exists (ex-id ...) ant))]
+				    ; the most general
+    [(_ "f" (ex-id ...) once-vars (g ...) ((gv . term) ...) ant)
+     (lambda (g ...)
+       (exists (ex-id ...)
+ 	 (if-all! ((promise-one-answer (== gv term)) ...) ant)))]))
+
+
+; A macro-expand-time memv function for identifiers
+;	id-memv?? FORM (ID ...) KT KF
+; FORM is an arbitrary form or datum, ID is an identifier.
+; The macro expands into KT if FORM is an identifier, which occurs
+; in the list of identifiers supplied by the second argument.
+; Otherwise, id-memv?? expands to KF.
+; All the identifiers in (ID ...) must be unique.
+; Two identifiers match if both refer to the same binding occurrence, or
+; (both are undefined and have the same spelling).
+
+(define-syntax id-memv??
+  (syntax-rules ()
+    ((id-memv?? form (id ...) kt kf)
+      (let-syntax
+	((test
+	   (syntax-rules (id ...)
+	     ((test id _kt _kf) _kt) ...
+	     ((test otherwise _kt _kf) _kf))))
+	(test form kt kf)))))
+
+; Test cases
+; (id-memv?? x (a b c) #t #f)
+; (id-memv?? a (a b c) 'OK #f)
+; (id-memv?? () (a b c) #t #f)
+; (id-memv?? (x ...) (a b c) #t #f)
+; (id-memv?? "abc" (a b c) #t #f)
+; (id-memv?? x () #t #f)
+; (let ((x 1))
+;   (id-memv?? x (a b x) 'OK #f))
+; (let ((x 1))
+;   (id-memv?? x (a x b) 'OK #f))
+; (let ((x 1))
+;   (id-memv?? x (x a b) 'OK #f))
+
+
+; relation-head-let (head-term ...) ant 
+; A simpler, and more efficient kind of relation. The simplicity comes
+; from a simpler pattern at the head of the relation. The pattern must
+; be linear and shallow with respect to introduced variables.  The ant
+; is optional (although omitting it doesn't make much sense in
+; practice) There are two kinds of head-terms.  One kind is an
+; identifier. This identifier is taken to be a logical identifier, to
+; be unified with the corresponding actual argument.  Each logical
+; identifier must occur exactly once.  Another kind of a head-terms is
+; anything else. That anything else may be a constant, a scheme
+; variable, or a complex term that may even include logical variables
+; such as _ -- but not logical variables defined in the same head-let
+; pattern.  To make the task of distinguishing logical identifiers
+; from anything else easier, we require that anything else of a sort
+; of a manifest constant be explicitly quoted or quasiquoted. It would
+; be OK to add `, to each 'anything else' term.
 ;
 ; Examples:
 ; (relation-head-let (x y z) (foo x y z))
@@ -1440,8 +1526,20 @@
   (solve 6 (y) (grandpa-sam y))
   '(((y.0 sal)) ((y.0 pat))))
 
+(define grandpa-sam
+  (relation ((once grandchild))
+    (to-show grandchild)
+    (exists (parent)
+      (lambda (sk)
+        ((newest-father 'sam parent)
+         ((newest-father parent grandchild) sk))))))
+
+(test-check 'test-grandpa-sam-1-1
+  (solve 6 (y) (grandpa-sam y))
+  '(((y.0 sal)) ((y.0 pat))))
+
 (define child
-  (relation (child dad)
+  (relation ((once child) (once dad))
     (to-show child dad)
     (newest-father dad child)))
 
@@ -1466,7 +1564,7 @@
 
 (define grandpa-maker
   (lambda (grandad)
-    (relation (grandchild)
+    (relation ((once grandchild))
       (to-show grandchild)
       (exists (parent)
         (all
@@ -1491,7 +1589,7 @@
   '(((x.0 sal)) ((x.0 pat))))
 
 (define grandpa
-  (relation (grandad grandchild)
+  (relation ((once grandad) (once grandchild))
     (to-show grandad grandchild)
     (exists (parent)
       (all
@@ -2837,7 +2935,7 @@
 (define concat
   (extend-relation (a1 a2 a3)
     (fact (xs) '() xs xs)
-    (relation (x xs ys zs)
+    (relation (x xs (once ys) zs)
       (to-show `(,x . ,xs) ys `(,x . ,zs))
       (concat xs ys zs))))
 
