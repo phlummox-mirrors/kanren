@@ -1,13 +1,24 @@
-(def-syntax (run (id ...) ant fk subst succeed-expr fail-expr)
+(def-syntax (exists (id ...) ant) (let ([id (logical-variable 'id)] ...) ant))
+(def-syntax (eigen (id ...) ant) (let ([id (gensym)] ...) ant))
+
+(def-syntax (run-raw (id ...) ant fk subst SE FE)
   (exists (id ...)
     (@ ant
-      (lambda@ (fk subst)
-        (let ([c* (concretize `(,(subst-in id subst) ...))])
-          (let*-values ([(id c*) (values (car c*) (cdr c*))] ...)
-            succeed-expr)))
-      (lambda () fail-expr)
+      (lambda@ (fk subst) SE)
+      (lambda () FE)
       empty-subst)))
 
+(def-syntax (project-host (id ...) subst expr)
+  (let ([id (subst-in id subst)] ...) expr))
+
+(def-syntax (run (id ...) ant fk subst succeed-expr fail-expr)
+  (run-raw (id ...) ant fk subst
+    (project-host (id ...) subst
+      (let ([c* (concretize `(,id ...))])
+	(let*-values ([(id c*) (values (car c*) (cdr c*))] ...)
+	  succeed-expr)))
+    fail-expr))
+    
 (def-syntax (project (id ...) ant)
   (lambda@ (sk fk subst)
     (project-host (id ...) subst (@ ant sk fk subst))))
@@ -21,15 +32,18 @@
     (lambda@ (sk fk^ subst^)
       (@ a (lambda@ (fk subst) (@ b sk fk$ subst$)) (lambda () (@ c sk fk^ subst^)) subst^))))
 
+(def-syntax (succeed) (lambda@ (sk fk subst) (@ sk fk subst)))
+(def-syntax (fail) (lambda@ (sk fk subst) (fk)))
+
 (define-syntax all
   (syntax-rules ()
-    [(_) (lambda@ (sk fk subst) (@ sk fk subst))]
+    [(_) (succeed)]
     [(_ ant) ant]
     [(_ ant ant* ...) (ef ant (all ant* ...) (fail))]))
 
 (define-syntax any
   (syntax-rules ()
-    [(_) (lambda@ (sk fk subst) (fk))]
+    [(_) (fail)]
     [(_ ant) ant]
     [(_ ant ant* ...) (ef ant (succeed) (any ant* ...))]))
 
@@ -38,10 +52,6 @@
 (ef-maker ef/forget fk^ subst^ fk subst fk subst^)
 (ef-maker ef/only/forget fk^ subst^ fk subst fk^ subst^)
 
-(def-syntax (succeed) (all))
-(def-syntax (fail) (any))
-(def-syntax (exists (id ...) ant) (let ([id (logical-variable 'id)] ...) ant))
-(def-syntax (eigen (id ...) ant) (let ([id (gensym)] ...) ant))
 (def-syntax (predicate expr) (if expr (succeed) (fail)))
 (def-syntax (fails ant) (ef/only/forget ant (fail) (succeed)))
 (def-syntax (only/forget ant) (ef/only/forget ant (succeed) (fail)))
@@ -81,10 +91,6 @@
           (if (not (or (zero? n) (not ans)))
               (loop (ans) (sub1 n))
               (if (not ans) #f #t))))))
-
-(def-syntax (project-host (id ...) subst expr)
-  (let ([id (subst-in id subst)] ...) expr))
-
 
 
 (define-syntax relation
