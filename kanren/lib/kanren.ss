@@ -49,7 +49,7 @@
 ; the both results.
 (define-syntax test-check
   (syntax-rules ()
-    ((_ title tested-expression expected-result)
+    [(_ title tested-expression expected-result)
      (begin
        (printf "Testing ~s~%" title)
        (let* ([expected expected-result]
@@ -57,7 +57,7 @@
          (or (equal? expected produced)
              (error 'test-check
                "Failed: ~a~%Expected: ~a~%Computed: ~a~%"
-               'tested-expression expected produced)))))))
+               'tested-expression expected produced))))]))
 
 (test-check 'test-@-lambda@
   (@ (lambda@ (x y z) (+ x (+ y z))) 1 2 3)
@@ -198,25 +198,12 @@
 	#f)))
   #t)
 
-
-'(define == 
-  (lambda (x y)
-    (lambda@ (sk fk subst)
-      (cond
-        [(unify x y subst)
-         => (lambda (subst)
-              (@ sk fk subst))]
-        [else (fk)]))))
-
 (define-syntax ==
   (syntax-rules ()
     [(_ t u)
      (lambda@ (sk fk subst)
-       (cond
-         [(unify t u subst)
-          => (lambda (subst)
-               (@ sk fk subst))]
-         [else (fk)]))]))
+       (let ([subst (unify t u subst)])
+         (if subst (@ sk fk subst) (fk))))]))
 
 ;(load "plprelims.ss")
 
@@ -438,8 +425,8 @@
   (lambda (var in-subst subst)
     (if (eq? subst in-subst) subst
       ; if VAR is not bound, there is nothing to prune
-      (let*-and subst ((var-binding (assq var subst))
-		       (tv (commitment->term var-binding)))
+      (let*-and subst ([var-binding (assq var subst)]
+		       [tv (commitment->term var-binding)])
         (let loop ([current subst])
           (cond
             [(null? current) current]
@@ -449,8 +436,7 @@
 	    [(eq? (commitment->term (car current)) var)
 	      (cons (commitment (commitment->var (car current)) tv)
 		(loop (cdr current)))]
-	    [else (cons (car current) (loop (cdr current)))]
-	    ))))))
+	    [else (cons (car current) (loop (cdr current)))]))))))
 
 ; The same but for multiple vars
 ; To prune multiple-vars, we can prune them one-by-one
@@ -474,26 +460,26 @@
   (lambda (vars in-subst subst)
     (if (eq? subst in-subst)
         subst
-      (let ((var-bindings ; the bindings of truly bound vars
-	      (let loop ((vars vars))
+      (let ([var-bindings ; the bindings of truly bound vars
+	      (let loop ([vars vars])
 		(if (null? vars) vars
-		  (let ((binding (assq (car vars) subst)))
+		  (let ([binding (assq (car vars) subst)])
 		    (if binding
 		      (cons binding (loop (cdr vars)))
-		      (loop (cdr vars))))))))
+		      (loop (cdr vars))))))])
 	(cond
 	  [(null? var-bindings) subst] ; none of vars are bound
 	  [(null? (cdr var-bindings))
 	    ; only one variable to prune, use the faster version
 	    (prune-subst-1 (commitment->var (car var-bindings))
 	      in-subst subst)]
-	  [(let test ((vb var-bindings)) ; check multiple dependency
+	  [(let test ([vb var-bindings]) ; check multiple dependency
 	     (and (pair? vb)
-	       (or (let ((term (commitment->term (car vb))))
+	       (or (let ([term (commitment->term (car vb))])
 		     (and (var? term) (assq term var-bindings)))
 		 (test (cdr vb)))))
 	    ; do pruning sequentially
-	    (let loop ((var-bindings var-bindings) (subst subst))
+	    (let loop ([var-bindings var-bindings] [subst subst])
 	      (if (null? var-bindings) subst
 		(loop (cdr var-bindings)
 		  (prune-subst-1 (commitment->var (car var-bindings))
@@ -510,8 +496,7 @@
 		    (cons (commitment (commitment->var (car current)) 
 			    (commitment->term ct))
 		      (loop (cdr current))))]
-		[else (cons (car current) (loop (cdr current)))]))]
-		)))))
+		[else (cons (car current) (loop (cdr current)))]))])))))
 
 ; when the unifier is moved up, move prune-subst test from below up...
 
@@ -556,19 +541,17 @@
     [(_ sk ant0 ant1 ...)
      (@ ant0 (splice-in-ants/all sk ant1 ...))]))
 
-
 (define succeed (all))
 
 ; (promise-one-answer ant)
 ; Operationally, it is the identity.
 ; It is an optimization directive: if the user knows that an antecedent
 ; can produce at most one answer, he can tell the system about it.
-; The behavior is underfined if the user has lied.
+; The behavior is undefined if the user has lied.
 
 (define-syntax promise-one-answer
   (syntax-rules ()
-    ((_ ant) ant)))
-
+    [(_ ant) ant]))
 
 ; (all! ant1 ant2 ...)
 ; A committed choice nondeterminism conjunction
@@ -584,7 +567,7 @@
 ; if ant fails, (all! ant) fails. If ant has at least one answer,
 ; this answer is returned.
 ; (all! ant) has at most one answer regardless of the answers of ant.
-;   ans is an asnwer of (all! ant) ==> ans is an answer of ant
+;   ans is an answer of (all! ant) ==> ans is an answer of ant
 ; The converse is not true.
 ; Corollary: (all! ant) =/=> ant
 ; Corollary: ant is (semi-) deterministic: (all! ant) ==> ant
@@ -617,9 +600,9 @@
     [(_) (all!)]
     [(_ ant) (all! ant)]
     [(_ ant0 ant1 ...)
-      (promise-one-answer 
-	(lambda@ (sk fk)
-	  (splice-in-ants/all!! sk fk ant0 ant1 ...)))]))
+     (promise-one-answer 
+       (lambda@ (sk fk)
+         (splice-in-ants/all!! sk fk ant0 ant1 ...)))]))
 
 (define-syntax splice-in-ants/all!!
   (syntax-rules (promise-one-answer)
@@ -646,20 +629,19 @@
 
 (define-syntax if-only
   (syntax-rules ()
-    ((_ condition then)
-      (lambda@ (sk fk)
-	(@ condition
-	  ; sk from cond
-	  (lambda@ (fk-ign) (@ then sk fk))
-	  ; failure from cond
-	  fk)))
-    ((_ condition then else)
-      (lambda@ (sk fk subst)
-	(@ condition
-	  (lambda@ (fk-ign) (@ then sk fk))
-	  (lambda () (@ else sk fk subst))
-	  subst)))
-))
+    [(_ condition then)
+     (lambda@ (sk fk)
+       (@ condition
+         ; sk from cond
+         (lambda@ (fk-ign) (@ then sk fk))
+         ; failure from cond
+         fk))]
+    [(_ condition then else)
+     (lambda@ (sk fk subst)
+       (@ condition
+         (lambda@ (fk-ign) (@ then sk fk))
+         (lambda () (@ else sk fk subst))
+         subst))]))
 
 ; (if-all! (COND1 ... CONDN) THEN)
 ; (if-all! (COND1 ... CONDN) THEN ELSE)
@@ -745,18 +727,16 @@
       (@ ant (lambda@ (fk-ign subst-ign) (@ sk fk subst))
 	fk subst))))
 
-; partially-eval-sant: Partially evaluate a semi-antecedent
-; An semi-antecedent is an expression that, when applied to
-; two arguments, sk fk, can produce zero, one, or
-; more answers.
-; Any antecedent can be turned into a semi-antecedent if partially applied
-; to subst.
-; The following higher-order semi-antecedent takes an
+; partially-eval-sant: Partially evaluate a semi-antecedent. A
+; semi-antecedent is an expression that, when applied to two
+; arguments, sk and fk, can produce zero, one, or more answers.  Any
+; antecedent can be turned into a semi-antecedent if partially applied
+; to subst.  The following higher-order semi-antecedent takes an
 ; antecedent and yields the first answer and another, residual
-; antecedent. The latter, when evaluated, will give the rest
-; of the answers of the original semi-antecedent.
-; partially-eval-sant could be implemented with streams (lazy
-; lists). The following is a purely combinational implementation.
+; antecedent. The latter, when evaluated, will give the rest of the
+; answers of the original semi-antecedent.  partially-eval-sant could
+; be implemented with streams (lazy lists). The following is a purely
+; combinational implementation.
 ;
 ; (@ partially-eval-sant sant a b) =>
 ;   (b) if sant has no answers
@@ -792,7 +772,7 @@
 ; any-interleave introduces a breadth-first-like traversal of the
 ; decision tree.
 ; I seem to have seen a theorem that says that a _fair_ scheduling
-; (like that provided by any-interleave) entails a minumal or well-founded
+; (like that provided by any-interleave) entails a minimal or well-founded
 ; semantics of a Prolog program.
 
 (define-syntax any-interleave
@@ -800,31 +780,32 @@
     [(_) fail]
     [(_ ant) ant]
     [(_ ant ...)
-      (lambda@ (sk fk subst)
-	(interleave sk fk
-	  (list (ant->sant ant subst) ...)))]))
+     (lambda@ (sk fk subst)
+       (interleave sk fk
+         (list (ant->sant ant subst) ...)))]))
 
 ; we treat sants as a sort of a circular list
-(define (interleave sk fk sants)
-  (cond
-    ((null? sants) (fk))		; all of the sants are finished
-    ((null? (cdr sants))
+(define interleave
+  (lambda (sk fk sants)
+    (cond
+      [(null? sants) (fk)]		; all of the sants are finished
+      [(null? (cdr sants))
       ; only one sants left -- run it through the end
-      (@ (car sants) sk fk))
-    (else
-      (let loop ((curr sants) (residuals '()))
-	; check if the current round is finished
-	(if (null? curr) (interleave sk fk (reverse residuals))
-	  (@
-	    partially-eval-sant (car curr)
-	    ; (car curr) had an answer
-	    (lambda@ (subst residual)
-	      (@ sk
-	        ; re-entrance cont
-		(lambda () (loop (cdr curr) (cons residual residuals)))
-		subst))
-	  ; (car curr) is finished - drop it, and try next
-	  (lambda () (loop (cdr curr) residuals))))))))
+       (@ (car sants) sk fk)]
+      [else
+        (let loop ([curr sants] [residuals '()])
+	  ; check if the current round is finished
+	  (if (null? curr) (interleave sk fk (reverse residuals))
+	    (@
+	      partially-eval-sant (car curr)
+	      ; (car curr) had an answer
+	      (lambda@ (subst residual)
+	        (@ sk
+	          ; re-entrance cont
+		  (lambda () (loop (cdr curr) (cons residual residuals)))
+		  subst))
+	    ; (car curr) is finished - drop it, and try next
+	    (lambda () (loop (cdr curr) residuals)))))])))
 
 ; An interleaving disjunction removing duplicates: any-union
 ; This is a true union of the constituent antecedents: it is fair, and
@@ -851,56 +832,58 @@
 ; importantly, it breaks the property
 ; (any-union ant ant) ===> ant
 ; Only a weaker version, (any-union' ant ant) ===> (any-union' ant)
-; would hold. Therefore, we do not do that change.
+; would hold. Therefore, we do not make that change.
 
 (define-syntax any-union
   (syntax-rules ()
     [(_) fail]
     [(_ ant) ant]
     [(_ ant ...)
-      (lambda@ (sk fk subst)
-	(interleave-non-overlap sk fk
-	  (list (cons (ant->sant ant subst) ant) ...)))]))
+     (lambda@ (sk fk subst)
+       (interleave-non-overlap sk fk
+         (list (cons (ant->sant ant subst) ant) ...)))]))
 
 ; we treat saants as a sort of a circular list
 ; Each element of saants is a pair (sant . ant)
 ; where ant is the original antecedent (needed for the satisfiability testing)
 ; and sant is the corresponding semi-antecedent or a 
 ; residual thereof.
-(define (interleave-non-overlap sk fk saants)
-  (let outer ((saants saants))
-    (cond
-      ((null? saants) (fk))		; all of the saants are finished
-      ((null? (cdr saants))
-        ; only one ant is left -- run it through the end
-	(@ (caar saants) sk fk))
-      (else
-	(let loop ((curr saants) (residuals '()))
-	  ; check if the current round is finished
-	  (if (null? curr) (outer (reverse residuals))
-	  (@
-	    partially-eval-sant (caar curr)
-	    ; (caar curr) had an answer
-	    (lambda@ (subst residual)
-	      ; let us see now if the answer, subst, satisfies any of the
-	      ; ants down the curr.
-	      (let check ((to-check (cdr curr)))
-		(if (null? to-check) ; OK, subst is unique, give it to user
-		  (@ sk
-	           ; re-entrance cont
-		    (lambda () (loop (cdr curr) 
-				 (cons (cons residual (cdar curr)) residuals)))
-		    subst)
-		  (@ (cdar to-check)
-		    ; subst was the answer to some other ant: check failed
-		    (lambda@ (fk1 subst1) 
-		      (loop (cdr curr) 
-			(cons (cons residual (cdar curr)) residuals)))
-		    ; subst was not the answer: continue check
-		    (lambda () (check (cdr to-check)))
-		    subst))))
-	  ; (car curr) is finished - drop it, and try next
-	  (lambda () (loop (cdr curr) residuals)))))))))
+(define interleave-non-overlap
+  (lambda (sk fk saants)
+    (let outer ([saants saants])
+      (cond
+        [(null? saants) (fk)]  ; all of the saants are finished
+        [(null? (cdr saants))  ; only one ant is left -- run it through the end
+	 (@ (caar saants) sk fk)]
+        [else
+	  (let loop ([curr saants]
+                     [residuals '()])
+            ; check if the current round is finished
+	    (if (null? curr) (outer (reverse residuals))
+                (@
+                 partially-eval-sant (caar curr)
+                  ; (caar curr) had an answer
+                 (lambda@ (subst residual)
+                  ; let us see now if the answer, subst, satisfies any of the
+                  ; ants down the curr.
+                   (let check ([to-check (cdr curr)])
+                     (if (null? to-check) ; OK, subst is unique, give it to user
+                         (@ sk
+                           ; re-entrance cont
+                           (lambda ()
+                             (loop (cdr curr) 
+                               (cons (cons residual (cdar curr)) residuals)))
+                           subst)
+                         (@ (cdar to-check)
+                            ; subst was the answer to some other ant: check failed
+                            (lambda@ (fk1 subst1) 
+                              (loop (cdr curr) 
+                                (cons (cons residual (cdar curr)) residuals)))
+                            ; subst was not the answer: continue check
+                            (lambda () (check (cdr to-check)))
+                            subst))))
+                 ; (car curr) is finished - drop it, and try next
+                 (lambda () (loop (cdr curr) residuals)))))]))))
 
 ; Another if-then-else
 ; (if-some COND THEN)
@@ -930,7 +913,7 @@
 ; if-some is the regular IF-THEN-ELSE.
 ;
 ; We can implement if-some with partially-eval-sant. Given a COND, we
-; peel of one answer, if possible. If it is, we then execute THEN
+; peel off one answer, if possible. If there is one, we then execute THEN
 ; passing it the answer and the fk from COND so that if THEN fails,
 ; it can obtain another answer. If COND has no answers, we execute
 ; ELSE. Again, we can do all that purely declaratively, without
@@ -938,19 +921,17 @@
 
 (define-syntax if-some
   (syntax-rules ()
-    ((_ condition then) (all condition then))
-    ((_ condition then else)
-      (lambda@ (sk fk subst)
-	(@ partially-eval-sant (ant->sant condition subst)
-	  (lambda@ (ans residual)
-	    (@ then sk
-	      ; then failed. Check to see if condition has another answer
-	      (lambda () (@ residual (@ then sk) fk))
-	      ans))
-	  ; condition failed
-	  (lambda () (@ else sk fk subst)))))
-))
-
+    [(_ condition then) (all condition then)]
+    [(_ condition then else)
+     (lambda@ (sk fk subst)
+       (@ partially-eval-sant (ant->sant condition subst)
+         (lambda@ (ans residual)
+           (@ then sk
+             ; then failed. Check to see if condition has another answer
+             (lambda () (@ residual (@ then sk) fk))
+             ans))
+             ; condition failed
+         (lambda () (@ else sk fk subst))))]))
 
 ; Relations...........................
 
@@ -980,27 +961,24 @@
     [(_ (ex-id ...) (g ...) () (x ...) ant) ; the most general
      (lambda (g ...)
        (exists (ex-id ...)
- 	 (if-all! ((promise-one-answer (== g x)) ...) ant)))]
-    ))
+ 	 (if-all! ((promise-one-answer (== g x)) ...) ant)))]))
 
 
-; relation-head-let (head-term ...) ant
-; A simpler, and more efficient kind of relation. The simplicity
-; comes from a simpler pattern at the head of the relation. The pattern
-; must be linear and shallow with respect to introduced variables.
-; The ant is optional (although omitting it doesn't make much sense
-; in practice)
-; There are two kinds of head-terms.
-; One kind is an identifier. This identifier is taken to be a logical
-; identifier, to be unified with the corresponding actual argument.
-; Each logical identifier must occur exactly once.
-; Another kind of a head-terms is anything else. That anything 
-; else may be a constant, a scheme variable, or a complex term that
-; may even include logical variables such as _ -- but not logical
-; variables defined in the same head-let pattern.
-; To make the task of distinguishing logical identifiers from anything else
-; easier, we require that anything else of a sort of a manifest constant
-; be explicitly quoted or quasiquoted. It would be OK to add `, to each
+; relation-head-let (head-term ...) ant A simpler, and more efficient
+; kind of relation. The simplicity comes from a simpler pattern at the
+; head of the relation. The pattern must be linear and shallow with
+; respect to introduced variables.  The ant is optional (although
+; omitting it doesn't make much sense in practice) There are two kinds
+; of head-terms.  One kind is an identifier. This identifier is taken
+; to be a logical identifier, to be unified with the corresponding
+; actual argument.  Each logical identifier must occur exactly once.
+; Another kind of a head-terms is anything else. That anything else
+; may be a constant, a scheme variable, or a complex term that may
+; even include logical variables such as _ -- but not logical
+; variables defined in the same head-let pattern.  To make the task of
+; distinguishing logical identifiers from anything else easier, we
+; require that anything else of a sort of a manifest constant be
+; explicitly quoted or quasiquoted. It would be OK to add `, to each
 ; 'anything else' term.
 ;
 ; Examples:
@@ -1095,11 +1073,11 @@
 
 (define-syntax define-rel-lifted-comb
   (syntax-rules ()
-    ((_ rel-syntax-name ant-proc-or-syntax)
-      (define-syntax rel-syntax-name
-	(syntax-rules ()
-	  ((_ ids . rel-exps)
-	    (lift-ant-to-rel-aux ant-proc-or-syntax ids () . rel-exps)))))))
+    [(_ rel-syntax-name ant-proc-or-syntax)
+     (define-syntax rel-syntax-name
+       (syntax-rules ()
+         [(_ ids . rel-exps)
+          (lift-ant-to-rel-aux ant-proc-or-syntax ids () . rel-exps)]))]))
 
 (define-syntax lift-ant-to-rel-aux
   (syntax-rules ()
@@ -1120,16 +1098,16 @@
 ; (lift-to-relations ids (ant-comb rel rel ...))
 (define-syntax lift-to-relations
   (syntax-rules ()
-    ((_ ids (ant-comb rel ...))
-      (lift-ant-to-rel-aux ant-comb ids () rel ...))))
+    [(_ ids (ant-comb rel ...))
+     (lift-ant-to-rel-aux ant-comb ids () rel ...)]))
 
 ; (let-ants ids ((name rel) ...) body)
 (define-syntax let-ants
   (syntax-rules ()
-    ((_ (id ...) ((ant-name rel-exp) ...) body)
-      (lambda (id ...)
-	(let ((ant-name (rel-exp id ...)) ...)
-	  body)))))
+    [(_ (id ...) ((ant-name rel-exp) ...) body)
+     (lambda (id ...)
+       (let ((ant-name (rel-exp id ...)) ...)
+         body))]))
 
 ;------------------------------------------------------------------------
 ;;;;; Starts the real work of the system.
@@ -1330,7 +1308,7 @@
 
 (define-syntax binary-intersect
   (syntax-rules ()
-    ((_ ant1 ant2) (all ant1 ant2))))
+    [(_ ant1 ant2) (all ant1 ant2)]))
 
 (define-rel-lifted-comb binary-intersect-relation binary-intersect)
 
@@ -1404,7 +1382,6 @@
   (solve 6 (y) (grandpa-sam y))
   '(((y.0 sal)) ((y.0 pat))))
 
-
 (define child
   (relation (child dad)
     (to-show child dad)
@@ -1450,7 +1427,6 @@
         (all
           (guide* grandad* parent)
           (guide* parent grandchild))))))
-
 
 (test-check 'test-grandpa-maker-2
   (solve 4 (x) ((grandpa-maker newest-father 'sam) x))
@@ -1610,8 +1586,8 @@
 ; Properly, this requires soft cuts, aka *->, or Mercury's
 ; if-then-else. But we emulate it...
 (define grandpa
-  (let-ants (a1 a2) ((grandpa/father grandpa/father)
-		     (grandpa/mother grandpa/mother))
+  (let-ants (a1 a2) ([grandpa/father grandpa/father]
+		     [grandpa/mother grandpa/mother])
     (if-only (succeeds grandpa/father) grandpa/father grandpa/mother)))
 
 (test-check 'test-grandpa-10
@@ -1627,8 +1603,8 @@
 
 ; Now do it with soft-cuts
 (define grandpa
-  (let-ants (a1 a2) ((grandpa/father grandpa/father)
-		     (grandpa/mother grandpa/mother))
+  (let-ants (a1 a2) ([grandpa/father grandpa/father]
+		     [grandpa/mother grandpa/mother])
     (if-some grandpa/father succeed grandpa/mother)))
 
 (test-check 'test-grandpa-10-soft-cut
@@ -1645,13 +1621,12 @@
       (all! (mother grandad parent)))))
 
 (define no-grandma-grandpa
-  (let-ants (a1 a2) ((a-grandma a-grandma) (grandpa grandpa))
+  (let-ants (a1 a2) ([a-grandma a-grandma] [grandpa grandpa])
     (if-only a-grandma fail grandpa)))
 
 (test-check 'test-no-grandma-grandpa-1
   (solve 10 (x) (no-grandma-grandpa 'roz x))
   '())
-
 
 (define parents-of-scouts
   (extend-relation (a1 a2)
@@ -1667,25 +1642,23 @@
 
 (test-check 'test-partially-eval-sant
   (let-lv (p1 p2)
-    (let* ((parents-of-scouts-sant
-	     (ant->sant (parents-of-scouts p1 p2) empty-subst))
-	    (cons@ (lambda@ (x y) (cons x y)))
-	    (split1 (@ 
-		      partially-eval-sant parents-of-scouts-sant
-		      cons@ (lambda () '())))
-	    (a1 (car split1))
-	    (split2 (@ partially-eval-sant (cdr split1) cons@
-		      (lambda () '())))
-	    (a2 (car split2))
-	    (split3 (@ partially-eval-sant (cdr split2) cons@
-		      (lambda () '())))
-	    (a3 (car split3))
-	    )
+    (let* ([parents-of-scouts-sant
+	     (ant->sant (parents-of-scouts p1 p2) empty-subst)]
+           [cons@ (lambda@ (x y) (cons x y))]
+           [split1 (@ 
+                    partially-eval-sant parents-of-scouts-sant
+                    cons@ (lambda () '()))]
+           [a1 (car split1)]
+           [split2 (@ partially-eval-sant (cdr split1) cons@
+                     (lambda () '()))]
+           [a2 (car split2)]
+           [split3 (@ partially-eval-sant (cdr split2) cons@
+                     (lambda () '()))]
+           [a3 (car split3)])
       (map (lambda (subst)
              (concretize-subst/vars subst p1 p2))
 	(list a1 a2 a3))))
   '(((p1.0 sam) (p2.0 rob)) ((p1.0 roz) (p2.0 sue)) ((p1.0 rob) (p2.0 sal))))
-
 
 (define-syntax if/bc
   (syntax-rules ()
@@ -1742,22 +1715,18 @@
     [(_ (var0 ...) scheme-expression)
      (lambda@ (sk fk subst)
        (let ([var0 (nonvar! (subst-in var0 subst))] ...)
-         (cond
-           [(unify (not scheme-expression) #f subst)
-	    => (lambda (ign-subst)
-		 (@ sk fk subst))]
-           [else (fk)])))]))
+         (if (unify (not scheme-expression) #f subst)
+             (@ sk fk subst)
+             (fk))))]))
 
 (define-syntax predicate/no-check
   (syntax-rules ()
     [(_ (var0 ...) scheme-expression)
      (lambda@ (sk fk subst)
        (let ([var0 (subst-in var0 subst)] ...)
-         (cond
-           [(unify (not scheme-expression) #f subst)
-	    => (lambda (ign-subst)
-		 (@ sk fk subst))]
-           [else (fk)])))]))
+         (if (unify (not scheme-expression) #f subst)
+             (@ sk fk subst)
+             (fk))))]))
 
 (define nonvar!
   (lambda (t)
@@ -1771,13 +1740,12 @@
 
 (define-syntax trace-vars
   (syntax-rules ()
-    ((trace-vars title (var ...))
-      (promise-one-answer
-	(predicate/no-check (var ...)
-	  (begin (display title) (display " ")
-	    (display '(var ...)) (display " ") (display (list var ...))
-	    (newline)))))))
-
+    [(trace-vars title (var ...))
+     (promise-one-answer
+       (predicate/no-check (var ...)
+         (begin (display title) (display " ")
+                (display '(var ...)) (display " ") (display (list var ...))
+                (newline))))]))
 
 (define grandpa
   (relation (grandad grandchild)
@@ -1826,7 +1794,6 @@
 (test-check 'test-test1
   (solution (x) (test1 x))
   '((x.0 x.0)))
-
 
 (define test2
   (lambda (x)
@@ -2040,7 +2007,6 @@
            (values (cons carct cdrct) env)))]
       [else (values t env)])))
 
-
 (define subst-in
   (lambda (t subst)
     (cond
@@ -2084,15 +2050,11 @@
       [(var? t) (if (occurs? t u) #f (unit-subst t u))]
       [(var? u) (if (occurs? u t) #f (unit-subst u t))]
       [(and (pair? t) (pair? u))
-       (cond
-         [(unify* (car t) (car u)) =>
-          (lambda (s-car)
-            (cond
-              [(unify* (subst-in (cdr t) s-car) (subst-in (cdr u) s-car))
-               => (lambda (s-cdr)
-                    (compose-subst s-car s-cdr))]
-              [else #f]))]
-         [else #f])]
+       (let ([s-car (unify* (car t) (car u))])
+         (if s-car
+           (let ([s-cdr (unify* (subst-in (cdr t) s-car) (subst-in (cdr u) s-car))])
+             (if s-cdr (compose-subst s-car s-cdr) #f))
+           #f))]
       [else #f])))
 
 (define occurs?
@@ -2228,11 +2190,8 @@
       [(var? t) (unify/var t (subst-in u subst) subst)]
       [(var? u) (unify/var u (subst-in t subst) subst)]
       [(and (pair? t) (pair? u))
-       (cond
-	 [(unify (car t) (car u) subst)
-	  => (lambda (subst)
-               (unify (cdr t) (cdr u) subst))]
-	 [else #f])]
+       (let ([subst (unify (car t) (car u) subst)])
+         (if subst (unify (cdr t) (cdr u) subst) #f))]
       [else #f])))
 
 (define unify/var
@@ -2367,11 +2326,8 @@
   (lambda (t subst)
     (cond
       [(var? t)
-       (cond
-         [(assq t subst)
-	  => (lambda (c)
-	       (subst-in (commitment->term c) subst))]
-         [else t])]
+       (let ([c (assq t subst)])
+         (if c (subst-in (commitment->term c) subst) t))]
       [(pair? t)
        (cons
          (subst-in (car t) subst)
@@ -2397,54 +2353,52 @@
       [(eq? t _) subst]
       [(eq? u _) subst]
       [(var? t)
-	(let ((ct (assq t subst)))
-	  (if ct (unify-bound/any ct u subst)
-	    (unify-free/any t u subst)))]
+       (let ([ct (assq t subst)])
+         (if ct
+             (unify-bound/any ct u subst)
+             (unify-free/any t u subst)))]
       [(var? u)				; t is not a variable...
-	(let ((cu (assq u subst)))
-	  (if cu
-	    (unify (commitment->term cu) t subst)
-	    (if (pair? t)
-	      (unify-free/list u t subst)
-              ; t is not a var and is not a pair: it's atomic
-	      (extend-subst u t subst))))]
+       (let ([cu (assq u subst)])
+         (cond
+           [cu (unify (commitment->term cu) t subst)]
+           [(pair? t) (unify-free/list u t subst)]
+           ; t is not a var and is not a pair: it's atomic
+           [else (extend-subst u t subst)]))]  
       [(and (pair? t) (pair? u))
-       (cond
-         [(unify (car t) (car u) subst)
-          => (lambda (car-subst)
-               (unify (cdr t) (cdr u) car-subst))]
-         [else #f])]
+       (let ([car-subst (unify (car t) (car u) subst)])
+         (if car-subst
+             (unify (cdr t) (cdr u) car-subst)
+             #f))]
       [else (and (equal? t u) subst)])))
 
 ; t-var is a free variable, u can be anything
 (define unify-free/any
   (lambda (t-var u subst)
     (cond
-      ((eq? u _) subst)
-      ((var? u)
-	(let ((cu (assq u subst)))
-	  (if cu (unify-free/bound t-var cu subst)
-	    (extend-subst t-var u subst))  ; t-var and u are both free
-	))
-      ((pair? u)
-	(unify-free/list t-var u subst))
-      (else ; u is not a var and is not a pair: it's atomic
-	(extend-subst t-var u subst)))))
+      [(eq? u _) subst]
+      [(var? u)
+       (let ([cu (assq u subst)])
+	 (if cu (unify-free/bound t-var cu subst)
+             ; t-var and u are both free
+	   (extend-subst t-var u subst)))]
+      [(pair? u) (unify-free/list t-var u subst)]
+      [else ; u is not a var and is not a pair: it's atomic
+	(extend-subst t-var u subst)])))
 
 ; ct is a commitment to a bound variable, u can be anything
 (define unify-bound/any
   (lambda (ct u subst)
     (cond
-      ((eq? u _) subst)
-      ((var? u) 
-	(let ((cu (assq u subst)))
-	  (if cu
-	    ; both t and u are bound...
-	    (unify (commitment->term ct) (commitment->term cu) subst)
-	    ; t is bound, u is free
-	    (unify-free/bound u ct subst))))
-      (else ; unify bound and a value
-	(unify (commitment->term ct) u subst)))))
+      [(eq? u _) subst]
+      [(var? u) 
+       (let ([cu (assq u subst)])
+	 (if cu
+	   ; both t and u are bound...
+	   (unify (commitment->term ct) (commitment->term cu) subst)
+	   ; t is bound, u is free
+	   (unify-free/bound u ct subst)))]
+      [else ; unify bound and a value
+	(unify (commitment->term ct) u subst)])))
 
 ; On entrance: t-var is free.
 ; we are trying to unify it with a bound variable (commitment->var cu)
