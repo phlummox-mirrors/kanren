@@ -635,13 +635,13 @@
       (all (== r n) (== q '()) (<o n m)) ; if n < m, then q=0, n=r
       ; n is at least m and has the same number of digits than m
       (all (== q '(1)) (=ol n m) (++o r m n) (<o r m))
-      (all
+      (all-interleave
 	(<ol m n)			; n has more digits than m
 					; Note that m is L-instantiated here
 	(<o r m)			; r is L-instantiated
 	(pos q)				; q must be positive then
 	(exists (n1 n2 q1 q2 q2m q2mr rr r1)
-	  (all
+	  (all-interleave
 	    (split n r n1 n2)
 	    (split q r q1 q2)
 	    (any
@@ -650,7 +650,7 @@
 		(== q1 '())
 		(--o n2 r q2m)
 		(**o q2 m q2m))			; provably terminates
-	      (all (pos n1) 
+	      (all-interleave (pos n1) 
 		(**o q2 m q2m)
 		(++o q2m r q2mr)
 		(--o q2mr n2 rr)		; rr = q2*m + r - n2
@@ -669,7 +669,7 @@
 ; the major bit must be one.
 
 (define split
-  (extend-relation (n r n1 n2)
+  (extend-relation-interleave (n r n1 n2)
     (fact () '() _ '() '())
     (fact (b n) `(0 ,b . ,n) '() `(,b . ,n) '())
     (fact (n) `(1 . ,n) '() n '(1))
@@ -685,8 +685,16 @@
 	(split n r n1 n2)))
 ))
 
+
+; Exponentiation and discrete logarithm
+; n = b^q + r, where 0 <= r and q is the largest such integer
+; n >= b^q, n < b^(q+1) = b^q * b = (n-r)* b 
+; r*b < n*(b-1)
+; We assume that n > 1 and b > 1 (otherwise, the cases are trivial)
+
 ;------------------------------------------------------------------------
 ;				Tests
+
 
 (define-syntax test
   (syntax-rules ()
@@ -970,7 +978,7 @@
   (solve 3 (x y) (divo x (build 5) y (build 4)))
   '(((x.0 (0 0 1)) (y.0 ()))
     ((x.0 (0 0 0 0 0 0 1)) (y.0 (0 0 1 1)))
-    ((x.0 (0 0 0 0 0 0 0 0 0 0 1)) (y.0 (0 0 1 1 0 0 1 1))))
+    ((x.0 (1 0 0 0 1 1)) (y.0 (1 0 0 1))))
 )
 (test-check 'divo-5-5
   (solve 3 (x y) (divo x (build 5) y (build 5)))
@@ -1018,7 +1026,7 @@
   (solve 3  (y z r) (divo `(0 . ,y) (build 2) z r))
   '(((y.0 (1)) (z.0 (1)) (r.0 ()))
     ((y.0 (0 1)) (z.0 (0 1)) (r.0 ()))
-    ((y.0 (0 0 1)) (z.0 (0 0 1)) (r.0 ())))
+    ((y.0 (1 1)) (z.0 (1 1)) (r.0 ())))
 )
 
 (test-check 'div-even-fail
@@ -1029,11 +1037,49 @@
 (test-check 'div-odd
   (solve 3  (y z) (divo `(1 0 . ,y) (build 2) z '(1)))
   '(((y.0 (0 1)) (z.0 (0 0 1))) ; 9 = 2*4 + 1
-   ((y.0 (0 0 1)) (z.0 (0 0 0 1)))
-   ((y.0 (0 0 0 1)) (z.0 (0 0 0 0 1))))
+    ((y.0 (1)) (z.0 (0 1))) ; 5 = 2*2 + 1
+    ((y.0 (0 0 1)) (z.0 (0 0 0 1)))) ; 17 = 8*2 + 1
 )
 
 (test-check 'div-odd-fail
   (solve 3  (y z r) (divo `(1 0 . ,y) (build 2) z '()))
   '()
 )
+
+(test-check 'div-enum-sample
+  (solve 1 (n m q r)
+    (all (divo n m q r)
+      (== n (build 10)) (== m (build 2)) (== q (build 5))
+      (== r '())))
+  '(((n.0 (0 1 0 1)) (m.0 (0 1)) (q.0 (1 0 1)) (r.0 ())))
+)
+
+; the latter takes awfully long time
+'(test-check 'div-enum-sample-1
+  (solve 1 (n m q r)
+    (all (divo n m q r)
+      (== n (build 10)) (== m (build 3)) (== q (build 3))
+      (== r '(1))))
+  '(((n.0 (1 1 1)) (m.0 (0 1)) (q.0 (1 1)) (r.0 (1))))
+)
+
+; check that divo(N,M,Q,R) recursively enumerates all
+; numbers such as N=M*Q+R, R<M
+;
+(cout "Test recursive enumerability of division" nl)
+(let ((n 3))
+  (do ((m 1 (+ 1 m))) ((> m n))
+    (do ((q 0 (+ 1 q))) ((> q n))
+      (do ((r 0 (+ 1 r))) ((>= r m))
+	(let ((n (+ (* m q) r)))
+	 (test-check
+	  (string-append "enumerability: " (number->string n)
+	    "=" (number->string m) "*" (number->string q)
+	    "+" (number->string r))
+	  (solve 1 (n1 m1 q1 r1) 
+	    (all (divo n1 m1 q1 r1)
+	      (== n1 (build n)) (== m1 (build m))
+	      (== q1 (build q)) (== r1 (build r))
+	      ))
+	  `(((n1.0 ,(build n)) (m1.0 ,(build m))
+	     (q1.0 ,(build q)) (r1.0 ,(build r))))))))))
