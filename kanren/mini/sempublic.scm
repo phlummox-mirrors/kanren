@@ -1,5 +1,3 @@
-;;; Even prettier code for alli
-
 ;;; all_2 succeed
 (load "minikanrensupport.scm")
 
@@ -886,4 +884,159 @@
     (8 11 14)
     (2 4 7)
     (9 11 14)))
+
+
+; Extending relations in truly mathematical sense.
+; First, why do we need this.
+
+(define fact1
+  (lambda (x y)
+    (all
+      (== 'x1 x)
+      (== 'y1 y))))
+
+(define fact2
+  (lambda (x y)
+    (all
+      (== 'x2 x)
+      (== 'y2 y))))
+
+(define fact3
+  (lambda (x y)
+    (all
+      (== 'x3 x)
+      (== 'y3 y))))
+
+(define fact4
+  (lambda (x y)
+    (all
+      (== 'x4 x)
+      (== 'y4 y))))
+
+; R1/2 and R3/4 are overlapping
+(define R1/2
+  (lambda (a1 a2)
+    (cond@
+      [(fact1 a1 a2) succeed]
+      [(fact2 a1 a2) succeed]
+      [else fail])))
+
+(define R3/4
+  (lambda (a1 a2)
+    (cond@
+      [(fact3 a1 a2) succeed]
+      [(fact4 a1 a2) succeed]
+      [else fail])))
+
+(cout nl "R1/2:" nl)
+(pretty-print
+  (prefix 10
+    (run-stream (q) 
+      (fresh (x y)
+        (R1/2 x y)
+        (== `(,x ,y) q)))))
+(cout nl "R3/4" nl)
+(pretty-print
+  (prefix 10
+    (run-stream (q) 
+      (fresh (x y)
+        (R3/4 x y)
+        (== `(,x ,y) q)))))
+
+(cout nl "R1/2+R3/4:" nl)
+(pretty-print 
+  (prefix 10
+    (run-stream (q)
+      (fresh (x y)
+        ((lambda (a1 a2)
+           (cond@
+             [(R1/2 a1 a2) succeed]
+             [(R3/4 a1 a2) succeed]
+             [else fail]))
+         x y)
+       (== `(,x ,y) q)))))
+
+; Infinitary relation
+; r(z,z).
+; r(s(X),s(Y)) :- r(X,Y).
+
+(define Rinf
+  (lambda (a1 a2)
+    (cond@
+      [(== 'z a1) (== 'z a2)]
+      [else (fresh (x y)
+              (== `(s ,x) a1)
+              (== `(s ,y) a2)
+              (Rinf x y))])))
+
+(cout nl "Rinf:" nl)
+(time 
+  (pretty-print
+    (prefix 5
+      (run-stream (q)
+        (fresh (x y)
+          (Rinf x y)
+          (== `(,x ,y) q))))))
+(cout nl "Rinf+R1/2: Rinf starves R1/2:" nl)
+(time
+  (pretty-print 
+    (prefix 5
+      (run-stream (q)
+        (fresh (x y)
+          ((lambda (a1 a2)
+             (cond@
+               [(Rinf a1 a2) succeed]
+               [(R1/2 a1 a2) succeed]
+               [else fail]))
+           x y)
+          (== `(,x ,y) q))))))
+
+(test-check "R1/2 * Rinf: clearly starvation"
+  (prefix 5
+    (run-stream (q)
+      (fresh (x y u v)
+        (all (R1/2 x y) (Rinf u v))
+        (== `(,x ,y ,u ,v) q))))
+  ; indeed, only the first choice of R1/2 is apparent
+  '((x1 y1 z z)
+    (x1 y1 (s z) (s z))
+    (x1 y1 (s (s z)) (s (s z)))
+    (x1 y1 (s (s (s z))) (s (s (s z))))
+    (x1 y1 (s (s (s (s z)))) (s (s (s (s z)))))))
+
+(test-check "R1/2 * Rinf: interleaving"
+  (prefix 10
+    (run-stream (q)
+      (fresh (x y u v)
+        (alli (R1/2 x y) (Rinf u v))
+        (== `(,x ,y ,u ,v) q))))
+  ; both choices of R1 are apparent
+  '((x1 y1 z z)
+    (x2 y2 z z)
+    (x1 y1 (s z) (s z))
+    (x2 y2 (s z) (s z))
+    (x1 y1 (s (s z)) (s (s z)))
+    (x2 y2 (s (s z)) (s (s z)))
+    (x1 y1 (s (s (s z))) (s (s (s z))))
+    (x2 y2 (s (s (s z))) (s (s (s z))))
+    (x1 y1 (s (s (s (s z)))) (s (s (s (s z)))))
+    (x2 y2 (s (s (s (s z)))) (s (s (s (s z)))))))
+
+
+(test-check "R1/2 * Rinf: interleaving"
+  (prefix 10
+    (run-stream (q)
+      (fresh (x y u v)
+        (alli (Rinf x y) (Rinf u v))
+        (== `(,x ,y ,u ,v) q))))
+  '((z z z z)
+    ((s z) (s z) z z)
+    (z z (s z) (s z))
+    ((s (s z)) (s (s z)) z z)
+    (z z (s (s z)) (s (s z)))
+    ((s z) (s z) (s z) (s z))
+    (z z (s (s (s z))) (s (s (s z))))
+    ((s (s (s z))) (s (s (s z))) z z)
+    (z z (s (s (s (s z)))) (s (s (s (s z)))))
+    ((s z) (s z) (s (s z)) (s (s z)))))
 
