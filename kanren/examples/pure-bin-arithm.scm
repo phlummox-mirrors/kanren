@@ -214,7 +214,7 @@
 	    (**o q m p)))
 	)
       ; n has the same number of digits than m
-      (all (== q '(1)) (=ol n m) (++o r m n))
+      (all (== q '(1)) (=ol n m) (++o r m n) (<o r m))
       (all (== q '()) (== r n) (=ol n m) (<o n m))  ; if n < m, then q=0, n=r
       )))
 ; 	(any-interleave
@@ -321,7 +321,7 @@
 '(((x.0 ()) (y.0 (*anon.0 . *anon.1)) (z.0 ()) (r.0 ())) ; 0 = a*0 + 0, a>0
    ; the following says that any even number is evenly divisible by two!
   ((x.0 (0 *anon.0)) (y.0 (*anon.0)) (z.0 (0 1)) (r.0 ()))
-  ((x.0 ()) (y.0 ()) (z.0 (1)) (r.0 ())))
-)
-
+  ; if z = 1, the two numbers must be equal -- but positive!
+  ((x.0 (*anon.0)) (y.0 (*anon.0)) (z.0 (1)) (r.0 ()))
+))
 
