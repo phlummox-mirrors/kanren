@@ -1,3 +1,4 @@
+(define errorf (lambda x (for-each pretty-print x)))
 (load "sempublic.scm")
 
 (define tex #f)
@@ -426,6 +427,69 @@
 		       (divo n2 m q1 r1))))))
       (else fail))))
 
+(define appendo
+  (lambda (l1 l2 l3)
+    (cond@
+      ((== l1 '()) (== l2 l3))
+      (else
+	(fresh (x l1r l3r)
+	  (== l1 `(,x . ,l1r))
+	  (== l3 `(,x . ,l3r))
+	  (appendo l1r l2 l3r))))))
+
+; normalize: strip leading zeros and make the number valid
+; n1 must be L-instantiated (with the instantiated length)
+(define normalize
+  (lambda (n1 n2)
+    (cond@
+      ((== n1 '()) (== n2 '()))
+      ; 1 is always safe, even if n2r turns out empty
+      ((fresh (n1r n2r)
+	 (== n1 `(1 . ,n1r))
+	 (== n2 `(1 . ,n2r))
+	 (normalize n1r n2r)))
+      ; if we see 0 bit, we check if the rest is zero as well
+      ((fresh (n1r n2r)
+	 (== n1 `(0 . ,n1r))
+	 (== n2 '())			; if so, drop it
+	 (normalize n1r '())))
+      (else				; if the rest is non-zero, keep 0
+	(fresh (n1r n2r)
+	  (== n1 `(0 . ,n1r))
+	  (== n2 `(0 . ,n2r))
+	  (poso n2r)
+	  (normalize n1r n2r))))))
+
+(define split-de
+  (lambda (n r n2 n1)
+    (cond@
+      ((== n '()) (== n2 '()) (== n1 '()))
+      ((fresh (b)
+	 (== n `(,b . ,n1))
+	 (== r '())
+	 (any (== b 1) (all (== b 0) (poso n1)))
+	 (== n2 `(,b))))
+      (else
+	(fresh (_ rr nr n2r b)
+	  (== r `(,_ . ,rr))
+	  (== n `(,b . ,nr))
+	  (any (== b 1) (all (== b 0) (poso nr)))
+	  (== n2 `(,b . ,n2r))
+	  (split-de nr rr n2r n1))))))
+
+; r must be L-instantiated -- it's critical
+; n2 will be L-instantiated as well
+; Essentially it is (append n1 n2' n) where
+; length(n2') = min(length(r)+1,length(n))
+; and n2 = normalize(n2')
+(define split
+  (lambda (n r n2 n1)
+    (fresh (n2p)
+      (split-de n r n2p n1) ; terminates because n2p is L-instantiated
+      (normalize n2p n2))))
+
+;#!eof
+
 (define base-a
   (lambda (b n a d)
     (all
@@ -476,7 +540,7 @@
         (base-b b n r a d)
         (split-a b n r a d)))))
 
-(define split
+'(define split
   (lambda (n r a d)
     (cond@
       (((split-pea 0) n r a d) succeed)
