@@ -2845,7 +2845,7 @@
 	(pred-call/no-check 
 	  (lambda (x y)
 	    (cond
-	      ((and (var? x) (var? y)) (equal? x y))
+	      ((and (var? x) (var? y)) (eq? x y))
 	      ((var? x) #f)  ; y is not a var
 	      ((var? y) #f)  ; x is not a var
 	      (else (equal? x y))))
@@ -2872,12 +2872,12 @@
 		  depth-counter-var counter
 		  subst)
 		cutk)))))
-      (else (@ (reset-depth-counter ant) sk fk subst cutk)))))
-
-(define (reset-depth-counter ant)
-  (lambda@ (sk fk subst cutk)
-    (@ ant sk fk 
-      (extend-subst depth-counter-var 0 subst) cutk)))
+      (else 
+	(@ ant sk fk
+		(extend-subst 
+		  depth-counter-var 0
+		  subst)
+		cutk)))))
 
 ; This should loop
 ; (define typeclass-C
@@ -2887,43 +2887,21 @@
 
 (define typeclass-C
   (lambda (a b c)
-    (any
-      (with-depth 5 (typeclass-C-instance-1 a b c))
-      (reset-depth-counter
-	(with-depth 5 (typeclass-C-instance-2 a b c))))))
+    (with-depth 2
+      (any
+	(typeclass-C-instance-1 a b c)
+        (typeclass-C-instance-2 a b c)))))
 
 (printf "~%Counter-example: ~s~%" 
   (exists (a b c1 c2) (solution 
 			(typeclass-counter-example-query a b c1 c2))))
 
-(define-syntax robust-binary-extend
-  (syntax-rules ()
-    ((_ vars rel1 rel2)
-     (binary-extend-relation-interleave-non-overlap vars
-        (lambda vars
-          (any (with-depth 5 (rel1 . vars))
-               (with-depth 10 (rel2 . vars))))
-        (lambda vars
-          (any (with-depth 15 (rel2 . vars))
-               (with-depth 20 (rel1 . vars))))
-))))
-
-(define typeclass-C
-  (robust-binary-extend (a b c)
-   typeclass-C-instance-1
-   typeclass-C-instance-2))
-
 (printf "~%Counter-example: ~s~%" 
-  (exists (a b c1 c2) (solve 5 
+  (exists (a b c1 c2) (solve 4 
 			(typeclass-counter-example-query a b c1 c2))))
 
 (exit 0)
 
-; Had I switched the order,
-; 	c(A,tuple(X,Y,B),C,dict1) :- c(A,B,C,_).
-; 	c(A,tuple(A,C,B),C,dict2).
-; the queries would have never terminated. That's where our
-; extend-relation-interleave would be quite handy.
 
 ; nrev([],[]).
 ; nrev([X|Rest],Ans) :- nrev(Rest,L), append(L,[X],Ans).
