@@ -132,38 +132,30 @@
   (syntax-rules (else)
     ((_ combine) fail)
     ((_ combine (else g ...)) (all g ...))
-    ((_ combine (g ...)) (all g ...))
     ((_ combine (g ...) c ...)
      (let ((g^ (all g ...)))
        (lambda (s) (combine s (g^ s) (c@ combine c ...)))))))
 
+(define-syntax chop1
+  (syntax-rules ()
+    ((chop a s r k) (k a))))
+
 (define-syntax cond1
   (syntax-rules ()
-    ((_ c ...)
-     (let-syntax ((chop (syntax-rules ()
-                          ((chop a s r k) (k a)))))
-       (c1 chop c ...)))))
+    ((_ c ...) (c1 chop1 c ...))))
+
+(define-syntax chopo
+  (syntax-rules ()
+    ((chop a s r k) (bind (mplus s (unit a) r) k))))
 
 (define-syntax condo
   (syntax-rules ()
-    ((_ c ...)
-     (let-syntax ((chop (syntax-rules ()
-                          ((chop a s r k) 
-			    (bind (mplus s (unit a) r) k)))))		   
-       (c1 chop c ...)))))
+    ((_ c ...) (c1 chopo c ...))))
 
 (define-syntax c1
   (syntax-rules (else)
     ((_ chop) fail)
     ((_ chop (else g ...)) (all g ...))
-    ((_ chop (g0 g ...))
-     (let ((g^ g0))
-       (lambda (s)
-	 (case-ans (g^ s)
-	   mzero                 ; g0 failed
-	   ((r) ((all g ...) r)) ; g0 is deterministic
-	   ((a s f)		 ; at least one answer from g0
-	     (chop a s f (all g ...)))))))
     ((_ chop (g0 g ...) c ...)
      (let ((g^ g0))
        (lambda (s)
