@@ -1,3 +1,10 @@
+;minikanrentests.scm
+;<li><a href="http://www.cs.indiana.edu/l/www/classes/c311/miniaop.pdf">Outcome-Oriented Programming (Mini)</a><BR><BR>
+;<li><a href="http://www.cs.indiana.edu/l/www/classes/c311/minirop.pdf">Relation-Oriented Programming (Mini)</a><BR><BR>
+;<li><a href="http://www.cs.indiana.edu/l/www/classes/c311/minilop.pdf">Logic-Oriented Programming (Mini)</a><BR><BR>
+;<li><a href="http://www.cs.indiana.edu/l/www/classes/c311/miniunify.pdf">Understanding Unification (Mini)</a><BR><BR>
+;<li><a href="http://www.cs.indiana.edu/l/www/classes/c311/minitypes.pdf">Type Inference and Type Habitation (Mini)</a><BR><BR>
+
 (define father
   (lambda (dad child)
     (all!! (== dad 'jon) (== child 'sam))))
