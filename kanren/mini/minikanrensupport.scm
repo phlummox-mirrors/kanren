@@ -56,9 +56,9 @@
   (lambda (x)
     (vector-ref x 0)))
 
-(define var
+(define var       ;;;;; (and needs explaining)
   (lambda (id)
-    (vector id)))
+    (vector (symbol->string id))))
 
 (define var?
   (lambda (x)
@@ -76,9 +76,12 @@
   (lambda (b)
     (cdr b)))
 
-(define reify-nonfresh
-  (lambda (v s)
-    (r-nf (walk-var v s) s)))
+(define reify-nonfresh 
+  (lambda (x s) 
+    (let ((v (walk-var x s)))
+      (cond
+        ((var? v) x)
+        (else (r-nf v s))))))
 
 (define r-nf
   (lambda (v s)
@@ -121,14 +124,15 @@
     (r-f v '() empty-s
       (lambda (p* s) (reify-nonfresh v s)))))
 
-(define r-f
+(define r-f           ;;;;; NEW
   (lambda (v p* s k)
     (cond
       ((var? v)
-       (let ((id (var-id v)))
-         (let ((n (index (var-id v) p*)))
-           (k (cons `(,id . ,n) p*)
-              (ext-s v (reify-id id n) s)))))
+       (let ((str (var-id v)))
+         (let ((id (string->symbol str)))
+           (let ((n (index id p*)))
+             (k (cons `(,id . ,n) p*)
+                (ext-s v (reify-id str n) s))))))
       ((pair? v)
        (r-f (walk (car v) s) p* s
          (lambda (p* s)
@@ -143,22 +147,19 @@
             (+ (cdr p) 1))]
       (else 0))))
 
-(define reify-id
-  (lambda (id index)
+(define reify-id      ;;;;; NEW
+  (lambda (name-str index)
     (string->symbol
       (string-append
-        (symbol->string id)
+        name-str
         "$_{_"
         (number->string index)
         "}$"))))
 
-(define reify-id
-  (lambda (id index)
+(define reify-id      ;;;; NEW
+  (lambda (s index)
     (string->symbol
-      (string-append
-        (symbol->string id)
-        (string #\.)
-        (number->string index)))))
+      (string-append s (string #\.) (number->string index)))))
 
 (define reify-test
   (lambda ()
@@ -167,6 +168,30 @@
             [xx (var 'x)]
             [xxx (var 'x)])
         `(,x 3 ,xx 5 ,xxx ,xxx ,xx ,x)))))
+
+(define unify-check
+  (lambda (v w s)
+    (let ((v (walk v s))
+          (w (walk w s)))
+      (cond
+        ((eq? v w) s)
+        ((var? v)
+         (cond
+           ((occurs? v w s) #f)
+           (else (ext-s v w s))))
+        ((var? w)
+         (cond
+           ((occurs? w v s) #f)
+           (else (ext-s w v s))))
+        ((and (pair? v) (pair? w))
+         (cond
+           ((unify-check (car v) (car w) s) =>
+            (lambda (s)
+              (unify-check (cdr v) (cdr w) s)))
+           (else #f)))
+        ((or (pair? v) (pair? w)) #f)
+        ((equal? v w) s)
+        (else #f)))))
 
 (define unify
   (lambda (v w s)
@@ -207,10 +232,7 @@
 (define ext-s-ordered 
   (lambda (v w s) 
     (cond 
-      ((string>?
-         (symbol->string (var-id v)) 
-         (symbol->string (var-id w))) 
-       (ext-s v w s)) 
+      ((string>? (var-id v) (var-id w)) (ext-s v w s)) 
       (else (ext-s w v s)))))
 
 (define unify-check
@@ -247,4 +269,5 @@
       [else #f])))
 
 (define count-cons 0)
+
 
