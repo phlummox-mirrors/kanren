@@ -1572,7 +1572,7 @@
 	       (let*-inject/no-check
                  ([x () 4]
                   [w () 3]
-                  [z^ (x w) (cons x w)])
+                  [z^ () (cons x w)])
                  (== z^ z)))])
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
@@ -1683,7 +1683,7 @@
 	       (let*-inject/no-check
                  ([x () 4]
                   [w () 3]
-                  [z^ (x w) (cons x w)])
+                  [z^ () (cons x w)])
                  (== z z^)))])
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
@@ -1862,62 +1862,30 @@
       [(pair? u-value)
        (let ([car-val (car u-value)])
          (cond
-           [(or (var? car-val) (ground? car-val))
+           [(ground? car-val)
             (let ([cdr-val (cdr u-value)])
               (cond
-                [(or (var? cdr-val) (ground? cdr-val))
-                 (display " car and cdr easy ") (newline)
+                [(ground? cdr-val)
                  (extend-subst t-var (cons car-val cdr-val) subst)]
-                [else (write "car easy cdr hard") (newline)
-                  (let ([d-var (var 'd*)])
-                    (unify d-var cdr-val
-                      (extend-subst t-var
-                        (cons car-val d-var) subst)))]))]
+                [else (let ([d-var (var 'd*)])
+                        (unify d-var cdr-val
+                          (extend-subst t-var
+                            (cons car-val d-var) subst)))]))]
            [else
-             (let ([a-var (var 'a*)])
+             (let ([a-var (var 'a*)]
+		   [cdr-val (cdr u-value)])
                (cond
-                 [(unify a-var car-val subst)
-                  => (lambda (subst)
-                       (let ([cdr-val (cdr u-value)])                             
+                 [(ground? cdr-val)
+                  (unify a-var car-val
+                    (extend-subst t-var (cons a-var cdr-val) subst))]
+                 [else (let ([d-var (var 'd*)])
                          (cond
-                           [(or (var? cdr-val) (ground? cdr-val))
-                            (display "car hard cdr easy ") (newline)
-                            (extend-subst t-var (cons a-var cdr-val) subst)]
-                           [else (display "both hard ") (newline)
-                             (let ([d-var (var 'd*)])
-                               (unify d-var cdr-val subst))])))]
-                 [else #f]))]))]
+                           [(unify a-var car-val
+                              (extend-subst t-var (cons a-var d-var) subst))
+                            => (lambda (s)
+                                 (unify d-var cdr-val s))]
+                           [else #f]))]))]))]
       [else (extend-subst t-var u-value subst)])))
-
-'(define unify-var/value
-  (lambda (t-var u-value s)
-    (cond
-      [(assq t-var s)
-       => (lambda (ct)
-            (let ([t-term (commitment->term ct)]) 
-              (unify t-term u-value s)))]
-      [(pair? u-value)
-	(let*
-	  ((car-val (car u-value))
-	   (cdr-val (cdr u-value))
-	   (car-var
-	     (if (or (symbol? car-val)
-		   (not (or (var? car-val) (pair? car-val))))
-	       car-val
-	       (var '*a)))
-	    (cdr-var
-	     (if (or (null? cdr-val)
-		   (not (or (var? cdr-val) (pair? cdr-val))))
-	       cdr-val
-	       (var '*d)))
-	    (s (extend-subst t-var (cons car-var cdr-var) s))
-	    (s (if (eq? car-var car-val) s
-		 (unify car-var car-val s)))
-	    )
-	  (and s
-	    (if (eq? cdr-var cdr-val) s
-	      (unify cdr-var cdr-val s))))]
-      [else (extend-subst t-var u-value s)])))
 
 ;------------------------------------------------------------------------
 (test-check 'test-unify/pairs-oleg1
@@ -2061,7 +2029,7 @@
 	       (let*-inject/no-check
                  ([x () 4]
                   [w () 3]
-                  [z^ (x w) (cons x w)])
+                  [z^ () (cons x w)])
                  (== z z^)))])
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
@@ -2435,51 +2403,51 @@
   '((g.0 g.0) (?.0 (--> int (--> int int)))))
 
 (test-check 'everything-but-polymorphic-let
-  (and
-    (equal?
-      (solution (g ?)
-        (!- g (parse
-                '(lambda (f)
-                   (lambda (x)
-                     ((f x) x))))
-          ?))
-      '((g.0 g.0)
-        (?.0 (-->
-               (--> type-v.0 (--> type-v.0 t.0))
-               (--> type-v.0 t.0)))))
-    (equal?
-      (solution (g ?)
-        (!- g
-          (parse
-            '((fix (lambda (sum)
-                     (lambda (n)
-                       (if (zero? n)
-                           0
-                           (+ n (sum (sub1 n)))))))
-              10))
-          ?))
-      '((g.0 g.0) (?.0 int)))
-    (equal?
-      (solution (g ?)
-          (!- g
-            (parse
-              '((fix (lambda (sum)
-                       (lambda (n)
-                         (+ n (sum (sub1 n))))))
-                10))
-            ?))
-      '((g.0 g.0) (?.0 int)))
-    (equal?
-      (solution (g ?)
-          (!- g
-            (parse '((lambda (f)
-                       (if (f (zero? 5))
-                           (+ (f 4) 8)
-                           (+ (f 3) 7)))
-                     (lambda (x) x)))
-            ?))
-      #f))
-  #t)
+  (solution (g ?)
+    (!- g (parse
+	    '(lambda (f)
+	       (lambda (x)
+		 ((f x) x))))
+      ?))
+  '((g.0 g.0)
+     (?.0 (-->
+	    (--> type-v.0 (--> type-v.0 t.0))
+	    (--> type-v.0 t.0)))))
+
+(test-check 'everything-but-polymorphic-let
+  (solution (g ?)
+    (!- g
+      (parse
+	'((fix (lambda (sum)
+		 (lambda (n)
+		   (if (zero? n)
+		     0
+		     (+ n (sum (sub1 n)))))))
+	   10))
+      ?))
+  '((g.0 g.0) (?.0 int)))
+
+(test-check 'everything-but-polymorphic-let
+  (solution (g ?)
+    (!- g
+      (parse
+	'((fix (lambda (sum)
+		 (lambda (n)
+		   (+ n (sum (sub1 n))))))
+	   10))
+      ?))
+  '((g.0 g.0) (?.0 int)))
+
+(test-check 'everything-but-polymorphic-let
+  (solution (g ?)
+    (!- g
+      (parse '((lambda (f)
+		 (if (f (zero? 5))
+		   (+ (f 4) 8)
+		   (+ (f 3) 7)))
+		(lambda (x) x)))
+      ?))
+  #f)
 
 (test-check 'polymorphic-let
   (solution (g ?)
@@ -3096,7 +3064,7 @@
     (exists (lips units)
       (let*-inject ([time1 (t0 t1) (- t1 t0)]
                     [time2 (t1 t2) (- t2 t1)]
-                    [time (time1 time2) (- time2 time1)])
+                    [time () (- time2 time1)])
         (calculate_lips count time lips units)
         (predicate (lips count) (printf "~n~s lips for ~s" lips count))
         (predicate (time units)
@@ -3113,7 +3081,7 @@
       (to-show count time lips 'msecs)
       (let*-inject ([t1 (count) (* 496 count 1000)]
                     [t2 (time) (+ time 0.0)]
-                    [lips^ (t1 t2) (/ t1 t2)])
+                    [lips^ () (/ t1 t2)])
         (== lips lips^)))))
 
 ;(test-lots)
