@@ -1074,6 +1074,10 @@
 (define fail
   (lambda@ (sk fk subst cutk) (fk)))
 
+(define succeed
+  (lambda@ (sk fk subst cutk)
+    (@ sk fk subst cutk)))
+
 (define no-grandma
   (relation/cut cut (grandad grandchild)
     (to-show grandad grandchild)
@@ -1088,20 +1092,49 @@
     (solve 1 (no-grandma-grandpa 'polly x)))
   '())
 
+(define-syntax let-inject
+  (syntax-rules ()
+    ((_ ([t (var ...) exp] ...) body ...)
+     (lambda@ (sk fk subst)
+       (@ (introduce-vars (t ...)
+	    (all! (== t (let ([var (nonvar! (subst-in var subst))] ...) exp)) ... 
+	      (all body ...)))
+          sk fk subst)))))
+
+(define-syntax let-inject/no-check
+  (syntax-rules ()
+    ((_ ([t (var ...) exp] ...) body ...)
+     (lambda@ (sk fk subst)
+       (@ (introduce-vars (t ...)
+	    (all! (== t (let ([var (subst-in var subst)] ...) exp)) ...
+	      (all body ...)))
+          sk fk subst)))))
 
 (define-syntax pred-call
   (syntax-rules ()
-    [(_ p t ...)
+    [(_ p u ...)
      (lambda@ (sk fk subst cutk)
-       (if ((nonvar! (subst-in p subst)) (nonvar! (subst-in t subst)) ...)
+       (if ((nonvar! (subst-in p subst)) (nonvar! (subst-in u subst)) ...)
          (@ sk fk subst cutk)
          (fk)))]))
 
+(define-syntax predicate
+  (syntax-rules ()
+    [(_ (var ...) (p u ...))
+     (let-inject ([res (var ...) (not (p u ...))])
+       (== res #f))]))
+
+(define-syntax predicate/no-check
+  (syntax-rules ()
+    [(_ (var ...) (p u ...))
+     (let-inject/no-check ([res (var ...) (not (p u ...))])
+       (== res #f))]))
+
 (define-syntax pred-call/no-check
   (syntax-rules ()
-    [(_ p t ...)
+    [(_ p u ...)
      (lambda@ (sk fk subst cutk)
-       (if ((subst-in p subst) (subst-in t subst) ...)
+       (if ((subst-in p subst) (subst-in u subst) ...)
          (@ sk fk subst cutk)
          (fk)))]))
 
@@ -1139,7 +1172,7 @@
     (exists (parent)
       (all 
         (father grandad parent)
-        (pred-call starts-with-p? parent)
+        (predicate (parent) (starts-with-p? parent))
         (father parent grandchild)))))
 
 (define starts-with-p?
@@ -1178,10 +1211,11 @@
     (solve 3 (fun-call * q 3 5)))
   `((,* 15 3 5)))
 
-
 (define test1
   (lambda (x)
-    (any (pred-call < 4 5) (fun-call < x 6 7))))
+    (any (predicate () (< 4 5))
+      (let-inject ([x^ () (< 6 7)])
+        (== x x^)))))
 
 ;;;; Here is the definition of concretize.
 
@@ -1199,7 +1233,9 @@
 
 (define test2
   (lambda (x)
-    (any (pred-call < 5 4) (fun-call < x 6 7))))
+    (any (predicate () (< 5 4))
+      (let-inject ([x^ () (< 6 7)])
+        (== x x^)))))
 
 (test-check 'test-test2
   (exists (x)
@@ -1208,7 +1244,11 @@
 
 (define test3
   (lambda (x y)
-    (any (fun-call < x 5 4) (fun-call < y 6 7))))
+    (any
+      (let-inject ([x^ () (< 5 4)])
+        (== x x^))
+      (let-inject ([y^ () (< 6 7)])
+        (== y y^)))))
 
 (test-check 'test-test3
   (exists (x y)
@@ -1226,13 +1266,17 @@
         (lambda () (@ sk fk subst cutk))
         subst cutk))))
 
+(define-syntax succeeds
+  (syntax-rules ()
+    [(_ ant) ant]))
+
 (define grandpa
   (relation (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
       (all
         (father grandad parent)
-        (fails (pred-call starts-with-p? parent))
+        (fails (predicate (parent) (starts-with-p? parent)))
         (father parent grandchild)))))
 
 (test-check 'test-grandpa-13
@@ -1243,7 +1287,7 @@
 
 (define instantiated
   (lambda (t)
-    (pred-call/no-check (lambda (x) (not (var? x))) t)))
+    (predicate/no-check (t) (not (var? t)))))
 
 (define view-subst
   (lambda (t)
@@ -1390,7 +1434,6 @@
     (john pat)
     (john carl)))
 
-
 (define towers-of-hanoi
   (letrec
       ([move
@@ -1400,12 +1443,11 @@
              cut)
            (relation (n a b c)
              (to-show n a b c)
-             (exists (m)
-               (all
-                 (pred-call positive? n)
-                 (fun-call - m n 1)
+             (all
+               (predicate (n) (positive? n))
+               (let-inject ([m (n) (- n 1)])
                  (move m a c b)
-                 (pred-call printf "Move a disk from ~s to ~s~n" a b)
+                 (predicate (a b) (printf "Move a disk from ~s to ~s~n" a b))
                  (move m c b a)))))])
     (relation (n)
       (to-show n)
@@ -1570,32 +1612,31 @@
   (concretize
     (let ([j (relation (x w z)
 	       (to-show z)
-	       (all
-		 (fun-call (lambda () 4) x)
-		 (fun-call (lambda () 3) w)
-		 (fun-call (lambda (y) (cons x y)) z w)))])
+	       (let-inject ([x () 4]
+                            [w () 3])
+                 (let-inject ([z^ (x w) (cons x w)])
+                   (== z^ z))))])
       (exists (q) (solve 4 (j q)))))
   '(((4 . 3))))
-
 
 (define towers-of-hanoi-path
   (let ([steps '()])
     (let ([push-step (lambda (x y) (set! steps (cons `(,x ,y) steps)))])
       (letrec
-        ([move
-           (extend-relation (a1 a2 a3 a4)
-             (relation/cut cut ()
-               (to-show 0 _ _ _)
-               cut)
-             (relation (n a b c)
-               (to-show n a b c)
-               (exists (m)
-                 (all
-                   (pred-call positive? n)
-                   (fun-call - m n 1)
-                   (move m a c b)
-                   (pred-call push-step a b)
-                   (move m c b a)))))])
+          ([move
+             (extend-relation (a1 a2 a3 a4)
+               (relation/cut cut ()
+                 (to-show 0 _ _ _)
+                 cut)
+               (relation (n a b c)
+                 (to-show n a b c)
+                 (exists (m)
+                   (all
+                     (predicate (n) (positive? n))
+                     (let-inject ([m (n) (- n 1)])
+                       (move m a c b)
+                       (predicate (a b) (push-step a b))
+                       (move m c b a))))))])
         (relation (n path)
           (to-show n path)
           (begin
@@ -1684,10 +1725,10 @@
   (concretize
     (let ([j (relation (x w z)
 	       (to-show z)
-	       (all
-		 (fun-call (lambda () 4) x)
-		 (fun-call (lambda () 3) w)
-		 (fun-call (lambda (y) (cons x y)) z w)))])
+	       (let-inject ([x () 4]
+                            [w () 3])
+                 (let-inject ([z^ (x w) (cons x w)])
+                   (== z z^))))])
       (exists (q) (solve 4 (j q)))))
   '(((4 . 3))))
 
@@ -1959,10 +2000,12 @@
   (concretize
     (let ([j (relation (x w z)
 	       (to-show z)
-	       (all
-		 (fun-call (lambda () 4) x)
-		 (fun-call (lambda () 3) w)
-		 (fun-call (lambda (y) (cons x y)) z w)))])
+	       (let-inject
+                 ([x () 4]
+                  [w () 3])
+                 (let-inject
+                   ([z^ (x w) (cons x w)])
+                   (== z z^))))])
       (exists (q) (solve 4 (j q)))))
   '(((4 . 3))))
           
@@ -2149,7 +2192,8 @@
 (define generic-base-env
   (relation (g v targ tresult t)
     (to-show `(generic ,v (--> ,targ ,tresult) ,g) v t)
-    (all! (fun-call instantiate t `(--> ,targ ,tresult)))))
+    (let-inject/no-check ([t^ (targ tresult) (instantiate `(--> ,targ ,tresult))])
+      (== t t^))))
 
 (define generic-recursive-env
   (relation/cut cut (g v w type-w t)
@@ -2572,16 +2616,23 @@
     (extend-relation (a1 a2 a3)
       (relation (x y z)
         (to-show x y z)
-        (all (fails (instantiated z)) (fun-call op z x y)))
+        (all (fails (instantiated z))
+          (let-inject ([z^ (x y) (op x y)])
+            (== z z^))))
       (relation (x y z)
         (to-show x y z)
-        (all (fails (instantiated y)) (fun-call inverted-op y z x)))
+        (all (fails (instantiated y))
+          (let-inject ([y^ (z x) (inverted-op z x)])
+            (== y y^))))
       (relation (x y z)
         (to-show x y z)
-        (all (fails (instantiated x)) (fun-call inverted-op x z y)))
+        (all (fails (instantiated x))
+          (let-inject ([x^ (z y) (inverted-op z y)])
+            (== x x^))))
       (relation (x y z)
         (to-show x y z)
-        (fun-call op z x y)))))
+        (let-inject ([z^ (x y) (op x y)])
+          (== z z^))))))
 
 (define ++ (invertible-binary-function->ternary-relation + -))
 (define -- (invertible-binary-function->ternary-relation - +))
@@ -2617,13 +2668,20 @@
     (extend-relation (a1 a2)
       (relation (x y)
         (to-show x y)
-        (all (fails (instantiated y)) (fun-call op y x)))
+        (all (fails (instantiated y))
+          (let-inject ([y^ (x) (op x)])
+            (== y y^))))
       (relation (x y)
         (to-show x y)
-        (all (fails (instantiated x)) (fun-call inverted-op x y)))
+        (all (fails (instantiated x))
+          (let-inject ([x^ (y) (inverted-op y)])
+            (== x x^))))
       (relation (x y)
         (to-show x y)
-        (begin (pretty-print "Third rule") (fun-call op y x))))))
+        (begin
+          (pretty-print "Third rule")
+          (let-inject ([y^ (x) (op x)])
+            (== y y^)))))))
 
 (define name
   (invertible-unary-function->binary-relation symbol->lnum lnum->symbol))
@@ -2969,8 +3027,8 @@
       (to-show)
       (exists (count)
         (all
-          (pred-call newline)
-          (pred-call newline)
+          (predicate () (newline))
+          (predicate () (newline))
           (eg_count count)
           (bench count)
           fail)))
@@ -2996,14 +3054,12 @@
 (define bench
   (relation (count)
     (to-show count)
-    (exists (t0 t1 t2)
-      (all
-        (fun-call get_cpu_time t0)
-        (dodummy count)
-        (fun-call get_cpu_time t1)
+    (let-inject ([t0 () (get_cpu_time)])
+      (dodummy count)
+      (let-inject ([t1 () (get_cpu_time)])
         (dobench count)
-        (fun-call get_cpu_time t2)
-        (report count t0 t1 t2)))))
+        (let-inject ([t2 () (get_cpu_time)])
+          (report count t0 t1 t2))))))
 
 (define dobench
   (extend-relation (a1)
@@ -3036,23 +3092,22 @@
     (fact (n) n)
     (relation (n)
       (to-show n)
-      (exists (n1)
-        (all
-          (pred-call > n 1)
-          (fun-call - n1 n 1)
+      (all
+        (predicate (n) (> n 1))
+        (let-inject ([n1 (n) (- n 1)])
           (repeat n1))))))
 
 (define report
   (relation (count t0 t1 t2)
     (to-show count t0 t1 t2)
-    (exists (time1 time2 time lips units)
-      (all
-        (fun-call - time1 t1 t0)
-        (fun-call - time2 t2 t1)
-        (fun-call - time time2 time1)
-        (calculate_lips count time lips units)
-        (pred-call printf "~n~s lips for ~s" lips count)
-        (pred-call printf " Iterations taking ~s  ~s ( ~s )~n " time units time)))))
+    (exists (lips units)
+      (let-inject ([time1 (t0 t1) (- t1 t0)]
+                   [time2 (t1 t2) (- t2 t1)])
+        (let-inject ([time (time1 time2) (- time2 time1)])
+          (calculate_lips count time lips units)
+          (predicate (lips count) (printf "~n~s lips for ~s" lips count))
+          (predicate (time units)
+            (printf " Iterations taking ~s  ~s ( ~s )~n " time units time)))))))
 
 (define calculate_lips
   (extend-relation (a1 a2 a3 a4)
@@ -3063,11 +3118,10 @@
       (== lips 0))
     (relation (count time lips)
       (to-show count time lips 'msecs)
-      (exists (t1 t2)
-        (all
-          (fun-call * t1 496 count 1000)
-          (fun-call + t2 time 0.0)
-          (fun-call / lips t1 t2))))))
+      (let-inject ([t1 (count) (* 496 count 1000)]
+                   [t2 (time) (+ time 0.0)])
+        (let-inject ([lips^ (t1 t2) (/ t1 t2)])
+          (== lips lips^))))))
 
 ;(test-lots)
 
@@ -3124,7 +3178,7 @@
     (all 
       (typeclass-C a b c1)
       (typeclass-C a b c2)
-      (fails (pred-call/no-check *equal? c1 c2)))))
+      (fails (predicate/no-check (c1 c2) (*equal? c1 c2))))))
 
 (printf "~%Counter-example: ~s~%" 
   (exists (a b c1 c2)
@@ -3242,7 +3296,7 @@
     (all 
       (typeclass-F a b1)
       (typeclass-F a b2)
-      (fails (pred-call/no-check *equal? b1 b2)))))
+      (fails (predicate/no-check (b1 b2) (*equal? b1 b2))))))
 
  (printf "~%Counter-example: ~s~%" 
    (exists (a b1 b2) (solve 4
@@ -3290,9 +3344,9 @@
 	   (fails
 	     (all
 	       (typeclass-F a b2)
-	       (fails (pred-call/no-check *equal? b1 b2))
-	       cut))) a b)
-	))))
+	       (fails (predicate/no-check (b1 b2) (*equal? b1 b2)))
+	       cut)))
+         a b)))))
 
 (printf "~%Typechecking (open world): ~s~%" 
   (exists (a) (solve 4
@@ -3414,7 +3468,7 @@
       (fact (val) `(btree (leaf ,val)))
       (relation (t1 t2)
 	(to-show `(btree (root ,t1 ,t2)))
-	(pred-call printf "btree ~s ~s ~n" t1 t2)
+	(predicate (t1 t2) (printf "btree ~s ~s ~n" t1 t2))
 	(kb `(btree ,t1))
 	(kb `(btree ,t2))))))
 
@@ -3764,4 +3818,5 @@
 ; phase of the proof checks.
 
 ;(exit 0)
+
 
