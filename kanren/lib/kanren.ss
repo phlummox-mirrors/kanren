@@ -186,7 +186,7 @@
       [else (cons (commitment var term) subst)])))
 
 ; get the free vars of a term (a list without duplicates)
-(define free-vars
+(define vars-of
   (lambda (term)
     (let loop ([term term] [fv '()])
       (cond
@@ -228,7 +228,7 @@
 ; Replace a logical variable with the corresponding eigen-variable
 (define universalize
   (lambda (term)
-    (let ([fv (free-vars term)])
+    (let ([fv (vars-of term)])
       (let ([subst
               (map
                 (lambda (v)
@@ -237,13 +237,13 @@
         (subst-in term subst)))))
 
 ; Similar to universalize: makes nicer symbols for variables that look
-; nicer when printed. The 'reverse' in (reverse (free-vars t))
+; nicer when printed. The 'reverse' in (reverse (vars-of t))
 ; just makes the output look as it used to look before. Consider it
 ; a historical accident.
 (define concretize
   (lambda (t)
     (subst-in-deep t
-      (let loop ([fv (reverse (free-vars t))] [env '()])
+      (let loop ([fv (reverse (vars-of t))] [env '()])
 	(cond
 	  [(null? fv) empty-subst]
 	  [else (let ([id (logical-variable-id (car fv))])
@@ -2803,30 +2803,30 @@
 ; first scan it for the occurrence of _. If the scan returns negative,
 ; we can use u-value as it is.
 
-(define ufl-contains-anon?
-  (lambda (lst-src)
-    (or (eq? lst-src _)
-      (and (pair? lst-src)
-	(or (ufl-contains-anon? (car lst-src))
-	    (ufl-contains-anon? (cdr lst-src)))))))
-
       ; Rebuild lst replacing all anonymous variables with some
       ; fresh logical variables
+      ; If lst contains no anonymous variables, return #f
+      ; Note that lst itself may be #f -- and yet no contradiction arises.
 (define ufl-rebuild-without-anons
   (lambda (lst)
     (cond
       [(eq? lst _) (logical-variable '*anon)]
-      [(pair? lst)
-	(cons
-	  (ufl-rebuild-without-anons (car lst))
-	  (ufl-rebuild-without-anons (cdr lst)))]
-      [else lst])))
+      [(not (pair? lst)) #f]
+      [(null? (cdr lst))
+	(let [(new-car (ufl-rebuild-without-anons (car lst)))]
+	  (and new-car (cons new-car '())))]
+      [else
+	(let [(new-car (ufl-rebuild-without-anons (car lst)))
+              (new-cdr (ufl-rebuild-without-anons (cdr lst)))]
+	  (if new-car
+	    (cons new-car (or new-cdr (cdr lst)))
+	    (and new-cdr (cons (car lst) new-cdr))))])))
 
 (define unify-free/list
   (lambda (t-var u-value subst)
-    (if (ufl-contains-anon? u-value)
-      (extend-subst t-var (ufl-rebuild-without-anons u-value) subst)
-      (extend-subst t-var u-value subst))))
+    (extend-subst t-var
+      (or (ufl-rebuild-without-anons u-value) u-value)
+      subst)))
 
 
 ;------------------------------------------------------------------------

@@ -79,13 +79,13 @@
 
 ; copy-term TERM -> TERM
 ; return a TERM that is identical to the input term modulo the replacement
-; of free variables in TERM with fresh logical variables. 
+; of variables in TERM with fresh logical variables. 
 ; If a logical variable occurs several times in TERM, the result
 ; will have the same number of occurrences of the replacement fresh
 ; variable.
 (define copy-term
   (lambda (t)
-    (let* ((fv (free-vars t))
+    (let* ((fv (vars-of t))
 	   (subst
 	     (map (lambda (old-var)
 		    (commitment old-var
