@@ -683,25 +683,27 @@
 ; (if-all! (COND1) THEN ELSE) ==>
 ;   (if-only COND1 THEN ELSE)
 
-(define-syntax if-all!
-  (syntax-rules ()
-    [(_ (condition) then) (if-only condition then)]
-    [(_ (condition) then else) (if-only condition then else)]
-    [(_ (condition1 condition2 ...) then)
-     (lambda@ (sk fk)
-       (@ (splice-in-ants/all
-            (lambda@ (fk-ign)
-              (@ then sk fk))
-            condition1 condition2 ...)
-          fk))]
-    [(_ (condition1 condition2 ...) then else)
-     (lambda@ (sk fk subst)
-       (@ (splice-in-ants/all
-            (lambda@ (fk-ign)
-              (@ then sk fk)) condition1 condition2 ...)
-          (lambda ()
-            (@ else sk fk subst))
-	 subst))]))
+; Eventually, it might be a recognized special case in if-only.
+
+; (define-syntax if-all!
+;   (syntax-rules ()
+;     [(_ (condition) then) (if-only condition then)]
+;     [(_ (condition) then else) (if-only condition then else)]
+;     [(_ (condition1 condition2 ...) then)
+;      (lambda@ (sk fk)
+;        (@ (splice-in-ants/all
+;             (lambda@ (fk-ign)
+;               (@ then sk fk))
+;             condition1 condition2 ...)
+;           fk))]
+;     [(_ (condition1 condition2 ...) then else)
+;      (lambda@ (sk fk subst)
+;        (@ (splice-in-ants/all
+;             (lambda@ (fk-ign)
+;               (@ then sk fk)) condition1 condition2 ...)
+;           (lambda ()
+;             (@ else sk fk subst))
+; 	 subst))]))
 
 ; Disjunction of antecedents
 ; All disjunctions below satisfy properties
@@ -1757,7 +1759,7 @@
 (define grandpa
   (let-ants (a1 a2) ([grandpa/father grandpa/father]
 		     [grandpa/mother grandpa/mother])
-    (if-all! ((succeeds grandpa/father) (succeeds grandpa/father))
+    (if-only (all! (succeeds grandpa/father) (succeeds grandpa/father))
       grandpa/father grandpa/mother)))
 
 (test-check 'test-grandpa-10
