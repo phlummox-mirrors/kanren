@@ -255,3 +255,84 @@
 
 (test2)
     
+(define invertible-binary-function->ternary-relation
+  (lambda (op inverted-op)
+    (extend-relation (a1 a2 a3)
+      (relation (x y z)
+        (to-show x y z)
+        (all (fails (instantiated z))
+          (project (x y)
+            (== z (op x y)))))
+      (relation (x y z)
+        (to-show x y z)
+        (all (fails (instantiated y))
+          (project (z x)
+            (== y (inverted-op z x)))))
+      (relation (x y z)
+        (to-show x y z)
+        (all (fails (instantiated x))
+          (project (z y)
+            (== x (inverted-op z y)))))
+      (relation (x y z)
+        (to-show x y z)
+        (project (x y)
+          (== z (op x y)))))))
+
+(define ++ (invertible-binary-function->ternary-relation + -))
+(define -- (invertible-binary-function->ternary-relation - +))
+(define ** (invertible-binary-function->ternary-relation * /))
+(define // (invertible-binary-function->ternary-relation / *))
+
+(test-check 'test-instantiated-1
+  (and
+    (equal?
+      (solution (x) (++ x 16.0 8))
+      '((x.0 -8.0)))
+    (equal?
+      (solution (x) (++ 10 16.0 x))
+      '((x.0 26.0)))
+    (equal?
+      (solution (x) (-- 10 x 3))
+      '((x.0 13))))
+  #t)
+
+(define symbol->lnum
+  (lambda (sym)
+    (map char->integer (string->list (symbol->string sym)))))
+
+(define lnum->symbol
+  (lambda (lnums)
+    (string->symbol (list->string (map integer->char lnums)))))
+
+(define invertible-unary-function->binary-relation
+  (lambda (op inverted-op)
+    (extend-relation (a1 a2)
+      (relation (x y)
+        (to-show x y)
+        (all (fails (instantiated y))
+          (project (x)
+            (== y (op x)))))
+      (relation (x y)
+        (to-show x y)
+        (all (fails (instantiated x))
+          (project (y)
+            (== x (inverted-op y)))))
+      (relation (x y)
+        (to-show x y)
+        (begin
+          (pretty-print "Third rule")
+          (project (x)
+            (== y (op x))))))))
+
+(define name
+  (invertible-unary-function->binary-relation symbol->lnum lnum->symbol))
+
+(test-check 'test-instantiated-2
+  (and
+    (equal?
+      (solution (x) (name 'sleep x))
+      '((x.0 (115 108 101 101 112))))
+    (equal?
+      (solution (x) (name x '(115 108 101 101 112)))
+      '((x.0 sleep))))
+  #t)
