@@ -8,7 +8,7 @@
 
 (define once
   (lambda (g)
-    (cond1
+    (condu
       [g]
       [else fail])))
 
@@ -85,18 +85,18 @@
 
 ; Initial tests
 
-(test-check "cond@ extensive"
+(test-check "conde extensive"
   (run* (x)
     (fresh (y)
-      (cond@ 
-        ((cond@ 
+      (conde 
+        ((conde 
            ((== y 1))
            ((== y 11))))
-        ((cond@ 
+        ((conde 
            ((== y 2))
            (fail)
            ((== y 3)))))
-      (cond@
+      (conde
         ((== x y))
         ((== x 100)))))
   '(1 100 11 100 2 100 3 100))
@@ -134,42 +134,42 @@
          ((== x 100))))))
   '(1 2 100 11 100 3 100 100))
 
-; condo, cond1 tests
-(test-check "condo-1"
+; conda, condu tests
+(test-check "conda-1"
   (run 3 (q)
-       (condo
-          ((cond@ ((== q 3)) ((== q 4))) succeed)
-          ((cond@ ((== q 5)) ((== q 6))) succeed)
+       (conda
+          ((conde ((== q 3)) ((== q 4))) succeed)
+          ((conde ((== q 5)) ((== q 6))) succeed)
           (else fail)))    
   '(3 4))
 
-(test-check "condo-2"
+(test-check "conda-2"
   (run 3 (q)
-       (condo
-    	 ((cond@ ((== q 3)) ((== q 4))) (== q 4))
+       (conda
+    	 ((conde ((== q 3)) ((== q 4))) (== q 4))
 	     (else fail)))    
   '(4))
 
 
-(test-check "condo-3"
+(test-check "conda-3"
   (run 3 (q)
-       (condo
-    	 ((cond@ ((== q 3)) ((== q 4))) (== q 3))
+       (conda
+    	 ((conde ((== q 3)) ((== q 4))) (== q 3))
 	     (else fail)))    
   '(3))
 
 
-(test-check "cond1-1"
+(test-check "condu-1"
   (run 3 (q)
-       (cond1
-    	 ((cond@ ((== q 3)) ((== q 4))) (== q 3))
+       (condu
+    	 ((conde ((== q 3)) ((== q 4))) (== q 3))
 	     (else fail)))    
   '(3))
 
-(test-check "cond1-2"
+(test-check "condu-2"
   (run 3 (q)
-       (cond1
-    	 ((cond@ ((== q 3)) ((== q 4))) (== q 4))
+       (condu
+    	 ((conde ((== q 3)) ((== q 4))) (== q 4))
 	     (else fail)))    
   '())
 
@@ -178,14 +178,14 @@
 ; infinitary relations
 
 (define always
-   (cond@ (succeed) (else always)))
+   (conde (succeed) (else always)))
 
 (test-check "always-1"
   (run 10 (q) always)   
   '(_.0 _.0 _.0 _.0 _.0 _.0 _.0 _.0 _.0 _.0))
 
 (test-check "always-2"
-  (run 10 (q) (cond@ (always) (else (== q 10))))   
+  (run 10 (q) (conde (always) (else (== q 10))))   
   '(_.0 _.0 _.0 _.0 _.0 _.0 _.0 _.0 _.0 _.0))
 
 (test-check "always-3"
@@ -194,33 +194,33 @@
 
 
 (test-check "always-4"
-  (run 10 (q) (cond@ ((== q 10)) (else (== q 11))) always)   
+  (run 10 (q) (conde ((== q 10)) (else (== q 11))) always)   
   '(10 10 10 10 10 10 10 10 10 10))
 
 (test-check "always-5"
-  (run 10 (q) (alli (cond@ ((== q 10)) (else (== q 11))) always))   
+  (run 10 (q) (alli (conde ((== q 10)) (else (== q 11))) always))   
   '(10 11 10 11 10 11 10 11 10 11))
 
 
 (test-check "always-fail-1"
-  (run 2 (q) (condi ((cond@ ((== q 10)) (else (== q 11))))
+  (run 2 (q) (condi ((conde ((== q 10)) (else (== q 11))))
 	                  (always fail)))
   '(10 11))
 
 (test-check "always-fail-1"
-  (run 2 (q) (alli (condi ((cond@ ((== q 10)) (else (== q 11))))
+  (run 2 (q) (alli (condi ((conde ((== q 10)) (else (== q 11))))
 	                  (always fail))))
   '(10 11))
 
 (test-check "always-fail-2"
   (run 2 (q) (condi (always fail)
-	       ((cond@ ((== q 10)) (else (== q 11))))
+	       ((conde ((== q 10)) (else (== q 11))))
 	           ))
   '(10 11))
 
 ; put the limit on depth...
 (test-check "always-fail-3"
-  (run-1 3 100 (q) (condi ((cond@ ((== q 10)) (else (== q 11))))
+  (run-1 3 100 (q) (condi ((conde ((== q 10)) (else (== q 11))))
 	           (always fail)))
   '(10 11))
 	         
@@ -347,14 +347,14 @@
 
 (define build-bit
   (lambda (b k)
-    (cond@
+    (conde
       ((== 0 b) (== '() k))
       ((== 1 b) (== '(1) k))
       (else fail))))
 
 (define full-adder
   (lambda (a b c d e)
-    (cond@
+    (conde
       ((== a 0) (== b 0) (== c 0) (== d 0) (== e 0))
       ((== a 1) (== b 0) (== c 0) (== d 1) (== e 0))
       ((== a 0) (== b 1) (== c 0) (== d 1) (== e 0))
@@ -633,7 +633,7 @@
 
 (define boundx
   (lambda (q p n m)
-    (cond@
+    (conde
       ((== '() q) (poso p))
       (else
         (fresh (x y z _ __ ___)
@@ -653,7 +653,7 @@
 
 (define boundx
   (lambda (q p n m)
-    (cond@
+    (conde
       ((nullo q) (pairo p))
       (else
         (fresh (x y z)
@@ -678,7 +678,7 @@
 
 (define <ol
   (lambda (n m)
-    (cond@
+    (conde
       ((== '() n) (poso m))
       ((== '(1) n) 
        (fresh (_ y)
@@ -694,13 +694,13 @@
 
 (define =ol
   (lambda (n m)
-    (cond@
+    (conde
       ((== '() n) (== '() m))
       (else (=ol^ n m)))))
 
 (define =ol^
   (lambda (n m)
-    (cond@
+    (conde
       ((== '(1) n) (== '(1) m))
       (else
         (fresh (x y _ __)
@@ -713,7 +713,7 @@
 
 '(define split
   (lambda (n r nl nh)
-    (cond@
+    (conde
       ((== '() n) (== '() nl) (== '() nh))
       ((== `(0 . ,nh) n) (poso nh) 
        (== '() r) (== '() nl))
@@ -722,7 +722,7 @@
       (else
         (fresh (_ x s)
           (== `(,_ . ,s) r)
-          (cond@
+          (conde
             ((== `(0 . ,x) n) (poso x)
              (== '() nl)
              (split x s '() nh))
@@ -746,14 +746,14 @@
 
 (define min-ol
   (lambda (a b m)
-    (cond@
+    (conde
       [(<ol a b) (safe=ol a m)]
       [(<ol b a) (safe=ol b m)]
       [(safe=ol a b) (=ol b m)])))
 
 (define safe=ol
   (lambda (l m)
-    (cond@
+    (conde
       [(nullo l) (nullo m)]
       [else 
         (fresh (d res)
@@ -771,14 +771,14 @@
 (define remove-leading-zeros-aux
   (lambda (sl tuo)
     (fresh (d)
-      (cond@
+      (conde
         [(nullo sl) (nullo tuo)]
         [(== `(0 . ,d) sl) (remove-leading-zeros-aux d tuo)]
         [(== `(1 . ,d) sl) (== tuo sl)]))))
 
 (define reverse@
   (lambda (ls out)
-    (cond@
+    (conde
       [(nullo ls) (== '() out)]
       [(fresh (a d)
          (== `(,a . ,d) ls)
@@ -808,7 +808,7 @@
 
 (define append@
   (lambda (l1 l2 out)
-    (cond@
+    (conde
       ((nullo l1) (== l2 out))
       (else 
         (fresh (a d res)
@@ -914,7 +914,7 @@
          (split n r nl nh)
          (split q r ql qh)
          (xo m ql mql)
-         (cond@
+         (conde
            ((== '() nh) (== '() qh)
             (+o mql r nl)) 
            (else
@@ -941,7 +941,7 @@
          (split n r nl nh)
          (split q r ql qh)
          (xo m ql mql)
-         (cond@
+         (conde
            ((== '() nh) (== '() qh)
             (+o mql r nl)) 
            (else
@@ -967,7 +967,7 @@
          (split n r nl nh)
          (split q r ql qh)
          (xo m ql mql)
-         (cond@
+         (conde
            ((== '() nh) (== '() qh)
             (+o mql r nl)) 
            (else
@@ -998,10 +998,10 @@
 
 (define theoremo
   (lambda (ls)
-    (cond1
+    (condu
       [(nullo ls) fail]
       [(pairo ls)
-       (cond1
+       (condu
          [(fresh (a)
             (caro ls a)
             (interestingo a))
@@ -1014,7 +1014,7 @@
 
 (define interestingo
   (lambda (x)
-    (cond1
+    (condu
       [(== (gensym) x) fail]
       [(pairo x)
        (fresh (d)
@@ -1059,7 +1059,7 @@
             (alli
               (split n r nl nh)
               (split q r ql qh)
-              (cond@
+              (conde
                 [(== nh '())
 		         (== qh '())
 		         (-o nl r qlm)
@@ -1145,7 +1145,7 @@
 
 (define count-up
   (lambda (i n)
-    (cond@
+    (conde
       ((== i n) succeed)
       (else (count-up (+ i 1) n)))))
 
@@ -1282,7 +1282,7 @@
 
 (define bump
   (lambda (n x)
-    (cond@
+    (conde
       ((== n x) succeed)
       (else
         (fresh (m)
@@ -1309,7 +1309,7 @@
 
 (define any*
   (lambda (a)
-    (cond@
+    (conde
       (a succeed)
       (else (any* a)))))
 
@@ -1317,7 +1317,7 @@
 
 '(run 1 (q)
     (all
-      (cond@
+      (conde
         ((== 0 q) succeed)
         ((== 1 q) succeed))
       always)
@@ -2111,7 +2111,7 @@
 
 (define x-always-0
   (lambda (x)
-    (cond@
+    (conde
       ((== 0 x))
       (else (x-always-0 x)))))
 
@@ -2140,7 +2140,7 @@
   (run* (w)
     (fresh (m q r n)
       (== (build 12) n)
-      (cond@
+      (conde
         ((<o m n) succeed)
         (else (== m n)))
       (divo n m q r)
@@ -2236,7 +2236,7 @@
 
 (define append@
   (lambda (l1 l2 out)
-    (cond@
+    (conde
       ((nullo l1) (== l2 out))
       (else 
         (fresh (a d res)
@@ -2296,7 +2296,7 @@
 
 (define repeated-mul
   (lambda (n q nq)
-    (cond@
+    (conde
       [(poso n) (== () q) (== '(1) nq)]
       [(== '(1) q) (== n nq)]
       [(>1o q)
@@ -2407,7 +2407,7 @@
 	     (exp2 n '() q)
 	     (fresh (_) (split n n1 r _))))
       ((fresh (_ __ ___ ____)
-         (cond@
+         (conde
            ((== '(1 1) b) succeed)
            (else (== `(,_ ,__ ,___ . ,____) b))))
        (<ol b n)
@@ -2423,7 +2423,7 @@
 	       (+o nw1 '(1) nw)
 	       (divo nw bw ql1 _)
 	       (+o ql '(1) ql1)
-           (cond@
+           (conde
              ((== q ql) succeed)
              (else (<ol ql q)))
            (fresh (bql qh __ qdh qd)
@@ -2431,7 +2431,7 @@
 	         (divo nw bw1 qh __)		
 	         (+o ql qdh qh)
 	         (+o ql qd q)
-             (cond@
+             (conde
                ((== qd qdh) succeed)
                (else (<o qd qdh)))
              (fresh (bqd bq1 bq)
@@ -2589,7 +2589,7 @@
          (fresh (_)
            (split n n1 r _))))
       ((fresh (_ __ ___ ____)
-         (cond@
+         (conde
            ((== '(1 1) b) succeed)
            (else (== `(,_ ,__ ,___ . ,____) b))))
        (<ol b n)
@@ -2605,7 +2605,7 @@
            (+o nw1 '(1) nw)
            (divo nw bw ql1 _)
            (+o ql '(1) ql1)
-         (cond@
+         (conde
            ((== q ql) succeed)
            (else (<ol ql q)))
          (fresh (bql qh __ qdh qd)
@@ -2613,7 +2613,7 @@
            (divo nw bw1 qh __)                
            (+o ql qdh qh)
            (+o ql qd q)
-           (cond@
+           (conde
              ((== qd qdh) succeed)
              (else (<o qd qdh)))
            (fresh (bqd bq1 bq)
@@ -2654,7 +2654,7 @@
 ;;;; limiited-lambda
 
 (define append_1                                                                  (lambda-limited 5 (x y z)
-     (cond@                                                                    
+     (conde                                                                    
       ((== '() x) (== y z))   
       (else (fresh (a xs zs)                                                  
               (== `(,a . ,xs) x)                                              
@@ -2664,7 +2664,7 @@
 '(define append_1                                                                
   (lambda (x y z)
     (goal-limited 5                                           
-    (cond@                                                                    
+    (conde                                                                    
       ((== '() x) (== y z))   
       (else (fresh (a xs zs)                                                  
               (== `(,a . ,xs) x)                                              
@@ -2676,7 +2676,7 @@
 
 (define append_2                                                                
   (lambda-limited 3 (x y z)                                              
-    (cond@                                                                    
+    (conde                                                                    
       (succeed                                                                
         (fresh (a xs zs)                                                      
           (== `(,a . ,xs) x)                                                  
@@ -2687,3 +2687,17 @@
 (pretty-print  ;;; in prolog this should diverge
   (run 10 (q) (fresh (a b c) (append_2 a b c) (== `(,a ,b ,c) q))))
 
+; (define swappende
+;   (lambda (l1 l2 out)
+;     (condi
+;       (succeed
+;         (fresh (a d res)
+;           (conso a d l1)
+;           (conso a res out)
+;           (swappende d l2 res)))
+;       (else (nullo l1) (== l2 out)))))
+
+; (pretty-print
+;   (run 2 (q)
+;     (fresh (x y)
+;       (swappende x y q))))

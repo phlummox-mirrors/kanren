@@ -4,7 +4,8 @@
 
 ; data Ans a = Zero | Unit a | Choice a (() -> Ans a)
 ;                   | Incomplete (() -> Ans)
-; In (Choice a f): a is the current answer; (f) will give further answers
+; In (Choice a f): a is the current answer; (f) will give further
+; answers
 
 ; Constructors
 (define-syntax mzero
@@ -35,7 +36,7 @@
      (let ((r e))
        (cond
          ((not r) on-zero)
-	 ((procedure? r) (let ((i r)) on-incomplete))
+	  ((procedure? r) (let ((i r)) on-incomplete))
          ((and (pair? r) (procedure? (cdr r)))
           (let ((a (car r)) (f (cdr r)))
             on-choice))
@@ -99,19 +100,20 @@
 ; The algebra of incomplete: from SRIReif.hs
 ;     compose_trees' HZero r = return $ Incomplete r
 ;     compose_trees' (HOne a) r = return $ HChoice a r
-; 				-- Note that we do interleave here!
+;			      -- Note that we do interleave here!
 ;     compose_trees' (HChoice a r') r =
-; 	return $ HChoice a (compose_trees r r')
-; 				-- t1 was incomplete. Now try t2
+;     return $ HChoice a (compose_trees r r')
+;		       -- t1 was incomplete. Now try t2
 ;     compose_trees' (Incomplete r) t2 = 
-; 	do { t2v <- t2; return $ compose_trees'' r t2v }
+;     do { t2v <- t2; return $ compose_trees'' r t2v }
 
 ;     compose_trees'' r HZero    = Incomplete r
 ;     compose_trees'' r (HOne a)  = HChoice a r
-; 				-- Note that we do interleave here!
+;			      -- Note that we do interleave here!
 ;     compose_trees'' r (HChoice a r') = HChoice a (compose_trees r' r)
-; 				-- Both tree are incomplete. Suspend
-;     compose_trees'' r (Incomplete t2) = Incomplete (compose_trees r t2)
+;				 -- Both tree are incomplete. Suspend
+;     compose_trees'' r (Incomplete t2) = Incomplete (compose_trees r
+;     t2)
 
 ; aka interleave-reset
 (define interleave-reset
@@ -122,22 +124,22 @@
       ((a f^) (choice a
                 (lambdaf@ () (interleave (f) f^))))
       ((i)
-	(case-ans (f)
-	  (incomplete-f i)
+      (case-ans (f)
+        (incomplete-f i)
 	  ((b) (choice b i))
-;	  ((b f^^) (incomplete (interleave (i) f)))
-; 	  ((b f^^)
-; 	    (case-ans (i)
-; 	      (choice b f^^)
-; 	      ((a1) (choice a1 (lambdaf@ ()
-; 				(choice b f^^))))
-; 	      ((a1 f^1) (choice a1 (lambdaf@ ()
-; 				     (choice b
-; 				       (lambdaf@ () (interleave (f^1) f^^))))))
-; 	      ((i1) (choice b (lambdaf@ () (interleave (i1) f^^))))))
+;	    ((b f^^) (incomplete (interleave (i) f)))
+;	      ((b f^^)
+;	          (case-ans (i)
+;		        (choice b f^^)
+;			      ((a1) (choice a1 (lambdaf@ ()
+;					 (choice b f^^))))
+;					    ((a1 f^1) (choice a1 (lambdaf@ ()
+;			     (choice b
+;				   (lambdaf@ () (interleave (f^1) f^^))))))
+;	          ((i1) (choice b (lambdaf@ () (interleave (i1) f^^))))))
 	  ((b f^^) (choice b (lambdaf@ () (interleave (i) f^^))))
-;	  ((b f^^) (choice b (lambdaf@ () (interleave (f^^) i))))
-	  ((j) (incomplete (interleave (i) j)))))
+;	    ((b f^^) (choice b (lambdaf@ () (interleave (f^^) i))))
+	      ((j) (incomplete (interleave (i) j)))))
 )))
 
 
@@ -149,11 +151,11 @@
       ((a f^) (choice a
                 (lambdaf@ () (interleave (f) f^))))
       ((i)
-	(case-ans (f)
-	  (incomplete-f i)
+      (case-ans (f)
+        (incomplete-f i)
 	  ((b) (choice b i))
-	  ((b f^^) (incomplete (interleave (choice b f^^) i)))
-	  ((j) (incomplete (interleave (i) j)))))
+	    ((b f^^) (incomplete (interleave (choice b f^^) i)))
+	      ((j) (incomplete (interleave (i) j)))))
 )))
 
 ; Kanren implementation
@@ -229,7 +231,7 @@
              (else 
                ((prefix-1 depth (- n 1)) (f))))))
       ((i) (if (positive? depth) ((prefix-1 (- depth 1) n) (i))
-	     '())) ; out of depth... return something else?
+           '())) ; out of depth... return something else?
 ))))
 
 ; Kanren combinators
@@ -263,7 +265,7 @@
        (let ((x (walk* x s)) ...)
          ((all g0 g ...) s))))))
 
-(define-syntax cond@
+(define-syntax conde
   (syntax-rules ()
     ((_ c ...) (c@ mplus c ...))))
 
@@ -277,13 +279,14 @@
     ((_ combine (else g ...)) (all g ...))
     ((_ combine (g ...) c ...)
      (let ((g^ (all g ...)))
-       (lambdag@ (s) (combine (g^ s) (lambdaf@ () ((c@ combine c ...) s))))))))
+       (lambdag@ (s) (combine (g^ s) (lambdaf@ () ((c@ combine c ...)
+  s))))))))
 
 (define-syntax chop1
   (syntax-rules ()
     ((chop1 r s) (succeed s))))
 
-(define-syntax cond1
+(define-syntax condu
   (syntax-rules ()
     ((_ c ...) (c1 chop1 c ...))))
 
@@ -291,7 +294,7 @@
   (syntax-rules ()
     ((chopo r s) r)))
 
-(define-syntax condo
+(define-syntax conda
   (syntax-rules ()
     ((_ c ...) (c1 chopo c ...))))
 
@@ -309,7 +312,7 @@
              ((s) ((all g ...) s)) ; g0 is deterministic
              ((s f)                ; at least one answer from g0
               (bind (chop r s) (lambdag@ (s) ((all g ...) s))))
-	     ((i) (incomplete (loop (i))))
+	           ((i) (incomplete (loop (i))))
 )))))))
 
 (define-syntax alli
@@ -318,7 +321,8 @@
     ((_ g) g)
     ((_ g0 g ...)
      (let ((g^ g0))
-       (lambdag@ (s) (bindi (g^ s) (lambdag@ (s) ((alli1 g ...) s))))))))
+       (lambdag@ (s) (bindi (g^ s) (lambdag@ (s) ((alli1 g ...)
+  s))))))))
 
 (define-syntax alli1
   (syntax-rules ()
@@ -326,7 +330,8 @@
     ((_ g) g)
     ((_ g0 g ...)
      (let ((g^ g0))
-       (lambdag@ (s) (bindi1 (g^ s) (lambdag@ (s) ((alli1 g ...) s))))))))
+       (lambdag@ (s) (bindi1 (g^ s) (lambdag@ (s) ((alli1 g ...)
+  s))))))))
 
 (define bindi
   (lambda (r k)
@@ -363,4 +368,59 @@
           ((var? v) (g (ext-s x 1 s)))
           ((< v n)  (g (ext-s x (+ v 1) s)))
           (else (fail s)))))))
+
+(define-syntax allw
+  (syntax-rules ()
+    ((_) succeed)
+    ((_ g) g)
+    ((_ g1 g2) (allw-1 g1 g2))
+    ((_ g0 g1 g2 ...) (allw (allw g0 g1) g2 ...))))
+
+(define allw-1
+  (lambda (g1 g2)                                                               
+    (fresh (choice failed)                                                   
+      (all
+        (oracle g1 g2 failed choice)
+        (condu
+          ((== #t failed) fail)
+          ((== #t choice) (alli g1 g2))                                      
+          ((== #f choice) (alli g2 g1)))))))                    
+
+;;; If 'g' succeeds or fails, then (terminates failed g) succeeds,
+;;; and in the process sets failed to #t if g fails and sets failed
+;;; to #f if g succeeds, but without extending the substitution.
+;;; If 'g' diverges, (terminates failed g) diverges.
+
+(define oracle
+  (lambda (g1 g2 failed choice)
+    (once
+      (condi
+        ((terminates failed (alli g1 g2)) (== #t choice))              
+        ((terminates failed (alli g2 g1)) (== #f choice))))))
+
+(define terminates                                                              
+  (lambda (failed g)
+    (condu
+      ((succeeds
+         (condu
+           [g succeed]
+           [else fail]))
+       (== #f failed))
+      (else (== #t failed)))))
+
+(define succeeds                                                                
+  (lambda (g)                                                                   
+    (fails (fails g))))                                                         
+                                                                                
+(define fails                                                                   
+  (lambda (g)                                                                   
+    (condu                                                                      
+      [g fail]                                                                  
+      [else succeed])))  
+
+(define once                                                                    
+  (lambda (g)                                                                   
+    (condu                                                                      
+      [g succeed]                                                               
+      [else fail]))) 
 
