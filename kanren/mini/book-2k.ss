@@ -1,4 +1,40 @@
-(load "minikanrensupport.scm")
+; Hello!
+
+; 	I have re-written all of your tagging, in, hopefully a
+; principle way. My tagging is stronger -- I found a type error in your
+; tagging (in alli and condi). The `type system' so to speak keeps track
+; of what is applied to what and how many times. To be more precise, the
+; type system keeps track of partial applications and repeated
+; abstractions. In logical terms, it handles a series of implication
+; elimination and introduction rules. Although tags are checked at
+; run-times, there is a compile-time aspect of the system (e.g., dealing
+; with 'unit and 'answer types). I'm including the whole
+; appendcode.ss. Hopefully you keep all of that versioned? The s.scm
+; test passed.
+
+; 	Happy Holiday!
+; 	Oleg
+
+(load "minikanrensupport.ss")
+
+(define prefix
+  (lambda (n v*)
+    (cond
+      ((null? v*) '())
+      (else
+        (cons (car v*)
+          (cond
+            ((= n 1) '())
+            (else
+              (prefix (- n 1) ((cdr v*))))))))))
+
+(define prefix*
+  (lambda (v*)
+    (cond
+      ((null? v*) '())
+      (else
+        (cons (car v*)
+          (prefix* ((cdr v*))))))))
 
 (define-syntax lambda@ 
   (syntax-rules () 
@@ -51,11 +87,20 @@
   (syntax-rules (answer)
     ((_ (answer) body) body)
     ((_ tag body) (remove-tag 'tag body))))
+;; This is with all run-time tag-checking removed.
+'(define-syntax tag+
+  (syntax-rules (answer)
+    ((_ (answer) body) body)
+    ((_ tag body) body)))
 
-; The following two macros do essentially implication introduction
-; and elimination.
-; To be more precise, a _series_ of implication introductions,
-; or a series of implication eliminations.
+'(define-syntax tag-
+  (syntax-rules (answer)
+    ((_ (answer) body) body)
+    ((_ tag body) body)))
+
+; The following two macros do essentially implication introduction and
+; elimination.  To be more precise, a _series_ of implication
+; introductions, or a series of implication eliminations.
 
 (define-syntax lambda-tagged
   (syntax-rules (answer unit)
@@ -68,8 +113,7 @@
       (lambda (arg) (lambda-tagged "rem"  (tags ...) (args ...) body)))
     ((_ (tag tags ...) (args ...) body)
       (tag+ (tag tags ...)
-	(lambda-tagged "rem" (tag tags ...) (args ...) body)))
-))
+    	(lambda-tagged "rem" (tag tags ...) (args ...) body)))))
 
 (define-syntax app-tagged
   (syntax-rules (answer unit)
@@ -82,9 +126,7 @@
      (app-tagged "rem" (tags ...) (args ...) (body arg)))
     ((_ (tag tags ...) body args ...)
       (app-tagged "rem" (tag tags ...) (args ...) 
-	(tag- (tag tags ...) body)))
-))
-
+    	(tag- (tag tags ...) body)))))
 
 (define-syntax lambdag@
   (syntax-rules ()
@@ -94,7 +136,6 @@
   (syntax-rules ()
     ((_ body args ...) (app-tagged (subst sk fk answer) body args ...))))
 
-
 (define-syntax lambdar@
   (syntax-rules ()
     ((_ args body) (lambda-tagged (sk fk answer) args body))))
@@ -103,11 +144,11 @@
   (syntax-rules ()
     ((_ body args ...) (app-tagged (sk fk answer) body args ...))))
 
-(define-syntax lambdaa@
+(define-syntax lambdau@
   (syntax-rules ()
     ((_ args body) (lambda-tagged (fk answer) args body))))
 
-(define-syntax a@ 
+(define-syntax u@ 
   (syntax-rules ()
     ((_ body args ...) (app-tagged (fk answer) body args ...))))
 
@@ -137,52 +178,27 @@
   (syntax-rules ()
     ((_ body args ...) (app-tagged (goal fk answer) body args ...))))
 
-(define-syntax lambda-sr@
+(define-syntax lambdaj@
   (syntax-rules ()
     ((_ args body) (lambda-tagged (subst semi-goal answer) args body))))
 
-(define-syntax sr@ 
+(define-syntax j@ 
   (syntax-rules ()
     ((_ body args ...) (app-tagged (subst semi-goal answer) body args ...))))
-
-
-(define prefix
-  (lambda (n v*)
-    (cond
-      ((null? v*) '())
-      (else
-        (cons (car v*)
-          (cond
-            ((= n 1) '())
-            (else
-              (prefix (- n 1)
-                (a@ invoke-thunk (cdr v*))))))))))
-
-(define prefix*
-  (lambda (v*)
-    (cond
-      ((null? v*) '())
-      (else
-        (cons (car v*)
-          (prefix* (a@ invoke-thunk (cdr v*))))))))
-
 
 ;;; This is the code exactly as it appears in the appnedix.
   
 (define succeed (lambdag@ (s k) (k@ k s)))
 
-(define fail (lambdag@ (s) r-invoke-thunk))
-
-(define r-invoke-thunk (lambdar@ (k) invoke-thunk))
-
-(define invoke-thunk (lambdaa@ (f) (ff@ f)))
+(define fail (lambdag@ (s k f) (ff@ f)))
 
 (define-syntax run
   (syntax-rules ()
     ((_ (x) g0 g ...)
      (let ((x (var 'x)))
        (g@ (all g0 g ...) empty-s
-         (lambdak@ (s f) (cons (reify x s) f))
+         (lambdak@ (s f)
+           (cons (reify x s) (lambda () (ff@ f))))
          (lambdaf@ () '()))))))
 
 (define-syntax all
@@ -203,46 +219,48 @@
      (lambdag@ (s)
        (let ((s (unify v w s)))
          (cond
-           ((not s) r-invoke-thunk)
-           (else (lambdar@ (k) (k@ k s)))))))))
+           (s (lambdar@ (k) (k@ k s)))
+           (else
+             (lambdar@ (k f) (ff@ f)))))))))
 
 (define-syntax fresh
   (syntax-rules ()
-    ((_ (x ...) g ...)
+    ((_ (x ...) g0 g ...)
      (lambdag@ (s)
        (let ((x (var 'x)) ...)
-         (g@ (all g ...) s))))))
+         (g@ (all g0 g ...) s))))))
 
 (define-syntax project
-  (syntax-rules ()                                                              
-    ((_ (x ...) g ...)  
+  (syntax-rules ()
+    ((_ (x ...) g0 g ...)  
      (lambdag@ (s)
        (let ((x (reify-nonfresh x s)) ...)
-         (g@ (all g ...) s))))))
+         (g@ (all g0 g ...) s))))))
 
 (define-syntax condo
   (syntax-rules ()
     ((_ c0 c ...) 
-     (lambdag@ (s k f) (co s k f c0 c ...)))))
+     (lambdag@ (s k f)
+       (co s k f c0 c ...)))))
 
 (define-syntax co
   (syntax-rules (else)
     ((_ s k f (else g ...)) (g@ (all g ...) s k f))
     ((_ s k f (g ...)) (g@ (all g ...) s k f))
-    ((_ s k w (g0 g ...) c0 c ...)
-     (a@ (g@ g0 s
-              (lambdak@ (s f^)
-                (lambdaa@ (w^)
-                  (g@ (all g ...) s k
-                    (lambdaf@ () (a@ (ff@ f^) w)))))
-              (lambdaf@ () invoke-thunk))
-       (lambdaf@ () (co s k w c0 c ...))))))
+    ((_ s k f (g0 g ...) c0 c ...)
+     (let ((f (lambdaf@ () (co s k f c0 c ...))))
+       (p@ (r@ (g@ g0 s) anyki anyfi)
+         (lambdaj@ (s r)
+	   (k@ (lambdak@ (s) (g@ (all g ...) s k))
+	     s
+	     (lambdaf@ () (r@ r k f))))
+         f)))))
 
 (define-syntax once
   (syntax-rules ()
     ((_ g)
      (lambdag@ (s k f)
-       (g@ g s (lambdak@ (s^ f^) (k@ k s^ f)) f)))))
+       (g@ g s (lambdak@ (s _f) (k@ k s f)) f)))))
 
 (define-syntax cond@
   (syntax-rules ()
@@ -268,27 +286,29 @@
      (interleave (g@ (all g ...) s) (ci s c ...)))))
 
 (define interleave
-  (lambda (r1 r2)
+  (lambda (r r^)
     (lambdar@ (k f)
-      (p@ 
-	(r@ r1 anyi-k anyi-f)
-        (lambda-sr@ (s r1)
+      (p@ (r@ r anyki anyfi)
+        (lambdaj@ (s r)
           (k@ k s
             (lambdaf@ ()
-              (r@ (interleave r2 r1) k f))))
-        (lambdaf@ () (r@ r2 k f))))))
+              (r@ (interleave r^ r) k f))))
+        (lambdaf@ () (r@ r^ k f))))))
 
-(define anyi-k
+(define anyki
   (lambdak@ (s f)
-    (lambdap@ (sg _)
-      (sr@ sg s
-        (lambdar@ (k1 f1)
+    (lambdap@ (j _f)
+      (j@ j s
+        (lambdar@ (k^ f^)
           (p@ (ff@ f)
-            (lambda-sr@ (s r)
-              (k@ k1 s (lambdaf@ () (r@ r k1 f1))))
-            f1))))))
+            (lambdaj@ (s r)
+              (k@ k^ s (lambdaf@ () (r@ r k^ f^))))
+            f^))))))
 
-(define anyi-f (lambdaf@ () (lambdap@ (_) invoke-thunk)))
+(define anyfi 
+  (lambdaf@ ()
+    (lambdap@ (_j f)
+      (ff@ f))))
 
 (define-syntax alli
   (syntax-rules ()
@@ -300,14 +320,14 @@
 (define ai
   (lambda (r g)
     (lambdar@ (k f)
-      (p@ (r@ r anyi-k anyi-f)
-        (lambda-sr@ (s r)
+      (p@ (r@ r anyki anyfi)
+        (lambdaj@ (s r)
           (r@ (interleave (g@ g s) (ai r g))
             k f))
         f))))
 
 (define-syntax lambda-limited
-  (syntax-rules ()                                                              
+  (syntax-rules ()
     ((_ n formals g)                                          
      (let ((x (var 'x)))                                                      
        (lambda formals (ll n x g))))))
@@ -319,9 +339,10 @@
         (cond
           ((var? v) (g@ g (ext-s x 1 s)))
           ((< v n)  (g@ g (ext-s x (+ v 1) s)))
-          (else r-invoke-thunk))))))
+          (else (lambdar@ (k f) (ff@ f))))))))
 
-(define with-cut
-  (lambda (fn)
-    (lambdag@ (s k f)
-      (g@ (fn (wc (lambdag@ (s^ k^ f^) (ff@ f)))) s k f))))
+(define-syntax with-cut
+  (syntax-rules ()
+    ((_ fn) 
+     (lambdag@ (s k f)
+       (g@ (fn (wc (lambdag@ (_s _k _f) (ff@ f)))) s k f)))))
