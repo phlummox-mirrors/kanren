@@ -97,6 +97,10 @@
 ; holds if carry-in + a + b = r
 ; where a, b, and r are binary numerals and carry-in is either 0 or 1
 
+; We do the addition bit-by-bit starting from the least-significant
+; one. So, we have already two cases to consider per each number: The
+; number has no bits, and the number has some bits.
+
 (define full-adder
   (extend-relation (carry-in a b r)
     (fact (a) 0 a '() a) 		; 0 + a + 0 = a
@@ -147,6 +151,35 @@
 	    (half-adder carry-in ab bb rb carry-out)
 	    (full-adder carry-out ar br rr))))
     )))
+
+; After we have checked that  both summands have some bits, and so we
+; can decompose them the least-significant bit and the other ones, it appears
+; we only need to consider the general case, the last relation in
+; the code above.
+; But that is not sufficient. Let's consider
+;	(full-adder 0 (1 . ()) (1 0 . ()) (0 1 . ()))
+; It would then hold. But it shouldn't, because (1 0 . ()) is a bad
+; number (with the most-significant bit 0). One can say why we should
+; care about user supplying bad numbers. But we do: we don't know which
+; arguments of full-adder are definite numbers and which are
+; uninstantiated variables. We don't know which are the input and which
+; are the output. So, if we keep only the last relation for the
+; case of positive summands, and try to
+;	(exists (x) (full-adder 0 (1 . ()) x (0 1 . ())))
+; we will see x bound to (1 0) -- an invalid number. So, our adder, when
+; asked to subtract numbers, gave a bad number. And it would give us
+; a bad number in all the cases when we use it to subtract numbers and
+; the result has fewer bits than the number to subtract from. 
+;
+; To guard against such a behavior (i.e., to transparently normalize
+; the numbers when the full-adder is used in the ``subtraction'' mode)
+; we have to specifically distinguish cases of 
+; "bit0 + 2*bit_others" where bit_others>0, and the
+; terminal case "1" (that is, the most significant bit 1 and no other
+; bits).
+; The various (pos ...) conditions in the code are to guarantee that all
+; cases are disjoin. At any time, only one case can match. Incidentally,
+; the lack of overlap guarantees the optimality of the code.
 
 ; a + b = c
 (define ++o
