@@ -50,23 +50,23 @@
       (pos 'don n8)
       (project (n1 n2 n3 n4 n5 n6 n7 n8)
 	(all!!
-	  (== #t (no-dups (sort < `(,n1 ,n2 ,n3 ,n4 ,n5 ,n6 ,n7 ,n8))))
-	  (== #t (> n1 2))
+	  (predicate (no-dups (sort < `(,n1 ,n2 ,n3 ,n4 ,n5 ,n6 ,n7 ,n8))))
+	  (predicate (> n1 2))
 	  (any
-	    (== #t (= n2 (+ n1 1)))
-	    (== #t (= n2 (- n1 1))))
-	  (== #t (> n3 5))
+	    (predicate (= n2 (+ n1 1)))
+	    (predicate (= n2 (- n1 1))))
+	  (predicate (> n3 5))
 	  (any
-	    (== #t (= n4 (+ n3 2)))
-	    (== #t (= n4 (- n3 2))))
-	  (== #t (> n5 n4))
+	    (predicate (= n4 (+ n3 2)))
+	    (predicate (= n4 (- n3 2))))
+	  (predicate (> n5 n4))
 	  (any
-	    (== #t (= n6 (+ n5 3)))
-	    (== #t (= n6 (- n5 3))))
-	  (== #t (< n7 4))
+	    (predicate (= n6 (+ n5 3)))
+	    (predicate (= n6 (- n5 3))))
+	  (predicate (< n7 4))
 	  (any
-	    (== #t (= n8 (+ n7 4)))
-	    (== #t (= n8 (- n7 4)))))))))
+	    (predicate (= n8 (+ n7 4)))
+	    (predicate (= n8 (- n7 4)))))))))
 
 (define houses-test
   (lambda ()
