@@ -1,6 +1,8 @@
 ;;http://www.sics.se/quintus/queens.pl
 ;;9-queens program
 
+; $Id$
+
 (define queen
   (relation ((once out) (once data))
     (to-show data out)
