@@ -143,7 +143,7 @@
   (syntax-rules ()
     ((_ (x ...) g0 g ...)  
      (lambda (s)
-       (let ((x (walk-strong x s)) ...)
+       (let ((x (walk-strongly x s)) ...)
          ((all g0 g ...) s))))))
 
 (define-syntax cond@

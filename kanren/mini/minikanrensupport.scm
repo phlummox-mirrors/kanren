@@ -21,11 +21,6 @@
     ((_ rator rand) (rator rand))
     ((_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...))))
 
-
-;   (lambda (v s) (walk-strong v 
-;     (reify-fresh
-;       (reify-nonfresh v s))))
-
 (define-syntax test-check
   (syntax-rules ()
     ((_ title tested-expression expected-result)
@@ -157,28 +152,34 @@
 (define walk
   (lambda (v s)
     (cond
-      ((not (var? v)) v)
-      ((assq v s) =>
-	(lambda (b) (walk (cdr b) s)))
+      ((var? v) 
+       (cond
+         ((assq v s) =>
+          (lambda (b) (walk (rhs b) s)))
+         (else v)))
       (else v))))
 
 ; Given a term v and a subst s, return v', the strong normal form of v:
 ; v -->s! v' with respect to s
-(define walk-strong
+(define walk-strongly
   (lambda (v s)
     (cond
+      ((var? v)
+       (cond
+         ((assq v s) =>
+          (lambda (b) (walk-strongly (rhs b) s)))
+         (else v)))
       ((pair? v)
-	(cons (walk-strong (car v) s) (walk-strong (cdr v) s)))
-      ((not (var? v)) v)
-      ((assq v s) =>
-	(lambda (b) (walk-strong (cdr b) s)))
+       (cons 
+         (walk-strongly (car v) s)
+         (walk-strongly (cdr v) s)))
       (else v))))
 
 (define reify
   (lambda (v s)
-    (let ((t (walk-strong v s)))
+    (let ((t (walk-strongly v s)))
       (let ((fv (free-vars t)))
-	(walk-strong t (find-pretty-names fv 0))))))
+	(walk-strongly t (find-pretty-names fv 0))))))
 
 ; Given the list of free variables and the initial index,
 ; create a subst { v -> pretty-name-indexed }
