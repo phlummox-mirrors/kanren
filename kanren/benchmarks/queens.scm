@@ -178,3 +178,121 @@
 ;     116317 ms elapsed cpu time, including 1620 ms collecting
 ;     117676 ms elapsed real time, including 1633 ms collecting
 ;     6728505992 bytes allocated, including 6726980680 bytes reclaimed
+
+
+; The following implementation is more functional and less relational
+; It deviates from the Prolog implementation.
+; First, we note that 'safe' is a deterministic predicate that
+; operates on the already instantiated list.
+
+(define benchmark
+  (letrec
+    ((queen
+       (relation (head-let data out)
+	 (all
+	   (qperm data out)
+	   (safe out))))
+
+     (qperm
+       (extend-relation (a b)
+	 (fact () '() '())
+	 (relation (head-let l k)
+	   (if-only (project (l) (predicate (pair? l)))
+	   (exists (z u v)
+	     (all
+	       (qdelete u l z)
+	       (== k `(,u . ,v))
+	       (qperm z v)))))))
+
+      (qdelete
+	(extend-relation (a b c)
+	  (fact (a l) a `(,a . ,l) l)
+	  (relation ((once x) a z r)
+	    (to-show x `(,a . ,z) `(,a . ,r))
+	    (qdelete x z r))))
+
+     (safe				; a deterministic predicate
+       (relation (head-let l)
+	 (project (l)
+	   (predicate
+	     (let safe ((l l))
+	       (or (null? l)
+		 (and
+		   (let nodiag ((b (car l)) (d 1) (lr (cdr l)))
+		     (or (null? lr)
+		       (let ((n (car lr)) (l (cdr lr)))
+			 (and
+			   (not (= d (abs (- n b))))
+			   (nodiag b (+ 1 d) l)))))
+		   (safe (cdr l)))))))))
+      )
+    (lambda (data out)
+      (queen data out))))
+
+; kanren.ss version 4.15 (similar to 4.11)
+; (time (solve 1000 ...))
+;     3774 collections
+;     74406 ms elapsed cpu time, including 825 ms collecting
+;     75198 ms elapsed real time, including 782 ms collecting
+;     4084184064 bytes allocated, including 4083081312 bytes reclaimed
+
+
+; Now we take advantage of the fact that the parameter l in qdelete
+; is fully instantiated.
+
+(define benchmark
+  (letrec
+    ((queen
+       (relation (head-let data out)
+	 (all
+	   (qperm data out)
+	   (safe out))))
+
+     (qperm
+       (extend-relation (a b)
+	 (fact () '() '())
+	 (relation (head-let l k)
+	   (if-only (project (l) (predicate (pair? l)))
+	   (exists (z u v)
+	     (all
+	       (qdelete l `(,u . ,z))
+	       (== k `(,u . ,v))
+	       (qperm z v)))))))
+
+      (qdelete
+	(relation (head-let l l1)
+	  (project (l)
+	    (all
+	      (predicate (pair? l))
+	    (any
+	      (== l l1)
+	      (exists (u)
+		(all
+		  (qdelete (cdr l) u)
+		  (project (u)
+		    (== l1 (cons (car u) (cons (car l) (cdr u))))))))))))
+
+     (safe				; a deterministic predicate
+       (relation (head-let l)
+	 (project (l)
+	   (predicate
+	     (let safe ((l l))
+	       (or (null? l)
+		 (and
+		   (let nodiag ((b (car l)) (d 1) (lr (cdr l)))
+		     (or (null? lr)
+		       (let ((n (car lr)) (l (cdr lr)))
+			 (and
+			   (not (= d (abs (- n b))))
+			   (nodiag b (+ 1 d) l)))))
+		   (safe (cdr l)))))))))
+      )
+    (lambda (data out)
+      (queen data out))))
+
+; kanren.ss version 4.15 (similar to 4.11)
+; (time (solve 1000 ...))
+;     1942 collections
+;     39804 ms elapsed cpu time, including 464 ms collecting
+;     40212 ms elapsed real time, including 452 ms collecting
+;     2100992152 bytes allocated, including 2100567008 bytes reclaimed
