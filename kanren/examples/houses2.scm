@@ -28,18 +28,17 @@
     (fact () 8)))
 
 (define mapping
-  (relation (n1 n2 n3 n4 n5 n6 n7 n8)
-    (to-show n1 n2 n3 n4 n5 n6 n7 n8)
+  (relation (head-let n1 n2 n3 n4 n5 n6 n7 n8)
     (let ([nlist '()])
-      (all
+      (all!
 	(pos 'allison n1)
 	(project (n1)
-	  (all
+	  (all!
 	    (inject (> n1 2))
 	    (pos 'adrienne n2)
 	    (project (n2)
 	      (let ([nlist (cons n1 nlist)])
-		(all
+		(all!
 		  (inject (not (memv n2 nlist)))
 		  (any
 		    (inject (= n2 (+ n1 1)))
@@ -47,13 +46,13 @@
 		  (pos 'belinda n3)
 		  (project (n3)
 		    (let ([nlist (cons n2 nlist)])		
-		      (all
+		      (all!
 			(inject (not (memv n3 nlist)))
 			(inject (> n3 5))
 			(pos 'benito n4)
 			(project (n4)
 			  (let ([nlist (cons n3 nlist)])
-			    (all
+			    (all!
 			      (inject (not (memv n4 nlist)))
 			      (any
 				(inject (= n4 (+ n3 2)))
@@ -61,13 +60,13 @@
 			      (pos 'cheri n5)
 			      (project (n5)
 				(let ([nlist (cons n4 nlist)])
-				  (all
+				  (all!
 				    (inject (not (memv n5 nlist)))
 				    (inject (> n5 n4))
 				    (pos 'crawford n6)
 				    (project (n6)
 				      (let ([nlist (cons n5 nlist)])
-					(all
+					(all!
 					  (inject (not (memv n6 nlist)))
 					  (any
 					    (inject (= n6 (+ n5 3)))
@@ -75,13 +74,13 @@
 					  (pos 'daryl n7)
 					  (project (n7)
 					    (let ([nlist (cons n6 nlist)])
-					      (all
+					      (all!
 						(inject (not (memv n7 nlist)))
 						(inject (< n7 4))
 						(pos 'don n8)
 						(project (n8)
 						  (let ([nlist (cons n7 nlist)])
-						    (all
+						    (all!!
 						      (inject (not (memv n8 nlist)))
 						      (any
 							(inject (= n8 (+ n7 4)))
