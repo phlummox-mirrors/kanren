@@ -496,8 +496,9 @@
        (extend-relation (id ...) rel-exp1 rel-exp2 ...))]))
 
 (define-syntax all
-  (syntax-rules (all! any)
+  (syntax-rules (all all! any)
     [(_ ant ... (any)) (all ant ...)]
+    [(_ ant ... (all)) (all ant ...)]
     [(_ ant ... (all!)) (all ant ...)]
     [(_) (lambda (sk) sk)]
     [(_ ant) ant]
@@ -513,6 +514,7 @@
 
 (define-syntax all!
   (syntax-rules (all any)
+    [(_ ant ... (all)) (all! ant ...)]
     [(_ ant ... (any)) (all! ant ...)]
     [(_ ant ... (all)) (all! ant ...)]
     [(_) (lambda (sk) sk)]
@@ -3847,4 +3849,5 @@
        (englishman oldgolds milk snails red)
        (spaniard luckystrikes oj dog ivory)
        (japanese parliaments coffee zebra green)))))
+
 
