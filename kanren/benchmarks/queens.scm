@@ -78,8 +78,8 @@
 	   (to-show b d `(,n . ,l))
 	   (project (n b d)
 	     (all!!
-	       (== #f (= d (- n b)))
-	       (== #f (= d (- b n)))
+	       (predicate (not (= d (- n b))))
+	       (predicate (not (= d (- b n))))
 	       (nodiag b (+ d 1) l))))))
       )
     (lambda (data out)
@@ -104,7 +104,7 @@
        (extend-relation (a b)
 	 (fact () '() '())
 	 (relation (head-let l k)
-	   (if-only (predicate (l) (pair? l))
+	   (if-only (project (l) (predicate (pair? l)))
 	   (exists (z u v)
 	     (all
 	       (qdelete u l z)
@@ -133,57 +133,18 @@
 	   (to-show b d `(,n . ,l))
 	   (project (n b d)
 	     (all!!
-	       (== #f (= d (- n b)))
-	       (== #f (= d (- b n)))
+	       (predicate (not (= d (- n b))))
+	       (predicate (not (= d (- b n))))
 	       (nodiag b (+ d 1) l))))))
       )
     (lambda (data out)
       (queen data out))))
 
-; (define queen
-;   (relation ((once out) (once data))
-;     (to-show data out)
-;     (queen2 data '() out)))
-
-; (define queen2
-;   (extend-relation (a1 a2 a3)
-;     (fact () '() _ '())
-;     (relation (h t history q m)
-;       (to-show `(,h . ,t) history `(,q . ,m))
-;       (exists (l1)	
-; 	(all
-; 	  (qdelete q h t l1)
-; 	  (nodiag history q 1)
-; 	  (queen2 l1 `(,q . ,history) m))))))
-
-; (define qdelete
-;   (extend-relation (a1 a2 a3 a4)
-;     (fact (a l) a a l l)
-;     (relation ((once x) a h t r)
-;       (to-show x a `(,h . ,t) `(,a . ,r))
-;       (qdelete x h t r))))
-
-; (define nodiag
-;   (extend-relation (a1 a2 a3)
-;     (fact () '() _ _)
-;     (relation (n l b d)
-;       (to-show `(,n . ,l) b d)
-;       (all
-; 	(predicate (d b n)
-; 	  (and
-; 	    (not (= d (- n b)))
-; 	    (not (= d (- b n)))))
-; 	(exists (d1)
-; 	  (project (d)
-; 	    (all
-; 	      (== d1 (+ d 1))
-; 	      (nodiag l b d1))))))))
-
-(test-check 'queen-benchmark
+(test-check 'queens-benchmark
   (solve 2 (out) (benchmark data out))
   '(((out.0 (1 3 6 8 2 4 9 7 5))) ((out.0 (1 3 7 2 8 5 9 4 6)))))
 
-(test-check 'queen-benchmark-time
+'(test-check 'queens-benchmark-time
   (length
     (time (solve 1000 (out) (benchmark data out))))
   352)
