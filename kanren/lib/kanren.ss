@@ -59,10 +59,10 @@
 (define var make-var)
 
 ; A framework to remove introduced variables beyond their scope.
-; To make it removing variables easier, we consider the list
+; To make removing variables easier, we consider the list
 ; of subst as a "stack". Before we add a new variable, we put a mark
 ; on the stack. Mark is a special variable binding, whose term is 
-; the current subst. When we about to remove added variables after
+; the current subst. When we are about to remove added variables after
 ; their scope is ended, we locate the mark (using eq?) and check that
 ; the term bound to the mark is indeed the subst after the mark.
 ; If it so, then the subst list wasn't perturbed, and we know that
@@ -81,15 +81,15 @@
             (lambda@ (fk subst) (@ sk fk (prune in-subst subst id ...)))
 	   fk in-subst)))]))
 
-
 ; check if any of vars occur in a term
 ; perhaps we should use memq and eq when applied to vars ...
-(define (occur-vars? term vars)
-  (cond
-    ((var? term) (memq term vars))
-    ((pair? term) (or (occur-vars? (car term) vars)
-		      (occur-vars? (cdr term) vars)))
-    (else #f)))
+(define relatively-ground?
+  (lambda (term vars)
+    (cond
+      [(var? term) (not (memq term vars))]
+      [(pair? term) (and (relatively-ground? (car term) vars)  ;; not in the beginning.
+                         (relatively-ground? (cdr term) vars))]
+      [else #t])))
 
 ; PRUNE IN-SUBST SUBST ID ....
 ; remove the bindings of ID ... from SUBST (by composing with the
@@ -97,43 +97,36 @@
 ; If we locate IN-SUBST in SUBST, we know that everything below the
 ; mark can't possibly contain ID ...
 
+(define do-subst
+  (lambda (to-subst remove-subst clean)
+    (let loop ([subst to-subst])
+      (if (null? subst) clean
+          (cons-if-real-commitment
+            (commitment->var (car subst))
+            (subst-in (commitment->term (car subst)) remove-subst)
+            (loop (cdr subst)))))))
+
 (define-syntax prune
   (syntax-rules ()
     [(_ in-subst subst) subst]
-    [(_ in-subst subst id ...)
-      (let ((vars (list id ...))
-	     (do-subst
-	      (lambda (clean to-remove to-subst)
-		(let loop ((result clean) (to-subst to-subst))
-		  (if (null? to-subst) result
-		    (loop
-		      (cons-if-real-commitment
-			(commitment->var (car to-subst))
-			(subst-in (commitment->term (car to-subst))
-			  to-remove)
-			result)
-		      (cdr to-subst)))))))
-	(if (eq? subst in-subst) subst ; no bindings to remove
-	  (let loop ((clean '()) (to-remove '())
-		     (to-subst '()) (current subst))
-	    (cond
-	      ((eq? current in-subst)	; found the mark
-		;(printf "found the mark~%")
-		(do-subst 
-		  (if (null? current) clean (append clean current))
-		  to-remove to-subst))
-	      ((null? current) 
-		(do-subst clean to-remove to-subst))
-	      ((memq (commitment->var (car current)) vars)
-		(loop clean (cons (car current) to-remove) to-subst 
-		  (cdr current)))
-	      ((occur-vars? (commitment->term (car current)) vars)
-		(loop clean to-remove (cons (car current) to-subst)
-		  (cdr current)))
-	      (else
-		(loop (cons (car current) clean) to-remove to-subst
-		  (cdr current)))))))]))
+    [(_ in-subst subst id0 id1 ...)
+     (if (eq? subst in-subst)
+         subst
+         (prune-proc (list id0 id1 ...) in-subst '() '() '() subst))]))
 
+(define prune-proc
+  (lambda (vars in-subst clean to-remove to-subst current)
+    (let loop ([current current] [to-remove to-remove] [clean clean] [to-subst to-subst])
+      (cond
+        [(null? current) (do-subst to-subst to-remove clean)]
+        [(eq? current in-subst)         ; found the mark
+                                        ; (printf "found the mark~%")
+         (do-subst to-subst to-remove (append clean current))]
+        [(memq (commitment->var (car current)) vars)
+         (loop (cdr current) (cons (car current) to-remove) clean to-subst)]
+        [(relatively-ground? (commitment->term (car current)) vars)
+         (loop (cdr current) to-remove (cons (car current) clean) to-subst)]
+        [else (loop (cdr current) to-remove clean (cons (car current) to-subst))]))))
 
 (print-gensym #f)
 ; (define var
@@ -155,7 +148,7 @@
 
 (define unit-subst
   (lambda (var t)
-    (if (and (var? t) (eqv? t _)) empty-subst (list (commitment var t)))))
+    (if (and (var? t) (eq? t _)) empty-subst (list (commitment var t)))))
 
 (define compose-subst
   (lambda (base refining)
@@ -178,7 +171,7 @@
 (define cons-if-real-commitment
   (lambda (var term subst)
     (cond
-      [(eqv? term var) subst]
+      [(eq? term var) subst]
       [else (cons (commitment var term) subst)])))
 
 (define subst-in  ;;; This definition will change several times.
@@ -208,10 +201,10 @@
 
 (define trivially-equal?
   (lambda (t u)
-    (or (eqv? t u)
+    (or (eqv? t u) ;;; must stay eqv?
         (and (string? t) (string? u) (string=? t u))
-        (eqv? t _)
-        (eqv? u _))))
+        (eq? t _)
+        (eq? u _))))
 
 (define _ (exists (_) _))
 
@@ -512,8 +505,9 @@
 		  (@ sk (lambda () (interleave q2 (fk) ant2 ant1)) subst cutk)))]))])
       interleave)))
 
-(define (satisfied? ant subst)
-  (not (null? (@ ant initial-sk initial-fk subst initial-fk))))
+(define satisfied?
+  (lambda (ant subst)
+    (not (null? (@ ant initial-sk initial-fk subst initial-fk)))))
 
 (define-syntax extend-relation
   (syntax-rules ()
@@ -554,8 +548,8 @@
        (@ ant0 (splice-in-ants/all! sk fk ant1 ...) fk))]))
 
 (define-syntax relation
-  (syntax-rules (to-show)
-    [(_  (ex-id ...) (to-show x ...) ant ...)
+  (syntax-rules (to-show _ cut) ;;; _ and cut disappear when semester is over.
+    [(_  (ex-id ...) (to-show x ...) ant ...)     
      (relation (ex-id ...) () (x ...) (x ...) ant ...)]
     [(_ (ex-id ...) (g ...) () (x ...))
      (lambda (g ...)
@@ -566,7 +560,11 @@
        (introduce-vars (ex-id ...)
 	 (all! (== g x) ... (all ant ...))))]
     [(_ ex-ids (var ...) (x0 x1 ...) xs ant ...)
-     (relation ex-ids (var ... g) (x1 ...) xs ant ...)]))
+     (relation ex-ids (var ... g) (x1 ...) xs ant ...)]
+        [(_ _ (ex-id ...) (to-show x ...) ant ...) ;;; disappears when semester is over.
+     (relation (ex-id ...) () (x ...) (x ...) ant ...)]
+    [(_ cut (ex-id ...) (to-show x ...) ant ...) ;;; disappears when semester is over.
+     (relation/cut cut (ex-id ...) () (x ...) (x ...) ant ...)]))
 
 (define-syntax relation/cut
   (syntax-rules (to-show)
@@ -642,7 +640,6 @@
 	    initial-sk initial-fk empty-subst initial-fk)))
   ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'john)))))
   '())
-
 
 (define pete/sal
   (relation ()
@@ -1130,21 +1127,6 @@
                (@ sk fk subst cutk))]
          [else (fk)]))]))
 
-(define-syntax let-inject
-  (syntax-rules ()
-    ((_ ((t (var ...) exp) ...) body ...)
-      (lambda@ (sk fk subst)
-	(@ 
-	  (introduce-vars (t ...)
-	    (all!
-	      (== t (let ((var (nonvar! (subst-in var subst))) ...) exp)) ... 
-	      body ...)) sk fk subst)))))
-
-; (define-syntax pred-call
-;   (syntax-rules ()
-;     [(_ p t ...)
-;      (let-inject ((res (t ...) (p t ...))) (== res #t))]))
-
 (define nonvar!
   (lambda (t)
     (if (var? t)
@@ -1426,32 +1408,6 @@
                  (move m a c b)
                  (pred-call printf "Move a disk from ~s to ~s~n" a b)
                  (move m c b a)))))])
-    (relation (n)
-      (to-show n)
-      (move n 'left 'middle 'right))))
-
-(begin
-  (printf "~s with 3 disks~n~n" 'test-towers-of-hanoi)
-  (solution (towers-of-hanoi 3))
-  (void))
-
-(define towers-of-hanoi
-  (letrec
-      ([move
-         (extend-relation (a1 a2 a3 a4)
-           (relation/cut cut ()
-             (to-show 0 _ _ _)
-             cut)
-           (relation (n a b c)
-             (to-show n a b c)
-               (all
-                 (pred-call positive? n)
-                 (let-inject ((m (n) (- n 1)))
-                   (move m a c b)
-                   (let-inject
-		       ((dummy (a b)
-			    (printf "Move a disk from ~s to ~s~n" a b))))
-                   (move m c b a)))))])
     (relation (n)
       (to-show n)
       (move n 'left 'middle 'right))))
@@ -3168,7 +3124,7 @@
 (define *equal?
   (lambda (x y)
     (cond
-      [(and (var? x) (var? y)) (eq? x y)]
+      [(and (var? x) (var? y)) (eqv? x y)]
       [(var? x) #f]                     ; y is not a var
       [(var? y) #f]                     ; x is not a var
       [else (equal? x y)])))
@@ -3622,7 +3578,7 @@
   (lambda (term)
     (let loop ([term term] [fv '()])
       (cond
-        [(var? term) (if (memv term fv) fv (cons term fv))]
+        [(var? term) (if (memq term fv) fv (cons term fv))]
         [(pair? term) (loop (cdr term) (loop (car term) fv))]
         [else fv]))))
 
@@ -3807,8 +3763,7 @@
 		  (fact () '(goal t1))
 		  (fact () '(goal t2))
 		  (mirror-axiom-eq-2 kb)
-		  (goal-rev kb)
-		  )))))
+		  (goal-rev kb))))))
       (let ((kb1 (goal-fwd kb)))
 	(kb1 '(goal (root t1 t2)))))))
 
@@ -3818,13 +3773,5 @@
 ; The output above is a non-empty list: meaning that the inductive
 ; phase of the proof checks.
 
-(exit 0)
-
-;;; For future thoughts.
-
-(define-syntax fun-call*
-  (syntax-rules ()
-    [(_ f u ...)
-     (lambda (subst) 
-       ((nonvar! (subst-in f subst)) (nonvar! (subst-in u subst)) ...))]))
+;(exit 0)
 
