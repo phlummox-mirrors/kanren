@@ -7,7 +7,7 @@
    (title "A declarative logic programming system")
    (description "An applicative logic programming system with a
 declarative set-theoretical semantics, and its applications")
-   (Date-Revision-yyyymmdd "20040507")
+   (Date-Revision-yyyymmdd "20040820")
    (Date-Creation-yyyymmdd "20040121")
    (keywords "Logic Programming, meta-logic programming, relations,
 iterative deepening, proof assistant, Scheme")
@@ -27,7 +27,6 @@ iterative deepening, proof assistant, Scheme")
      ;("News" "http://sourceforge.net/news/?group_id=99654")
      ;("Related" "#KANREN-related")
      )
-
 
 
    (page-title)
@@ -105,6 +104,17 @@ truly write the equivalence axioms, including the symmetry axiom
      (dt (cvs-ref "examples/deduction.scm"))
      (dd "Proving the Deduction Theorem for Hilbert Propositional Calculus
  by induction. The example also demonstrates generating inductive hypotheses.")
+
+     (dt (cvs-ref "examples/pure-bin-arithm.scm"))
+     (dd "Pure, declarative, and constructive binary arithmetics:
+Addition, multiplication, division with the remainder as sound and
+complete, " (em "pure") ", declarative relations that can be used in
+any mode and that recursively enumerate their domains. The relations
+define arithmetics over base-2 non-negative numerals of " (em
+"arbitrary") " size. If " (code "z") " is instantiated but " (code
+"x") " and " (code "y") " are not, " (code "(++o x y z)") " delivers
+all non-negative numbers that add to " (code "z") " and " (code "(**o
+x y z)") " computes " (em "all") " factorizations of " (code "z") ".")
 
      (dt (cvs-ref "benchmarks/"))
      (dd "Standard Prolog benchmarks: nrev, query, qsort, queens, etc. --

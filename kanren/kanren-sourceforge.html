@@ -9,7 +9,7 @@ declarative set-theoretical semantics, and its applications">
 <meta name="AuthorAddress" content="oleg-at-okmij.org">
 <meta name="keywords" content="Logic Programming, meta-logic programming, relations,
 iterative deepening, proof assistant, Scheme">
-<meta name="Date-Revision-yyyymmdd" content="20040507">
+<meta name="Date-Revision-yyyymmdd" content="20040820">
 <meta name="Date-Creation-yyyymmdd" content="20040121"></head><body bgcolor="#FFFFFF">
 
 <p>
@@ -98,6 +98,26 @@ truly write the equivalence axioms, including the symmetry axiom
 <dd>Proving the Deduction Theorem for Hilbert Propositional Calculus
  by induction. The example also demonstrates generating inductive hypotheses.</dd>
 <dt>
+<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/pure-bin-arithm.scm">
+<code>examples/pure-bin-arithm.scm</code></a></dt>
+<dd>Pure, declarative, and constructive binary arithmetics:
+Addition, multiplication, division with the remainder as sound and
+complete, 
+<em>pure</em>, declarative relations that can be used in
+any mode and that recursively enumerate their domains. The relations
+define arithmetics over base-2 non-negative numerals of 
+<em>arbitrary</em> size. If 
+<code>z</code> is instantiated but 
+<code>x</code> and 
+<code>y</code> are not, 
+<code>(++o x y z)</code> delivers
+all non-negative numbers that add to 
+<code>z</code> and 
+<code>(**o
+x y z)</code> computes 
+<em>all</em> factorizations of 
+<code>z</code>.</dd>
+<dt>
 <a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/benchmarks/">
 <code>benchmarks/</code></a></dt>
 <dd>Standard Prolog benchmarks: nrev, query, qsort, queens, etc. --
@@ -157,7 +177,7 @@ validation tests, as well as several sample applications.</p>
 <br>
 <div>
 <hr></div>
-<h3>Last updated May 7, 2004</h3>
+<h3>Last updated August 20, 2004</h3>
 <div>
 <address>oleg-at-pobox.com or oleg-at-acm.org or oleg-at-computer.org
 <br>Your comments, problem reports, questions are very welcome!</address></div>
