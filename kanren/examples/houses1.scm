@@ -42,44 +42,44 @@
       (pos 'allison n1)
       (project (n1)
 	(all
-	  (predicate () (> n1 2))
+	  (predicate (> n1 2))
 	  (pos 'adrienne n2)
 	  (project (n2)
 	    (all
 	      (any
-	        (predicate () (= n2 (+ n1 1)))
-	        (predicate () (= n2 (- n1 1))))
+	        (predicate (= n2 (+ n1 1)))
+	        (predicate (= n2 (- n1 1))))
 	      (pos 'belinda n3)
 	      (project (n3)
 		(all
-		  (predicate () (> n3 5))
+		  (predicate (> n3 5))
 		  (pos 'benito n4)
 		  (project (n4)
 		    (all
 		      (any
-		        (predicate () (= n4 (+ n3 2)))
-		        (predicate () (= n4 (- n3 2))))
+		        (predicate (= n4 (+ n3 2)))
+		        (predicate (= n4 (- n3 2))))
 		      (pos 'cheri n5)
 		      (project (n5)
 			(all
-			  (predicate () (> n5 n4))
+			  (predicate (> n5 n4))
 		          (pos 'crawford n6)
 			  (project (n6)
 			    (all
 			      (any
-                		(predicate () (= n6 (+ n5 3)))
-		                (predicate () (= n6 (- n5 3))))
+                		(predicate (= n6 (+ n5 3)))
+		                (predicate (= n6 (- n5 3))))
 	                      (pos 'daryl n7)
 			      (project (n7)
 				(all
-			          (predicate () (< n7 4))
+			          (predicate (< n7 4))
 				  (pos 'don n8)
 				  (project (n8)
 				    (all
 			              (any
-             		                (predicate () (= n8 (+ n7 4)))
-		                        (predicate () (= n8 (- n7 4))))
-				      (predicate ()
+             		                (predicate (= n8 (+ n7 4)))
+		                        (predicate (= n8 (- n7 4))))
+				      (predicate
 		                        (no-dups
 					  (sort <
 					    `(,n1 ,n2 ,n3 ,n4 ,n5 ,n6 ,n7 ,n8)))))))))))))))))))))))
