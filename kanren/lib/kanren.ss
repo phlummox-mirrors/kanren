@@ -1,38 +1,20 @@
-; (module aaa)
-; (define (printf . args) (apply print args))
-; (define-record-type *var* (make-var name) var? (name var-name))
-; (define (print-gensym flag) #f)
-; (define (remv el lst)
-;   (let loop ((lst lst))
-;     (cond
-;       ((null? lst) lst)
-;       ((eqv? el (car lst)) (loop (cdr lst)))
-;       (else (cons (car lst) (loop (cdr lst)))))))
-; (define pretty-print pp)
-; (define (time . args) #f)
+;;;; Can you send me this translated using the latest version
+;;;; of our logic system, below.  This is commented out in the
+;;;; the code below.  That's where I would like for you to put
+;;;; the answer.
 
-; (define-syntax trace-lambda
-;   (syntax-rules ()
-;     [(_ name (formal0 formal1 ...) body0 body1 ...)
-;       (lambda (formal0 formal1 ...)
-; 	(print "\nTrace-lambda: " 'name)
-; 	(begin  body0 body1 ...))]))
+;;;; Please send back all the code.
+;;;; .... Dan
 
-; (define (OS:time::double)
-;   (pragma::double "time(0)"))
-
-; (define (statistics)
-;   (vector
-;     #f
-;     (OS:time) ; CPU-time
-;     ))
+;-----------------------------------/-----------------------------
 
 ;(load "plshared.ss")
 
-(define-syntax exists ;;; can never change this to a lets
+(define-syntax exists
   (syntax-rules ()
-    [(_ (name ...) body0 body1 ...)
-     (let ([name (var 'name)] ...) body0 body1 ...)]))
+    [(_ () body0 body1 ...) (begin body0 body1 ...)]
+    [(_ (id ...) body0 body1 ...)
+     (let ([id (var 'id)] ...) body0 body1 ...)]))
 
 (define-syntax lambda@
   (syntax-rules ()
@@ -54,23 +36,23 @@
 
 (printf "~s ~s~%" 'test-@-lambda@ (test-@-lambda@))
 
-(define-record var (name) ())
+(define-record var (id) ())
 (define var make-var)
 
 (print-gensym #f)
 ; (define var
-;   (lambda (name)
-;     (cons 'var name)))
+;   (lambda (id)
+;     (cons 'var id)))
 ; (define var?
 ;   (lambda (x)
 ;     (and (pair? x) (eqv? (car x) 'var))))
-; (define var-name
+; (define var-id
 ;   (lambda (x)
-;     (if (var? x) (cdr x) (error 'var-name "Invalid Logic Variable: ~s" x))))
+;     (if (var? x) (cdr x) (error 'var-id "Invalid Logic Variable: ~s" x))))
 ;;; ------------------------------------------------------
 
-(define commitment list)             ;;; change to cons
-(define commitment->term cadr)       ;;; and change to cdr
+(define commitment cons)             ;;; change to list
+(define commitment->term cdr)       ;;; and change to cadr
 (define commitment->var car)
 
 (define empty-subst '())
@@ -193,51 +175,37 @@
 
 ;(load "expand-only.ss")
 
-;;;; quasiquote has been coded by Oscar Waddell.
-; (define-syntax quasiquote
-;   (let ([tmplid #'barney-the-purple-dinosaur])
-;     (lambda (x)
-;       (import scheme)
-;       (define lexical?
-;         (lambda (id)
-;           (not
-;             (free-identifier=? id
-;               (datum->syntax-object tmplid
-;                 (syntax-object->datum id))))))
-;       (define check
-;         (lambda (x)
-;           (syntax-case x (unquote unquote-splicing)
-;             [(unquote e) (void)]
-;             [(unquote-splicing e) (void)]
-;             [(,e . rest) (check #'rest)]
-;             [(,@e . rest) (check #'rest)]
-;             [(car . cdr) (begin (check #'car) (check #'cdr))]
-;             [id
-;              (identifier? #'id)
-;              (when (lexical? #'id)
-;                (parameterize ([error-handler (warning-handler)]
-;                               [reset-handler values])
-;                  (syntax-error #'id "looks like you're missing , or ,@ on")))]
-;             [other (void)])))
-;       (syntax-case x ()
-;         [(_ . whatever)
-;          (begin
-;            (check #'whatever)
-;            #'(quasiquote . whatever))]))))
-
-'(define write
-  (lambda (x . p)
-    (if (null? p)
-      (begin
-        (pretty-print x)
-        (newline))
-      (begin
-        (pretty-print x (car p))
-        (newline (car p))))))
-
-'(define-syntax define
-  (syntax-rules ()
-    [(_ x y) (begin (write 'x) (newline) (set! x y))]))
+;quasiquote has been coded by Oscar Waddell.
+(define-syntax quasiquote
+  (let ([tmplid #'barney-the-purple-dinosaur])
+    (lambda (x)
+      (import scheme)
+      (define lexical?
+        (lambda (id)
+          (not
+            (free-identifier=? id
+              (datum->syntax-object tmplid
+                (syntax-object->datum id))))))
+      (define check
+        (lambda (x)
+          (syntax-case x (unquote unquote-splicing)
+            [(unquote e) (void)]
+            [(unquote-splicing e) (void)]
+            [(,e . rest) (check #'rest)]
+            [(,@e . rest) (check #'rest)]
+            [(car . cdr) (begin (check #'car) (check #'cdr))]
+            [id
+              (identifier? #'id)
+              (when (lexical? #'id)
+                (parameterize ([error-handler (warning-handler)]
+                               [reset-handler values])
+                  (syntax-error #'id "looks like you're missing , or ,@ on")))]
+            [other (void)])))
+      (syntax-case x ()
+        [(_ . whatever)
+         (begin
+           (check #'whatever)
+           #'(quasiquote . whatever))]))))
 
 (define-syntax let-values
   (syntax-rules ()
@@ -260,12 +228,12 @@
     (cond
       [(assv var env)
        => (lambda (var-c)
-            (values (artificial-name var-c) env))]
+            (values (artificial-id var-c) env))]
       [else (let ([var-c `(,var . ,(cond
-                                     [(assv/var-name (var-name var) env)
+                                     [(assv/var-id (var-id var) env)
                                       => (lambda (var-c) (+ (cdr var-c) 1))]
                                      [else 0]))])
-              (values (artificial-name var-c) (cons var-c env)))])))
+              (values (artificial-id var-c) (cons var-c env)))])))
 
 (define concretize-term ;;; assumes no pairs; returns two values.
   (lambda (t env)
@@ -290,25 +258,25 @@
     (lambda (subst)
       (cs subst '()))))
 
-(define artificial-name
+(define artificial-id
   (lambda (var-c)
     (string->symbol
       (string-append
-        (symbol->string (var-name (car var-c))) "." (number->string (cdr var-c))))))
+        (symbol->string (var-id (car var-c))) "." (number->string (cdr var-c))))))
 
-(define assv/var-name
-  (lambda (name env)
+(define assv/var-id
+  (lambda (id env)
     (cond
       [(null? env) #f]
-      [(eqv? (var-name (caar env)) name) (car env)]
-      [else (assv/var-name name (cdr env))])))
+      [(eqv? (var-id (caar env)) id) (car env)]
+      [else (assv/var-id id (cdr env))])))
 
 (define-syntax trace-lambda@
   (syntax-rules ()
-    [(_ name () body0 body1 ...) (begin body0 body1 ...)]
-    [(_ name (formal0 formal1 ...) body0 body1 ...)
-     (trace-lambda name (formal0)
-       (trace-lambda@ name (formal1 ...) body0 body1 ...))]))
+    [(_ id () body0 body1 ...) (begin body0 body1 ...)]
+    [(_ id (formal0 formal1 ...) body0 body1 ...)
+     (trace-lambda id (formal0)
+       (trace-lambda@ id (formal1 ...) body0 body1 ...))]))
 
 (define empty-subst? null?)
 
@@ -364,6 +332,7 @@
 (printf "~s ~s~%" 'test-compose-subst-4 (test-compose-subst-4))
 
 (define initial-fk (lambda () '()))
+(define initial-cutk initial-fk)
 (define initial-sk (lambda@ (fk subst cutk) (cons (cons subst cutk) fk)))
 
 (define-syntax binary-extend-relation
@@ -391,11 +360,19 @@
        (lambda (id ...)
          (lambda@ (sk fk subst cutk)
            (let ([ant1 (rel1 id ...)] [ant2 (rel2 id ...)])
-             ((interleave sk fk)
+             ((interleave sk fk (finish-interleave sk fk))
               (@ ant1 initial-sk initial-fk subst cutk)
               (@ ant2 initial-sk initial-fk subst cutk))))))]))
 
-(define interleave
+; 	c(A,tuple(A,C,B),C,dict2).
+; 	c(A,tuple(X,Y,B),C,dict1) :- c(A,B,C,_).
+; Had I switched the order,
+; 	c(A,tuple(X,Y,B),C,dict1) :- c(A,B,C,_).
+; 	c(A,tuple(A,C,B),C,dict2).
+; the queries would have never terminated. That's where our
+; extend-relation-interleave would be quite handy.
+
+(define finish-interleave
   (lambda (sk fk)
     (letrec
       ([finish
@@ -403,8 +380,13 @@
            (cond
              [(null? q) (fk)]
              [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
-                     (@ sk (lambda () (finish (fk))) subst cutk))]))]
-       [interleave
+                     (@ sk (lambda () (finish (fk))) subst cutk))]))])
+      finish)))
+
+(define interleave
+  (lambda (sk fk finish)
+    (letrec
+      ([interleave
          (lambda (q1 q2)
            (cond
              [(null? q1) (if (null? q2) (fk) (finish q2))]
@@ -456,86 +438,85 @@
      (binary-extend-relation (id ...) rel-exp0
        (extend-relation (id ...) rel-exp1 ...))]))
 
-(define-syntax all!
-  (syntax-rules ()
-    [(_) (lambda (sk) sk)]
-    [(_ ant) ant]
-    [(_ ant0 ant1 ...)
-     (lambda@ (sk fk)
-       (letrec-syntax
-	 ((splice-in-ants 
-	    (syntax-rules ()
-	      ((_) sk)
-	      ((_ ant . other-ants)
-	       (lambda (ign-fk)
-		 (@ ant (splice-in-ants . other-ants) fk))))
-	    ))
-	 (@ ant0 (splice-in-ants ant1 ...) fk)))]
-    ))
-
-
-(define-syntax relation
-  (syntax-rules (to-show _)
-    [(_ short-cut (ex ...) (to-show x ...) ant ...)
-     (relation short-cut (ex ...) () (x ...) (x ...) ant ...)]
-    ; a particular instance of the full form below. No ants.
-    ; no need to reify cuts.
-    [(_ short-cut (ex ...) (g ...) () (x ...))
-     (lambda (g ...)
-       (exists (ex ...)
-	 (all! (== g x) ...)))]
-    ; A particular instance of the full form below where we don't care
-    ; about the cut
-    [(_ _ (ex ...) (g ...) () (x ...) ant ...)
-     (lambda (g ...)
-       (exists (ex ...)
-	 (all! (== g x) ... (all ant ...))))]
-    ; the full form
-    [(_ short-cut (ex ...) (g ...) () (x ...) ant ...)
-     (lambda (g ...)
-       (exists (ex ...)
-	 (lambda@ (sk fk subst cutk)
-	   (let ((short-cut (!! cutk)))
-	     (@ (all! (== g x) ... (all ant ...)) sk fk subst cutk)))))]
-    [(_ short-cut exs (var ...) (x0 x1 ...) xs ant ...)
-     (relation short-cut exs (var ... g) (x1 ...) xs ant ...)]))
-
-(define-syntax trace-relation
-  (syntax-rules (to-show)
-    [(_ name short-cut (ex ...) (to-show x ...) ant ...)
-     (trace-relation-aux name short-cut (ex ...) () (x ...) (x ...) ant ...)]))
-
-(define-syntax trace-relation-aux
-  (syntax-rules ()
-    [(_ name short-cut (ex ...) (g ...) () (x ...) ant ...)
-     (trace-lambda name (g ...)
-       (reify-cutters
-         (lambda (next short-cut)
-           (exists (ex ...)
-             (all (all! (next) (== x g) ...) ant ...)))))]
-    [(_ name short-cut exs (var ...) (x0 x1 ...) xs ant ...)
-     (trace-relation-aux name short-cut exs (var ... g) (x1 ...) xs ant ...)]))
-
-(define-syntax fact
-  (syntax-rules ()
-    [(_ (ex ...) x ...)
-     (relation cut (ex ...) (to-show x ...))]))
-
 (define-syntax all
   (syntax-rules ()
     [(_) (lambda (sk) sk)]
     [(_ ant) ant]
     [(_ ant0 ant1 ...)
      (lambda@ (sk)
-       (letrec-syntax
-	 ((splice-in-ants 
-	    (syntax-rules ()
-	      ((_) sk)
-	      ((_ ant . other-ants)
-		(ant (splice-in-ants . other-ants)))))
-	    )
-	 (ant0 (splice-in-ants ant1 ...))))]
-    ))
+       (ant0 (splice-in-ants/all sk ant1 ...)))]))
+
+(define-syntax splice-in-ants/all
+  (syntax-rules ()
+    [(_ sk ant) (ant sk)]
+    [(_ sk ant0 ant1 ...)
+     (ant0 (splice-in-ants/all sk ant1 ...))]))
+
+(define-syntax all!
+  (syntax-rules ()
+    [(_) (lambda (sk) sk)]
+    [(_ ant) ant]
+    [(_ ant0 ant1 ...)
+     (lambda@ (sk fk)
+       (@ ant0 (splice-in-ants/all! sk fk ant1 ...) fk))]))
+
+(define-syntax splice-in-ants/all!
+  (syntax-rules ()
+    [(_ sk fk ant)
+     (lambda (ign-fk)
+       (@ ant sk fk))]
+    [(_ sk fk ant0 ant1 ...)
+     (lambda (ign-fk)
+       (@ ant0 (splice-in-ants/all! sk fk ant1 ...) fk))]))
+
+(define-syntax relation
+  (syntax-rules (to-show _)
+    [(_ cut-id (ex-id ...) (to-show x ...) ant ...)
+     (relation cut-id (ex-id ...) () (x ...) (x ...) ant ...)]
+    [(_ cut-id (ex-id ...) (g ...) () (x ...))
+     (lambda (g ...)
+       (exists (ex-id ...)
+	 (all! (== g x) ...)))]
+    [(_ _ (ex-id ...) (g ...) () (x ...) ant ...)
+     (lambda (g ...)
+       (exists (ex-id ...)
+	 (all! (== g x) ... (all ant ...))))]
+    [(_ cut-id (ex-id ...) (g ...) () (x ...) ant ...)
+     (lambda (g ...)
+       (exists (ex-id ...)
+         (all! (== g x) ...
+           (lambda@ (sk fk subst cutk)
+             (let ([cut-id (!! cutk)])
+               (@ (all ant ...) sk fk subst cutk))))))]
+    [(_ cut-id ex-ids (var ...) (x0 x1 ...) xs ant ...)
+     (relation cut-id ex-ids (var ... g) (x1 ...) xs ant ...)]))
+
+(define-syntax trace-relation
+  (syntax-rules (to-show _)
+    [(_ id cut-id (ex-id ...) (to-show x ...) ant ...)
+     (trace-relation id cut-id (ex-id ...) () (x ...) (x ...) ant ...)]
+    [(_ id cut-id (ex-id ...) (g ...) () (x ...))
+     (trace-lambda id (g ...)
+       (exists (ex-id ...)
+	 (all! (== g x) ...)))]
+    [(_ id _ (ex-id ...) (g ...) () (x ...) ant ...)
+     (trace-lambda id (g ...)
+       (exists (ex-id ...)
+	 (all! (== g x) ... (all ant ...))))]
+    [(_ id cut-id (ex-id ...) (g ...) () (x ...) ant ...)
+     (trace-lambda id (g ...)
+       (exists (ex-id ...)
+         (all! (== g x) ...
+           (lambda@ (sk fk subst cutk)
+             (let ([cut-id (!! cutk)])
+               (@ (all ant ...) sk fk subst cutk))))))]
+    [(_ id cut-id ex-ids (var ...) (x0 x1 ...) xs ant ...)
+     (trace-relation id cut-id ex-ids (var ... g) (x1 ...) xs ant ...)]))
+
+(define-syntax fact
+  (syntax-rules ()
+    [(_ (ex-id ...) x ...)
+     (relation _ (ex-id ...) (to-show x ...))]))
 
 (define !!
   (lambda (exiting-fk)
@@ -551,8 +532,7 @@
 
 (define father  
   (relation _ ()
-    (to-show 'john 'sam)
-    (all)))
+    (to-show 'john 'sam)))
 
 (printf "~s ~s~%" 'test-father0
   (let ([result
@@ -581,8 +561,7 @@
 
 (define pete/sal
   (relation _ ()
-    (to-show 'pete 'sal)
-    (all)))
+    (to-show 'pete 'sal)))
 
 (define new-father
   (extend-relation (a1 a2) father pete/sal))
@@ -638,8 +617,7 @@
 
 (define pete/pat
   (relation _ ()
-    (to-show 'pete 'pat)
-    (all)))
+    (to-show 'pete 'pat)))
 
 (define newer-father
   (extend-relation (a1 a2) new-father pete/pat))
@@ -698,38 +676,9 @@
             (concretize-sequence (subst-in t0 (car subst/cutk)) ...))
        (stream-prefix (- n 1) (query (rel t0 ...))))]))
 
-(define (split-srel srel)
-  (@ srel
-    (lambda@ (fk subst cutk a b)
-      (@ a subst 
-	(lambda@ (sk1 fk1)
-	  (@
-	    (fk) 
-	    ; new a
-	    (lambda@ (sub11 x) (@ sk1 (lambda () (@ x sk1 fk1)) sub11 cutk))
-	    ; new b
-	    fk1))))
-    (lambda () (lambda@ (a b) (b)))))
-
-(define-syntax solve
-  (syntax-rules ()
-    [(_ _n (rel t0 ...))
-     (let ((srel
-	     (lambda@ (sk fk)
-	       (@ (rel t0 ...) sk fk '() fk))))
-       (let loop ((n _n) (srel srel))
-	 (if (zero? n) '()
-	   (@ (split-srel srel)
-	     (lambda@ (subst srel)
-	       (cons
-		 (concretize-sequence (subst-in t0 subst) ...)
-		 (loop (- n 1) srel)))
-	     (lambda () '())))))]))
-
 (define sam/pete
   (relation _ ()
-    (to-show 'sam 'pete)
-    (all)))
+    (to-show 'sam 'pete)))
 
 (define newest-father (extend-relation (a1 a2) newer-father sam/pete))
 
@@ -746,23 +695,11 @@
             
 (printf "~s ~s~%" 'test-father-6/solve (test-father-6/solve))
 
-'(define-syntax solution
+(define-syntax solution
   (syntax-rules ()
     [(_ x)
      (let ([ls (solve 1 x)])
        (if (null? ls) #f (car ls)))]))
-
-(define-syntax solution
-  (syntax-rules ()
-    [(_ (rel t0 ...))
-      (@
-       (rel t0 ...)
-       (lambda@ (fk subst cutk)
-	 (concretize-sequence (subst-in t0 subst) ...))
-       (lambda () #f)
-       '()
-       (lambda () #f)
-	)]))
 
 (define test-father-7/solution
   (lambda ()
@@ -789,35 +726,10 @@
 
 (printf "~s ~s~%" 'test-grandpa-sam-1 (test-grandpa-sam-1))
 
-(define-syntax all
-  (syntax-rules ()
-    [(_) (lambda (sk) sk)]
-    [(_ ant0) ant0]
-    [(_ ant0 ant1 ...)
-     (lambda (sk)
-       (ant0 ((all ant1 ...) sk)))]))
-
 (define-syntax any
   (syntax-rules ()
     [(_ ant ...)
      ((extend-relation () (relation _ () (to-show) ant) ...))]))
-
-; Compare with all!
-(define-syntax any
-  (syntax-rules ()
-    ((_) (lambda@ (sk fk subst cutk) (fk))) ; or fail
-    ((_ ant) ant)
-    ((_ ant0 ant1 ...)
-     (lambda@ (sk fk subst cutk)
-       (letrec-syntax
-	 ((splice-in-ants 
-	    (syntax-rules ()
-	      ((_) fk)
-	      ((_ ant . other-ants)
-	       (lambda ()
-		 (@ ant sk (splice-in-ants . other-ants) subst cutk))))
-	    ))
-	 (@ ant0 sk (splice-in-ants ant1 ...) subst cutk))))))
 
 (define child
   (relation _ (child dad)
@@ -905,11 +817,11 @@
 
 (define-syntax fact
   (syntax-rules ()
-    [(_ (var ...) x ...) (relation _ (var ...) (to-show x ...) (all))]))
+    [(_ (var ...) x ...) (relation _ (var ...) (to-show x ...))]))
 
 (define-syntax trace-fact
   (syntax-rules ()
-    [(_ name (var ...) x ...) (trace-relation name (to-show (var ...) x ...) (all))]))
+    [(_ id (var ...) x ...) (trace-relation id (to-show (var ...) x ...))]))
 
 (define father
   (extend-relation (a1 a2)
@@ -1135,12 +1047,12 @@
 (printf "~s ~s~%" 'test-grandpa-11 (test-grandpa-11))
 
 (define check
-  (lambda (name f)
+  (lambda (id f)
     (lambda term
       (if (not (procedure? f))
-          (error name "Non-procedure found: ~s" f))
+          (error id "Non-procedure found: ~s" f))
       (if (ormap var? term)
-          (error name "Variable found: ~s" term))
+          (error id "Variable found: ~s" term))
       (apply f term))))
 
 (define test-grandpa-12
@@ -1413,7 +1325,7 @@
          (extend-relation (a1 a2 a3 a4)
            (relation cut ()
              (to-show 0 _ _ _)
-             (all cut))
+             cut)
            (relation _ (n a b c)
              (to-show n a b c)
              (exists (m)
@@ -1427,7 +1339,7 @@
       (to-show n)
       (move n 'left 'middle 'right))))
 
-'(begin
+(begin
   (printf "~s with 3 disks~n~n" 'test-towers-of-hanoi)
   (solution (towers-of-hanoi 3))
   (void))
@@ -1611,7 +1523,7 @@
            (extend-relation (a1 a2 a3 a4)
              (relation cut ()
                (to-show 0 _ _ _)
-               (all cut))
+               cut)
              (relation _ (n a b c)
                (to-show n a b c)
                (exists (m)
@@ -2022,7 +1934,7 @@
   (extend-relation (a1 a2 a3)
     (fact (xs) '() xs xs)
     (relation _ (x xs ys zs)
-      (to-show (cons x xs) ys (cons x zs))
+      (to-show `(,x . ,xs) ys `(,x . ,zs))
       (concat xs ys zs))))
 
 (define test-concat
@@ -2169,7 +2081,7 @@
                 [(assv t env)
                  => (lambda (pr)
                       (values (cdr pr) env))]
-                [else (let ([new-var (var (var-name t))])
+                [else (let ([new-var (var (var-id t))])
                         (values new-var (cons `(,t . ,new-var) env)))])]
              [(pair? t)
               (let-values (a-t env) (instantiate-term (car t) env)
@@ -2554,46 +2466,42 @@
       ([!- (extend-relation (a1 a2 a3)
              (relation _ (g v t)
                (to-show g `(var ,v) t)
-               (all (!! long-cut) (env g v t)))
-             (relation _ (g x)
-               (to-show g `(intc ,x) int)
-               )
-             (relation _ (g x)
-               (to-show g `(boolc ,x) bool)
-               )
+               (all long-cut (env g v t)))
+             (fact (g x) g `(intc ,x) int)
+             (fact (g x) g `(boolc ,x) bool)
              (relation _ (g x)
                (to-show g `(zero? ,x) bool)
-               (all (!! long-cut) (!- g x int)))
+               (all long-cut (!- g x int)))
              (relation _ (g x)
                (to-show g `(sub1 ,x) int)
-               (all (!! long-cut) (!- g x int)))
+               (all long-cut (!- g x int)))
              (relation _ (g x y)
                (to-show g `(+ ,x ,y) int)
-               (all (!! long-cut) (all! (!- g x int) (!- g y int))))
+               (all long-cut (all! (!- g x int) (!- g y int))))
              (relation _ (g t test conseq alt)
                (to-show g `(if ,test ,conseq ,alt) t)
-               (all (!! long-cut)
+               (all long-cut
 		 (all! (!- g test bool) (!- g conseq t) (!- g alt t))))
              (relation _ (g v t body type-v)
                (to-show g `(lambda (,v) ,body) `(--> ,type-v ,t))
-               (all (!! long-cut) (!- `(non-generic ,v ,type-v ,g) body t)))
+               (all long-cut (!- `(non-generic ,v ,type-v ,g) body t)))
              (relation _ (g t rand rator)
                (to-show g `(app ,rator ,rand) t)
                (exists (t-rand)
-                 (all (!! long-cut)
+                 (all long-cut
 		   (all!
-                   (!- g rator `(--> ,t-rand ,t))
-                   (!- g rand t-rand)))))
+                     (!- g rator `(--> ,t-rand ,t))
+                     (!- g rand t-rand)))))
              (relation _ (g rand t)
                (to-show g `(fix ,rand) t)
-               (all (!! long-cut) (!- g rand `(--> ,t ,t))))
+               (all long-cut (!- g rand `(--> ,t ,t))))
              (relation _ (g v rand body t)
                (to-show g `(let ([,v ,rand]) ,body) t)
                (exists (t-rand)
-                 (all (!! long-cut)
+                 (all long-cut
 		   (all!
-                   (!- g rand t-rand)
-                   (!- `(generic ,v ,t-rand ,g) body t))))))])
+                     (!- g rand t-rand)
+                     (!- `(generic ,v ,t-rand ,g) body t))))))])
       !-)))
 
 (define !-
@@ -2762,13 +2670,13 @@
 (pretty-print (exists (x y) (solve 5 (grandpa-sam 'sal))))
 
 (define father-pete-sal
-  (relation cut () (to-show 'pete 'sal) (all)))
+  (relation cut () (to-show 'pete 'sal)))
 
 (define father-sam-pete
-  (relation cut () (to-show 'sam 'pete) (all)))
+  (relation cut () (to-show 'sam 'pete)))
 
 (define father-johh-sam
-  (relation cut () (to-show 'john 'sam) (all)))
+  (relation cut () (to-show 'john 'sam)))
 
 (define father (extend-relation (a1 a2) father-john-sam father-sam-pete father-pete-sal))
 
@@ -2904,187 +2812,6 @@
 	 (a1 a2) Rinf2 Rinf) x y))))
 
 
-
-; Better examples.
-; Extending relations in truly mathematical sense.
-
-; R1 and R2 are overlapping
-(define R1 (extend-relation (a) 
-	     (fact () '(i))
-	     (fact () '(i i))))
-(define R2 (extend-relation (a) 
-	     (fact () '(i))
-	     (fact () '(i i i))))
-
-(printf "~%R1:~%")
-(pretty-print (exists (x) (solve 10 (R1 x))))
-(printf "~%R2:~%")
-(pretty-print (exists (x) (solve 10 (R2 x))))
-(printf "~%R1+R2:~%")
-(pretty-print 
-  (exists (x) (solve 10 
-		  ((extend-relation (a) R1 R2) x))))
-(printf "~%R1+R1:~%")
-(pretty-print 
-  (exists (x) (solve 10 
-		  ((extend-relation (a) R1 R1) x))))
-
-
-; Infinitary relation: even numbers (Peano-Church numerals)
-
-(define Reven
-  (extend-relation (a)
-    (fact () '())
-    (relation _ (x)
-      (to-show `(i i . ,x))
-      (Reven x)
-      )
-    ))
-(printf "~%Reven:~%")
-(pretty-print (exists (x) (solve 5 (Reven x))))
-(printf "~%Reven+R2: Reven starves R2:~%")
-(pretty-print 
-  (exists (x) (solve 5
-		  ((extend-relation (a) Reven R2) x))))
-
-; Solving the starvation problem: extend R1 and R2 so that they
-; are interleaved
-
-(printf "~%binary-extend-relation-interleave~%")
-(printf "~%Reven+R2:~%")
-(pretty-print 
-  (exists (x) (solve 5
-		  ((binary-extend-relation-interleave (a) Reven R2) x))))
-(printf "~%R2+Reven:~%")
-(pretty-print 
-  (exists (x) (solve 5
-		  ((binary-extend-relation-interleave (a) R2 Reven) x))))
-(printf "~%Reven+R1:~%")
-(pretty-print 
-  (exists (x) (solve 5
-		  ((binary-extend-relation-interleave (a) Reven R1) x))))
-
-(printf "~%R2+R1:~%")
-(pretty-print 
-  (exists (x) (solve 7
-		  ((binary-extend-relation-interleave (a) R2 R1) x))))
-
-;;; Test for nonoverlapping.
-
-(printf "~%binary-extend-relation-interleave-non-overlap~%")
-(printf "~%R1+R2:~%")
-(pretty-print 
-  (exists (x) (solve 10 
-	 ((binary-extend-relation-interleave-non-overlap (a) R1 R2) x))))
-(printf "~%R1+R1:~%")
-(pretty-print 
-  (exists (x) (solve 10 
-	 ((binary-extend-relation-interleave-non-overlap (a) R1 R1) x))))
-
-(printf "~%Reven+R1:~%")
-(pretty-print 
-  (exists (x)
-    (solve 7
-      ((binary-extend-relation-interleave-non-overlap (a) Reven R1) x))))
-(printf "~%R1+Reven:~%")
-(pretty-print 
-  (exists (x) 
-    (solve 7
-      ((binary-extend-relation-interleave-non-overlap (a) R1 Reven) x))))
-
-; Infinitary relation Rdivby3
-; Reven overlaps with Rdivby3 in the infinite number of points
-
-(define Rdivby3
-  (extend-relation (a)
-    (fact () '())
-    (relation _ (x)
-      (to-show `(i i i . ,x))
-      (Rdivby3 x)
-      )
-    ))
-
-(printf "~%Rdivby3:~%")
-(pretty-print (exists (x) (solve 7 (Rdivby3 x))))
-(printf "~%Reven+Rdivby3~%")
-(pretty-print 
-  (exists (x)
-    (solve 9
-      ((binary-extend-relation-interleave-non-overlap 
-	 (a) Reven Rdivby3) x))))
-(printf "~%Rdivby3+Reven~%")
-(pretty-print 
-  (exists (x)
-    (solve 9
-      ((binary-extend-relation-interleave-non-overlap 
-	 (a) Rdivby3 Reven) x))))
-
-
-(define (simplify-rel rel init-subst cutk)
-  (lambda@ (sk fk)
-    (@ rel sk fk init-subst cutk)))
-
-(define (split-srel srel)
-  (@ srel
-    (lambda@ (fk subst cutk a b)
-      (@ a subst 
-	(lambda@ (sk1 fk1)
-	  (@
-	    (fk) 
-	    ; new a
-	    (lambda@ (sub11 x) (@ sk1 (lambda () (@ x sk1 fk1)) sub11 cutk))
-	    ; new b
-	    fk1))))
-    (lambda () (lambda@ (a b) (b)))))
-
-
-(define-syntax binary-extend-relation-interleave1
-  (syntax-rules ()
-    [(_ (id ...) rel-exp1 rel-exp2)
-     (let ([rel1 rel-exp1] [rel2 rel-exp2])
-       (lambda (id ...)
-         (lambda@ (sk fk subst cutk)
-           (let ([ant1 (rel1 id ...)] [ant2 (rel2 id ...)])
-             ((interleave1 sk fk cutk)
-              (simplify-rel ant1 subst cutk)
-              (simplify-rel ant2 subst cutk))))))]))
-
-(define interleave1
-  (lambda (sk fk cutk)
-    (letrec
-      ([finish
-         (lambda (r)
-	   ;(printf "finish~%")
-	   (@ r sk fk))]
-       [interleave
-         (lambda (r1 r2)
-	   ;(printf "working~%")
-	   (@ (split-srel r1)
-	     (lambda@ (subst r1rest)
-	       (@ sk (lambda () (interleave r2 r1rest)) subst cutk))
-	     ;fk: r1 is finished
-	     (lambda () (finish r2))))])
-      interleave)))
-
-(printf "~%binary-extend-relation-interleave1~%")
-(printf "~%Reven+R2:~%")
-(pretty-print 
-  (exists (x) (solve 5
-		  ((binary-extend-relation-interleave1 (a) Reven R2) x))))
-(printf "~%R2+Reven:~%")
-(pretty-print 
-  (exists (x) (solve 5
-		  ((binary-extend-relation-interleave1 (a) R2 Reven) x))))
-(printf "~%Reven+R1:~%")
-(pretty-print 
-  (exists (x) (solve 5
-		  ((binary-extend-relation-interleave1 (a) Reven R1) x))))
-
-(printf "~%R2+R1:~%")
-(pretty-print 
-  (exists (x) (solve 7
-		  ((binary-extend-relation-interleave1 (a) R2 R1) x))))
-
 ; nrev([],[]).
 ; nrev([X|Rest],Ans) :- nrev(Rest,L), append(L,[X],Ans).
 
@@ -3096,51 +2823,31 @@
 ;                            21,22,23,24,25,26,27,28,29,30]).
 
 
-
 (define nrev
   (extend-relation (a1 a2)
     (fact () '() '())
-    (relation _ (x rest ans ls)
-      (to-show (cons x rest) ans)
-      (nrev rest ls)
-      (concat ls (list x) ans))))
+    (relation _ (x rest ans)
+      (to-show `(,x . ,rest) ans)
+      (exists (ls)
+        (all
+          (nrev rest ls)
+          (concat ls `(,x) ans))))))
 
 (define test-nrev
-  (let ((sample '(1 2 3 4 5 6 7 8 9
-		   10 11 12 13 14 15 16 17 18
-		   19 20 21 22 23 24 25 26 27
-		   28 29 30)))
   (lambda ()
-    (equal? (reverse sample)
-      (cadr
-	(time
-	  (exists (x)
-	    (solution (nrev sample x)))))))))
+    (time
+      (exists (x)
+        (solution (nrev '(1 2 3 4 5 6 7 8 9
+                           10 11 12 13 14 15 16 17 18
+                           19 20 21 22 23 24 25 26 27
+                           28 29 30)
+                    x))))))
 
 (printf "Timing test ~s~n" (test-nrev))
 
 (define get_cpu_time
   (lambda ()
     (vector-ref (statistics) 1)))
-
-(let* ((count 10)
-       (time-start (get_cpu_time))
-       (_ (do ((i 0 (+ 1 i))) ((>= i count))
-	    (exists (x)
-	      (solution (nrev '(1 2 3 4 5 6 7 8 9
-				 10 11 12 13 14 15 16 17 18
-				 19 20 21 22 23 24 25 26 27
-				 28 29 30)
-			  x)))))
-       (time-elapsed (- (get_cpu_time) time-start))
-       (lips (/ (* 496 count) (/ time-elapsed 1000.0))) ; time-elapsed in msec
-	)
-  (printf "~%Simplified LIPS: count ~d " count)
-  (printf "elapsed time ~d (msec) " time-elapsed)
-  (printf "LIPS ~d~%" lips)
-  )
-       
-  
 
 (define lots
   (extend-relation ()
@@ -3244,11 +2951,11 @@
       (to-show count time lips 'msecs)
       (exists (t1 t2)
         (all
-          (fun-call * t1 496 count)
+          (fun-call * t1 496 count 1000)
           (fun-call + t2 time 0.0)
           (fun-call / lips t1 t2))))))
 
-(test-lots)
+;(test-lots)
 
 #!eof
 
