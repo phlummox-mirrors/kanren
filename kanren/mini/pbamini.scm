@@ -1,4 +1,4 @@
-;	     Pure, declarative, and constructive binary arithmetics
+;             Pure, declarative, and constructive binary arithmetics
 ;
 ; aka: Addition, Multiplication, Division as always terminating,
 ; pure and declarative relations that can be used in any mode whatsoever.
@@ -8,7 +8,7 @@
 ; aka: division as relation.
 ; The function divo below is a KANREN relation between four binary numerals
 ; n, m, q, and r such that the following holds
-;	exists r. 0<=r<m, n = q*m + r
+;        exists r. 0<=r<m, n = q*m + r
 ;
 ; See pure-arithm.scm in this directory for Peano arithmetics.
 
@@ -57,8 +57,34 @@
 ; Auxiliary functions to build and show binary numerals
 ;
 
-(load "sempublic.scm")
-(define errorf cout)
+(load "sempublic.ss")
+
+(define comp-l
+  (lambda (n m base-comp)
+    (cond@
+      [(== '() n) (base-comp m)]
+      [else
+        (fresh (x y _ __)
+          (== `(,_ . ,x) n)
+          (== `(,__ . ,y) m)
+          (comp-l x y base-comp))])))
+
+; Compare the length of two numerals.  (<ol a b) holds holds if a=0
+; and b>0, or if (floor (log2 a)) < (floor (log2 b)) That is, we
+; compare the length (logarithms) of two numerals For a positive
+; numeral, its bitlength = (floor (log2 n)) + 1
+    
+(define <ol
+  (lambda (n m)
+    (comp-l n m pos)))
+
+
+; holds if both a and b are zero
+; or if (floor (log2 a)) = (floor (log2 b))
+(define =ol
+  (lambda (n m)
+    (comp-l n m (lambda (m) (== '() m)))))
+
 
 (define-syntax succ
   (syntax-rules ()
@@ -68,7 +94,7 @@
        (begin
          e
          (@ (succ e* ...) sk fk s)))]))
-       
+      
 (define-syntax fa
   (syntax-rules ()
     [(_) fail]
@@ -104,32 +130,6 @@
       (== `(,_ . ,__) n)
       (pos __))))
 
-(define comp-l
-  (lambda (n m base-comp)
-    (cond@
-      [(== '() n) (base-comp m)]
-      [else
-        (fresh (x y _ __)
-          (== `(,_ . ,x) n)
-          (== `(,__ . ,y) m)
-          (comp-l x y base-comp))])))
-
-; Compare the length of two numerals.  (<ol a b) holds holds if a=0
-; and b>0, or if (floor (log2 a)) < (floor (log2 b)) That is, we
-; compare the length (logarithms) of two numerals For a positive
-; numeral, its bitlength = (floor (log2 n)) + 1
-    
-(define <ol
-  (lambda (n m)
-    (comp-l n m pos)))
-
-
-; holds if both a and b are zero
-; or if (floor (log2 a)) = (floor (log2 b))
-(define =ol
-  (lambda (n m)
-    (comp-l n m (lambda (m) (== '() m)))))
-
 ; full-adder: carry-in x y r c-out
 ; The relation holds if
 ; carry-in + x + y = r + 2*c-out
@@ -159,6 +159,41 @@
       ((== 0 c-in) (no-carry-adder x y r c-out))
       ((== 1 c-in) (carry-adder x y r c-out))
       (else fail))))
+
+(define adder
+  (lambda (c-in n m k)
+    (cond@
+      [(== '() n) (== '() m)
+       (cond@
+         [(== 0 c-in) (== '() k)]
+         [(== 1 c-in) (== '(1) k)]
+         [else fail])]            
+      [(all (== '() n) (pos m))
+       (cond@
+         [(== 0 c-in) (== m k)]
+         [(== 1 c-in) (adder 0 '(1) m k)]
+         [else fail])]
+      [(all (== '() m) (pos n))
+       (cond@
+         [(== 0 c-in) (== n k)]
+         [(== 1 c-in) (adder 0 n '(1) k)]
+         [else fail])]      
+      [else
+        (fresh (_)
+          (anyi
+        ; Note that we take advantage of the fact that if
+        ; a + b = r and length(b) <= length(a) then length(a) <= length(r)
+            (all (<ol n `(,_ . ,k))                ; or, length(a) < length(2*r)
+              (any (<ol m n) (=ol m n))
+              (adder* c-in n m k)
+              )
+            ; commutative case, length(a) < length(b)
+            (all (<ol m `(,_ . ,k))
+              (<ol n m)
+              (adder* c-in n m k)
+              )
+            ))]
+        )))
 
 ; adder: c-in m n k
 ; holds if c-in + m + n = k
@@ -205,55 +240,6 @@
       ((gt1 n) (gt1 m))
       (else fail))))
 
-
-(define adder
-  (lambda (c-in n m k)
-    (cond@
-      [(== '() n) (== '() m)
-       (cond@
-         [(== 0 c-in) (== '() k)]
-         [(== 1 c-in) (== '(1) k)]
-         [else fail])]            
-      [(all (== '() n) (pos m))
-       (cond@
-         [(== 0 c-in) (== m k)]
-         [(== 1 c-in) (adder 0 '(1) m k)]
-         [else fail])]
-      [(all (== '() m) (pos n))
-       (cond@
-         [(== 0 c-in) (== n k)]
-         [(== 1 c-in) (adder 0 n '(1) k)]
-         [else fail])]      
-      [else
-	(fresh (_)
-	  (anyi
-	; Note that we take advantage of the fact that if
-	; a + b = r and length(b) <= length(a) then length(a) <= length(r)
-	    (all (<ol n `(,_ . ,k))		; or, length(a) < length(2*r)
-	      (any (<ol m n) (=ol m n))
-	      (adder* c-in n m k)
-	      )
-	    ; commutative case, length(a) < length(b)
-	    (all (<ol m `(,_ . ,k))
-	      (<ol n m)
-	      (adder* c-in n m k)
-	      )
-	    ))]
-	)))
-
-
-
-'(define gen-adder
-  (lambda (c-in n m k)
-    (fresh (nb nr mb mr kb kr)
-      (== `(,nb . ,nr) n)
-      (== `(,mb . ,mr) m)
-      (== `(,kb . ,kr) k)
-      (fresh (c-out)
-        (full-adder c-in nb mb kb c-out)
-        (adder c-out nr mr kr)))))
-
-
 ; a + b = c
 (define +o
   (lambda (n m k)
@@ -282,10 +268,10 @@
           (condi
             [(fresh (mr _)
                (== '() n)
-               (== `(,_ . ,mr) m) 
+               (== `(,_ . ,mr) m)
                (<ol3 qr pr mr '()))]
             [(fresh (nr _)
-                (== `(,_ . ,nr) n) 
+                (== `(,_ . ,nr) n)
                 (<ol3 qr pr nr m))]
             [else fail]))])))
 
@@ -304,7 +290,7 @@
 (define *o
   (lambda (n m p)
     (condi
-      [(== '() n) (== '() p)]		    ; 0 * m = 0
+      [(== '() n) (== '() p)]                    ; 0 * m = 0
       [(== '() m) (pos n) (*o m n p)]
       [(== '(1) n) (pos m) (== m p)]    ; 1 * m = m
       ; n > 1, n is even, and m > 0 and n*m = p.
@@ -312,8 +298,8 @@
       [(gt1 n) (poseveno n) (pos m)
          (fresh (_ n/2 p/2)
            (== `(,_ . ,n/2) n)
-	       (== `(0 . ,p/2) p)
-	       (*o n/2 m p/2))]
+               (== `(0 . ,p/2) p)
+               (*o n/2 m p/2))]
       ; n > 1, n is odd, and m > 0 and n*m = p.
       ; (n-1)/2 * m = ((n * m) - m)/2 = (p - m)/2 = res
       ; so p - m = 2*res, and 2*res is represented as `(0 . ,res)
@@ -335,10 +321,10 @@
       ; numbers that can't possibly be right.
       [(gt1 n) (oddo n) (pos m)
         (fresh (_ <n-1>/2 res)
-	      (== `(,_ . ,<n-1>/2) n)
+              (== `(,_ . ,<n-1>/2) n)
           (<ol3 res p n m) ;; This is the only upper bound
-	      (*o <n-1>/2 m res)
-	      (+o `(0 . ,res) m p))]
+              (*o <n-1>/2 m res)
+              (+o `(0 . ,res) m p))]
       [else fail])))
 
 (define <o  ; n < m iff exists x > 0 such that n + x = m
@@ -347,15 +333,14 @@
       (pos x)
       (+o n x m))))
 
-
 ; n = q*m + r where 0<=r<m
 (define divo
   (lambda (n m q r)
     (condi
-      [(== '() q) (<ol n m) (== r n) (<o n m)] 
+      [(== '() q) (<ol n m) (== r n) (<o n m)]
                      ; m has more digits than n: q=0,n=r
       [(<ol m n) (<o r m)     ; n has more digits than m
-		                      ; q is not zero, n>0, so q*m <= n,
+                                      ; q is not zero, n>0, so q*m <= n,
        (fresh (res)           ; definitely q*m < 2*n
          (<ol res `(0 . ,n))
          (-o n res r)
@@ -365,6 +350,21 @@
           ; (width m) = (width n); n < m, q = 0, r = n
       [(== '() q) (=ol m n) (== r n) (<o n m)]
       [else fail])))
+
+(cout "Test recursive enumerability of addition" nl)
+(let ((n 7))
+  (do ((i 0 (+ 1 i))) ((> i n))
+    (do ((j 0 (+ 1 j))) ((> j n))
+      (let ((p (+ i j)))
+        (test-check
+          (string-append "enumerability: " (number->string i)
+            "+" (number->string j) "=" (number->string p))
+          (run (q)
+            (fresh (x y z)
+              (all (+o x y z)
+                (== x (build i)) (== y (build j)) (== z (build p))
+                (== q (list x y z)))))
+          `(,(build i) ,(build j) ,(build p)))))))
 
 (display "addition")
 (newline)
@@ -390,23 +390,7 @@
       (project (y z) (== `(,(trans y) ,(trans z)) w)))))
  '((0 4) (4 0) (3 1) (1 3) (2 2)))
  
-;; 
-
-(cout "Test recursive enumerability of addition" nl)
-(let ((n 7))
-  (do ((i 0 (+ 1 i))) ((> i n))
-    (do ((j 0 (+ 1 j))) ((> j n))
-      (let ((p (+ i j)))
-	(test-check
-	  (string-append "enumerability: " (number->string i)
-	    "+" (number->string j) "=" (number->string p))
-	  (run (q)
-	    (fresh (x y z) 
-	      (all (+o x y z)
-		(== x (build i)) (== y (build j)) (== z (build p))
-		(== q (list x y z)))))
-	  `(,(build i) ,(build j) ,(build p)))))))
-
+;;
 
 (test-check "print a few numbers such as X + 1 = Y"
   (prefix 5
@@ -415,8 +399,8 @@
         (+o x (build 1) y) (== `(,x ,y) w))))
       '((() (1))                       ; 0 + 1 = 1
         ((1) (0 1))                    ; 1 + 1 = 2
-        ((0 _.0 . __.0) (1 _.0 . __.0)) ; 2*x 
-                                            ; and 2*x+1 
+        ((0 _.0 . __.0) (1 _.0 . __.0)) ; 2*x
+                                            ; and 2*x+1
                                             ; are successors, for all x>0!    
         ((1 1) (0 0 1))                     ; the successor of 3 is 4
         ((1 0 _.0 . __.0) (0 1 _.0 . __.0))))
@@ -536,14 +520,14 @@
   (prefix 10 (run-stream (x) (<o (build 4) x)))
   '((1 0 1)
     (0 1 1)
-	(0 0 0 1)
-	(0 0 1 _.0 . __.0)
-	(0 0 0 0 1)
-	(0 0 0 1 _.0 . __.0)
-	(0 0 0 0 0 1)
-	(0 0 0 0 1 _.0 . __.0)
-	(0 0 0 0 0 0 1)
-	(0 0 0 0 0 1 _.0 . __.0)))
+        (0 0 0 1)
+        (0 0 1 _.0 . __.0)
+        (0 0 0 0 1)
+        (0 0 0 1 _.0 . __.0)
+        (0 0 0 0 0 1)
+        (0 0 0 0 1 _.0 . __.0)
+        (0 0 0 0 0 0 1)
+        (0 0 0 0 0 1 _.0 . __.0)))
 
 (display "multiplication")
 (newline)
@@ -554,17 +538,17 @@
   (do ((i 0 (+ 1 i))) ((> i n))
     (do ((j 0 (+ 1 j))) ((> j n))
       (let ((p (* i j)))
-	    (test-check
-	      (string-append "enumerability: " (number->string i)
-	        "*" (number->string j) "=" (number->string p))
-	    (run (q) 
-          (fresh (x y z) 
-	        (*o x y z)
-	        (== (build i) x)
+            (test-check
+              (string-append "enumerability: " (number->string i)
+                "*" (number->string j) "=" (number->string p))
+            (run (q)
+          (fresh (x y z)
+                (*o x y z)
+                (== (build i) x)
             (== (build j) y)
             (== (build p) z)
             (== `(,x ,y ,z) q)))
-	    `(,(build i) ,(build j) ,(build p)))))))
+            `(,(build i) ,(build j) ,(build p)))))))
 
 (test-check "multiplication-1"
   (run (q)
@@ -805,12 +789,12 @@
     (10 1 2)
     (2 6 0)
     (8 1 4)
-	(4 3 0)
-	(6 2 0)
-	(9 1 3)
-	(3 4 0)
-	(5 2 2)
-	(7 1 5)))
+        (4 3 0)
+        (6 2 0)
+        (9 1 3)
+        (3 4 0)
+        (5 2 2)
+        (7 1 5)))
 
 (test-check "div-all-3"
   (prefix 8
@@ -820,12 +804,12 @@
         (== `(,x ,y ,z ,r) w))))
   '((() (_.0 . __.0) () ())
     ((0 _.0) (_.0) (0 1) ())
-	((1) (0 1) () (1))
-	((__.0) (__.0) (1) ())
-	((1) (1 _.0 . __.0) () (1))
-	((1 1) (1) (1 1) ())
-	((1) (0 0 1) () (1))
-	((0 _.0) (1 _.0) () (0 _.0))))
+        ((1) (0 1) () (1))
+        ((__.0) (__.0) (1) ())
+        ((1) (1 _.0 . __.0) () (1))
+        ((1 1) (1) (1 1) ())
+        ((1) (0 0 1) () (1))
+        ((0 _.0) (1 _.0) () (0 _.0))))
   
 (test-check "div-even"
   (prefix 4
@@ -837,6 +821,4 @@
     ((1) (1) ())
     ((1 1) (1 1) ())
     ((0 0 1) (0 0 1) ())))
-
-
 
