@@ -2,6 +2,7 @@
 ; $Id$
 
 (load "lib/chez-specific.ss")
+(load "lib/term.scm")
 (load "lib/kanren.ss")
 (load "examples/type-inference.scm")
 (load "examples/typeclasses.scm")

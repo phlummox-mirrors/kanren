@@ -1,16 +1,16 @@
 ; Type Inference
 ;
-; We show three variations of Hindley-Milner type inference. All
-; variations support polymorphic, generalizing `let'. All variations
+; We show two variations of Hindley-Milner type inference. Both
+; variations support polymorphic, generalizing `let'. Both variations
 ; use Kanren's logical variables for type variables, and take advantage
 ; of Kanren's unifier to solve the equations that arise during the course
 ; of type inference. These features make the Kanren realization of the
 ; type inference algorithm concise and lucid.
 ;
 ; The variations differ in the syntax of the `source' language, and in
-; the way type environments are implemented.  Two variations realize
+; the way type environments are implemented.  One variation realizes
 ; type environments as regular lists, of associations between symbolic
-; variable names and their types. The last variation extends the type
+; variable names and their types. The other variation extends the type
 ; entailment relation (which is a first-class relation in Kanren). The
 ; latter approach is similar to that of inductive proofs (see files
 ; ./deduction.scm and ./mirror-equ.scm)
@@ -222,8 +222,8 @@
 (test-check 'test-!-1
   (and
     (equal?
-      (solution () (!- '() '(intc 17) int))
-      '())
+      (solution (?) (!- '() '(intc 17) int))
+      '((?.0 _.0)))
     (equal?
       (solution (?) (!- '() '(intc 17) ?))
       '((?.0 int))))
@@ -310,8 +310,8 @@
                    ((f x) x))))
         ?))
   '((?.0 (-->
-           (--> t-rand.0 (--> t-rand.0 t.0))
-           (--> t-rand.0 t.0)))))
+           (--> _.0 (--> _.0 _.1))
+           (--> _.0 _.1)))))
 
 (test-check 'everything-but-polymorphic-let
   (solution (?)
@@ -386,17 +386,17 @@
 (test-check 'type-habitation-1
   (solution (g ?)
     (!- g ? '(--> int int)))
-  '((g.0 ((v.0 non-generic (--> int int)) . lt.0)) (?.0 (var v.0))))
+  '((g.0 ((_.0 non-generic (--> int int)) . _.1)) (?.0 (var _.0))))
 
 (test-check 'type-habitation-2
   (solution (g h r q z y t)
     (!- g `(,h ,r (,q ,z ,y)) t))
-  '((g.0 ((v.0 non-generic int) . lt.0))
+  '((g.0 ((_.0 non-generic int) . _.1))
     (h.0 +)
-    (r.0 (var v.0))
+    (r.0 (var _.0))
     (q.0 +)
-    (z.0 (var v.0))
-    (y.0 (var v.0))
+    (z.0 (var _.0))
+    (y.0 (var _.0))
     (t.0 int))
 )
 
@@ -405,18 +405,18 @@
     (equal?
       (solution (la f b)
 	(!- '() `(,la (,f) ,b) '(--> int int)))
-      '((la.0 lambda) (f.0 v.0) (b.0 (var v.0))))
+      '((la.0 lambda) (f.0 _.0) (b.0 (var _.0))))
     (equal?
       (solution (h r q z y t u v)
 	(!- '() `(,h ,r (,q ,z ,y)) `(,t ,u ,v)))
       '((h.0 lambda)
-        (r.0 (v.0))
+        (r.0 (_.0))
         (q.0 +)
-        (z.0 (var v.0))
-        (y.0 (var v.0))
+        (z.0 (var _.0))
+        (y.0 (var _.0))
         (t.0 -->)
         (u.0 int)
-        (v.1 int))))
+        (v.0 int))))
   #t)
 
 ; Some historical baggage
@@ -686,8 +686,8 @@
 (test-check 'test-!-1
   (and
     (equal?
-      (solution () (!- '(intc 17) int))
-      '())
+      (solution (?) (!- '(intc 17) int))
+      '((?.0 _.0)))
     (equal?
       (solution (?) (!- '(intc 17) ?))
       '((?.0 int))))
@@ -775,8 +775,8 @@
 	       ((f x) x))))
       ?))
   '((?.0 (-->
-           (--> type-v.0 (--> type-v.0 t.0))
-           (--> type-v.0 t.0)))))
+           (--> _.0 (--> _.0 _.1))
+           (--> _.0 _.1)))))
 
 (test-check 'everything-but-polymorphic-let
   (solution (?)
@@ -852,10 +852,10 @@
   (solution (h r q z y t)
     (!- `(,h ,r (,q ,z ,y)) t))
   '((h.0 +)
-    (r.0 (intc x.0))
+    (r.0 (intc _.0))
     (q.0 +)
-    (z.0 (intc x.1))
-    (y.0 (intc x.2))
+    (z.0 (intc _.1))
+    (y.0 (intc _.2))
     (t.0 int))
 )
 
@@ -864,18 +864,18 @@
     (equal?
       (solution (la f b)
 	(!-  `(,la (,f) ,b) '(--> int int)))
-      '((la.0 lambda) (f.0 v.0) (b.0 (var v.0))))
+      '((la.0 lambda) (f.0 _.0) (b.0 (var _.0))))
     (equal?
       (solution (h r q z y t u v)
 	(!-  `(,h ,r (,q ,z ,y)) `(,t ,u ,v)))
       '((h.0 lambda)
-        (r.0 (v.0))
+        (r.0 (_.0))
         (q.0 +)
-        (z.0 (var v.0))
-        (y.0 (var v.0))
+        (z.0 (var _.0))
+        (y.0 (var _.0))
         (t.0 -->)
         (u.0 int)
-        (v.1 int))))
+        (v.0 int))))
   #t)
 
 

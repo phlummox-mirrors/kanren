@@ -153,7 +153,7 @@
       (let ((kb1
 	      (extend-relation (t) (goal-fwd kb0) kb0)))
 	(kb1 '(goal (leaf x))))) ; note, x is an eigenvariable!
-     ;(cout (concretize subst) nl)
+     ;(cout (reify-subst '() subst) nl)
     #t)
   #t)
 
@@ -169,7 +169,7 @@
 		  (fact () '(goal t1))
 		  (fact () '(goal t2)))))))
       (kb '(btree t2)))
-     ;(cout (concretize subst) nl)
+     ;(cout (reify-subst '() subst) nl)
     #t)
   #t)
 
@@ -186,7 +186,7 @@
 		  (fact () '(goal t1))
 		  (fact () '(goal t2)))))))
       (kb '(btree (root t1 t2))))
-    (cout (concretize subst) nl)
+    (cout (reify-subst '() subst) nl)
     #t)
   #t)
 
@@ -219,6 +219,6 @@
 		  (goal-rev kb))))))
       (let ((kb1 (goal-fwd kb)))
 	(kb1 '(goal (root t1 t2)))))
-    (cout (concretize subst) nl)
+    (cout (reify-subst '() subst) nl)
     #t)
   #t)

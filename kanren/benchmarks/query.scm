@@ -197,6 +197,12 @@
 ;     904 ms elapsed cpu time, including 7 ms collecting
 ;     914 ms elapsed real time, including 6 ms collecting
 ;     41670216 bytes allocated, including 42439072 bytes reclaimed
+;
+; kanren.ss version 4.17
+;     38 collections
+;     895 ms elapsed cpu time, including 5 ms collecting
+;     946 ms elapsed real time, including 11 ms collecting
+;     41320888 bytes allocated, including 41172536 bytes reclaimed
 
 ; dobench(Count) :-
 ; 	data(Data),

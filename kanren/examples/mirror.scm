@@ -258,8 +258,8 @@
   (query (_ subst)
     (verify-goal (goal '(leaf x))
       (extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb))
-    (concretize subst))
-  '((val.0 . x) (t1.0 leaf val.1) (val.1 . x) (val.2 . x)))
+    (reify-subst '() subst))
+  '((val.0 x) (t1.0 (leaf x)) (val.0 x) (val.0 x)))
 
 (test-check "Check the base case, using goal-fwd"
   (query (_ subst)
@@ -268,8 +268,8 @@
       (let ((kb1
 	      (extend-relation (t) (goal-fwd kb0) kb0)))
 	(kb1 '(goal (leaf x))))) ; note, x is an eigenvariable!
-    (concretize subst))
-  '((val.0 . x) (t1.0 leaf val.1) (val.1 . x) (val.2 . x) (t.0 leaf x)))
+    (reify-subst '() subst))
+  '((val.0 x) (t1.0 (leaf x)) (val.0 x) (val.0 x) (t.0 (leaf x))))
 
 ; that is, we obtain the list of subgoals to verify '(leaf x)
 ; by invoking the function 'goal'.
@@ -298,7 +298,7 @@
 	      (extend-kb (goal 't1) 
 		(extend-kb (goal 't2) init-kb))))
 	kb0)))
-  '((foo.0 foo.0)))
+  '((foo.0 _.0)))
 
 (test-check "Some preliminary checks, using goal-rev"
   (solution (foo)
@@ -311,7 +311,7 @@
 		  (fact () '(goal t1))
 		  (fact () '(goal t2)))))))
       (kb '(btree t2))))
-  '((foo.0 foo.0)))
+  '((foo.0 _.0)))
 
 ; the above two expressions should give the same result: a non-empty stream
 ; (with an empty substitution: no variables leak)
@@ -331,7 +331,7 @@
 	      kb0
 	      (btree kb)
 	      (mirror-axiom-eq-2 kb)))))))
-  '((foo.0 foo.0)))
+  '((foo.0 _.0)))
 
 (test-check "Another check, using goal-rev"
   (solution (foo)
@@ -345,7 +345,7 @@
 		  (fact () '(goal t1))
 		  (fact () '(goal t2)))))))
       (kb '(btree (root t1 t2)))))
-  '((foo.0 foo.0)))
+  '((foo.0 _.0)))
 
 ; now we really need Y because we rely on the clause
 ;	btree(root(T1,T2)) :- btree(T1),btree(T2).
@@ -364,7 +364,7 @@
 	      kb0
 	      (btree kb)
 	      (mirror-axiom-eq-2 kb))))))
-    (cout (concretize subst) nl) #t)
+    (cout (reify-subst '() subst) nl) #t)
   #t)
 
 (printf "~%Check particulars of the inductive case, using goal-rev, goal-fwd ~s~%"
@@ -395,7 +395,7 @@
 		  (goal-rev kb))))))
       (let ((kb1 (goal-fwd kb)))
 	(kb1 '(goal (root t1 t2)))))
-    (cout (concretize subst) nl) #t)
+    (cout (reify-subst '() subst) nl) #t)
   #t)
 
 

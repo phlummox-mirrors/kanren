@@ -28,7 +28,7 @@
 ; We can use the (**o X Y Z) relation either to multiply two numbers
 ; X and Y -- or to find all factorizations of Z. See the test below.
 ; Furthermore, we can try to evaluate (++o X 1 Y) and get the stream
-; of answers, among which is ((0 *anon.0 . *anon.1) (1 *anon.0 . *anon.1))
+; of answers, among which is ((0 _.0 . _.1) (1 _.0 . _.1))
 ; which essentially says that 2*x and 2*x +1 are successors, for all x>0!
 ;
 ; We give two implementations of addition and multiplication
@@ -867,9 +867,9 @@
    '(((x.0 ()) (y.0 (1))) ; 0 + 1 = 1
      ((x.0 (1)) (y.0 (0 1))) ; 1 + 1 = 2
        ; 2*x and 2*x+1 are successors, for all x>0!
-      ((x.0 (0 *anon.0 . *anon.1)) (y.0 (1 *anon.0 . *anon.1)))
+      ((x.0 (0 _.0 . _.1)) (y.0 (1 _.0 . _.1)))
       ((x.0 (1 1)) (y.0 (0 0 1)))
-      ((x.0 (1 0 *anon.0 . *anon.1)) (y.0 (0 1 *anon.0 . *anon.1))))
+      ((x.0 (1 0 _.0 . _.1)) (y.0 (0 1 _.0 . _.1))))
 )
 
 ; check that add(X,Y,Z) recursively enumerates all
@@ -900,10 +900,10 @@
 	(== z c)
 	))))
   '(((a.0 ()) (b.0 ()) (c.0 ()))
-    ((a.0 ()) (b.0 (*anon.0 . *anon.1)) (c.0 (*anon.0 . *anon.1)))
+    ((a.0 ()) (b.0 (_.0 . _.1)) (c.0 (_.0 . _.1)))
     ((a.0 (1)) (b.0 (1)) (c.0 (0 1)))
-    ((a.0 (1)) (b.0 (0 *anon.0 . *anon.1)) (c.0 (1 *anon.0 . *anon.1)))
-    ((a.0 (0 *anon.0 . *anon.1)) (b.0 (1)) (c.0 (1 *anon.0 . *anon.1))))
+    ((a.0 (1)) (b.0 (0 _.0 . _.1)) (c.0 (1 _.0 . _.1)))
+    ((a.0 (0 _.0 . _.1)) (b.0 (1)) (c.0 (1 _.0 . _.1))))
 )
 
 
@@ -924,18 +924,18 @@
     ((y.0 (0 1 0 1)) (z.0 (0 1 1)))  ; 10 - 6 = 4
     ((y.0 (1 1 0 1)) (z.0 (1 1 1)))  ; 11 - 7 = 4
      ; 8*k + 4 - 8*k = 4 forall k> 0!!
-    ((y.0 (0 0 1 *anon.0 . *anon.1)) (z.0 (0 0 0 *anon.0 . *anon.1)))
-    ((y.0 (1 0 1 *anon.0 . *anon.1)) (z.0 (1 0 0 *anon.0 . *anon.1)))
-    ((y.0 (0 1 1 *anon.0 . *anon.1)) (z.0 (0 1 0 *anon.0 . *anon.1))))
+    ((y.0 (0 0 1 _.0 . _.1)) (z.0 (0 0 0 _.0 . _.1)))
+    ((y.0 (1 0 1 _.0 . _.1)) (z.0 (1 0 0 _.0 . _.1)))
+    ((y.0 (0 1 1 _.0 . _.1)) (z.0 (0 1 0 _.0 . _.1))))
 )
 
 (test-check "print a few numbers such as X - Y = Z"
   (solve 5 (x y z) (--o x y z))
-  '(((x.0 y.0) (y.0 y.0) (z.0 ())) ; 0 - 0 = 0
-    ((x.0 (*anon.0 . *anon.1)) (y.0 ()) (z.0 (*anon.0 . *anon.1))) ; a - 0 = a
+  '(((x.0 _.0) (y.0 _.0) (z.0 ())) ; 0 - 0 = 0
+    ((x.0 (_.0 . _.1)) (y.0 ()) (z.0 (_.0 . _.1))) ; a - 0 = a
     ((x.0 (0 1)) (y.0 (1)) (z.0 (1)))
-    ((x.0 (1 *anon.0 . *anon.1)) (y.0 (1)) (z.0 (0 *anon.0 . *anon.1)))
-    ((x.0 (1 *anon.0 . *anon.1)) (y.0 (0 *anon.0 . *anon.1)) (z.0 (1))))
+    ((x.0 (1 _.0 . _.1)) (y.0 (1)) (z.0 (0 _.0 . _.1)))
+    ((x.0 (1 _.0 . _.1)) (y.0 (0 _.0 . _.1)) (z.0 (1))))
 )
 
 
@@ -946,12 +946,12 @@
 (test-check "print all numbers that are less than 6"
   (solve 10 (x) (<o x (build 6)))
   '(((x.0 ())) ((x.0 (1 0 1))) ((x.0 (1))) 
-     ((x.0 (0 0 1))) ((x.0 (*anon.0 1))))
+     ((x.0 (0 0 1))) ((x.0 (_.0 1))))
   )
 
 (test-check "print *all* numbers that are greater than 4"
   (solve 10 (x) (<o (build 4) x))
-  '(((x.0 (*anon.0 y1.0 y1.1 *anon.1 . *anon.2)))
+  '(((x.0 (_.0 _.1 _.2 _.3 . _.4)))
     ((x.0 (1 0 1))) ((x.0 (0 1 1))) ((x.0 (1 1 1))))
 )
 
@@ -1005,17 +1005,17 @@
 
 (test-check 'multiplication-all-5
   (solve 7 (x y z) (**o x y z))
-  '(((x.0 ()) (y.0 y.0) (z.0 ())) ; 0 * y = 0 for any y whatsoever
-    ((x.0 (*anon.0 . *anon.1)) (y.0 ()) (z.0 ())) ; x * 0 = 0 for x > 0
+  '(((x.0 ()) (y.0 _.0) (z.0 ())) ; 0 * y = 0 for any y whatsoever
+    ((x.0 (_.0 . _.1)) (y.0 ()) (z.0 ())) ; x * 0 = 0 for x > 0
      ; 1 * y = y for y > 0
-    ((x.0 (1)) (y.0 (*anon.0 . *anon.1)) (z.0 (*anon.0 . *anon.1)))
-    ((x.0 (*anon.0 *anon.1 . *anon.2)) (y.0 (1)) 
-      (z.0 (*anon.0 *anon.1 . *anon.2))) ;  x * 1 = x, x > 1
+    ((x.0 (1)) (y.0 (_.0 . _.1)) (z.0 (_.0 . _.1)))
+    ((x.0 (_.0 _.1 . _.2)) (y.0 (1)) 
+      (z.0 (_.0 _.1 . _.2))) ;  x * 1 = x, x > 1
      ; 2 * y = even positive number, for y > 1
-    ((x.0 (0 1)) (y.0 (*anon.0 *anon.1 . *anon.2)) 
-      (z.0 (0 *anon.0 *anon.1 . *anon.2)))
+    ((x.0 (0 1)) (y.0 (_.0 _.1 . _.2)) 
+      (z.0 (0 _.0 _.1 . _.2)))
      ; x * 2 = shifted-left x, for even x>1
-    ((x.0 (1 *anon.0 . *anon.1)) (y.0 (0 1)) (z.0 (0 1 *anon.0 . *anon.1)))
+    ((x.0 (1 _.0 . _.1)) (y.0 (0 1)) (z.0 (0 1 _.0 . _.1)))
      ; 3 * 3 = 9
     ((x.0 (1 1)) (y.0 (1 1)) (z.0 (1 0 0 1)))
     )
@@ -1026,7 +1026,7 @@
   '(((y.0 ()) (z.0 ()))
     ((y.0 (1)) (z.0 (0 1))) ; 2 * 1 = 2
      ; 2*y is an even number, for any y > 1!
-    ((y.0 (*anon.0 *anon.1 . *anon.2)) (z.0 (0 *anon.0 *anon.1 . *anon.2)))
+    ((y.0 (_.0 _.1 . _.2)) (z.0 (0 _.0 _.1 . _.2)))
      )
 )
 
@@ -1154,7 +1154,7 @@
 
 (test-check 'div-all-3
   (solve 4 (x y z r) (divo x y z r))
-'(((x.0 ()) (y.0 (*anon.0 . *anon.1)) (z.0 ()) (r.0 ())) ; 0 = a*0 + 0, a>0
+'(((x.0 ()) (y.0 (_.0 . _.1)) (z.0 ()) (r.0 ())) ; 0 = a*0 + 0, a>0
   ((x.0 (1)) (y.0 (1)) (z.0 (1)) (r.0 ())) ; 1 = 1*1 + 0
   ((x.0 (0 1)) (y.0 (1)) (z.0 (0 1)) (r.0 ())) ; 2 = 1*2 + 0
   ((x.0 (0 1)) (y.0 (1 1)) (z.0 ()) (r.0 (0 1))) ; 2 = 3*0 + 2
@@ -1248,12 +1248,12 @@
     ((n.0 (1 0 0 0 0 1)))
     ((n.0 (0 1 0 0 0 1)))
     ((n.0 (1 1 0 0 0 1)))
-    ((n.0 (0 b.0 1 0 0 1)))
-    ((n.0 (1 b.0 1 0 0 1)))
-    ((n.0 (0 b.0 b.1 1 0 1)))
-    ((n.0 (1 b.0 b.1 1 0 1)))
-    ((n.0 (0 b.0 b.1 b.2 1 1)))
-    ((n.0 (1 b.0 b.1 b.2 1 1))))
+    ((n.0 (0 _.0 1 0 0 1)))
+    ((n.0 (1 _.0 1 0 0 1)))
+    ((n.0 (0 _.0 _.1 1 0 1)))
+    ((n.0 (1 _.0 _.1 1 0 1)))
+    ((n.0 (0 _.0 _.1 _.2 1 1)))
+    ((n.0 (1 _.0 _.1 _.2 1 1))))
 )
 
 
@@ -1339,7 +1339,7 @@
 (test-check 'powers-of-exp-3
   (solve 7 (n b r) (logo n b (build 3) r))
   '(((n.0 (1)) (b.0 (1)) (r.0 ()))
-    ((n.0 n.0) (b.0 ()) (r.0 n.0))
+    ((n.0 _.0) (b.0 ()) (r.0 _.0))
     ((n.0 (0 0 0 1)) (b.0 (0 1)) (r.0 ()))
     ((n.0 (1 1 0 1 1)) (b.0 (1 1)) (r.0 ()))
     ((n.0 (0 1)) (b.0 (1)) (r.0 (1)))

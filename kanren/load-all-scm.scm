@@ -28,6 +28,7 @@
 
 
 (load "lib/scm-specific.scm")
+(load "lib/term.scm")
 (load "lib/kanren.ss")
 (load "examples/type-inference.scm")
 (load "examples/typeclasses.scm")

@@ -11,71 +11,10 @@
      (lambda (formal0)
        (lambda@ (formal1 formal2 ...) body0 body1 ...))]))
 
-; (define-syntax trace-lambda@
-;   (syntax-rules ()
-;     [(_ id () body0 body1 ...) (begin body0 body1 ...)]
-;     [(_ id (formal0 formal1 ...) body0 body1 ...)
-;      (trace-lambda id (formal0)
-;        (trace-lambda@ id (formal1 ...) body0 body1 ...))]))
-
 (define-syntax @  
   (syntax-rules ()
     [(_ rator rand) (rator rand)]
     [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
-
-(define symbol-append
-  (lambda symbs
-    (string->symbol
-      (apply string-append
-        (map symbol->string symbs)))))
-
-(define Y
-  (lambda (f)
-    ((lambda (u) (u (lambda (x) (lambda (n) ((f (u x)) n)))))
-     (lambda (x) (x x)))))
-
-
-; (define-syntax @    
-;   (syntax-rules (syntax-rules)
-;     [(_ (syntax-rules sdata ...) rand0 ...)
-;       (let-syntax 
-; 	((tempname (syntax-rules sdata ...)))
-; 	(tempname rand0 ...))]
-;     [(_ rator rand0 rand1 ...)
-;      (@-simple rator rand0 rand1 ...)]))
-
-; LET*-AND: a simplified and streamlined AND-LET*.
-; The latter is defined in SRFI-2 <http://srfi.schemers.org/srfi-2/>
-
-(define-syntax let*-and
-  (syntax-rules ()
-    [(_ false-exp () body0 body1 ...) (begin body0 body1 ...)]
-    [(_ false-exp ([var0 exp0] [var1 exp1] ...) body0 body1 ...)
-     (let ([var0 exp0])
-       (if var0
-         (let*-and false-exp ([var1 exp1] ...) body0 body1 ...)
-         false-exp))]))
-
-; Regression testing framework
-; test-check TITLE TESTED-EXPRESSION EXPECTED-RESULT 
-; where TITLE is something printable (e.g., a symbol or a string)
-; EXPECTED-RESULT and TESTED-EXPRESSION are both expressions.
-; The expressions are evaluated and their results are cmpared
-; by equal?
-; If the results compare, we just print the TITLE.
-; Otherwise, we print the TITLE, the TESTED-EXPRESSION, and
-; the both results.
-(define-syntax test-check
-  (syntax-rules ()
-    [(_ title tested-expression expected-result)
-     (begin
-       (cout "Testing " title nl)
-       (let* ([expected expected-result]
-              [produced tested-expression])
-         (or (equal? expected produced)
-             (errorf 'test-check
-               "Failed: ~a~%Expected: ~a~%Computed: ~a~%"
-               'tested-expression expected produced))))]))
 
 (test-check 'test-@-lambda@
   (@ (lambda@ (x y z) (+ x (+ y z))) 1 2 3)
@@ -85,340 +24,20 @@
   (@ (lambda@ (x y z) (+ x (+ y z))) 1 2 3)
   42)
 
-;------------------------------------------------------------------------
-; Logical variables, substitutions, and commitments (aka bindings)
-   
-(cond-expand
-  (chez
-    (define-record logical-variable (id) ()))
-  (else
-    ; use SRFI-9 records
-    (define-record-type *logical-variable*
-      (make-logical-variable name) logical-variable?
-      (name logical-variable-id))
-    ))
-(define logical-variable make-logical-variable)
-(define var? logical-variable?)
+(define Y
+  (lambda (f)
+    ((lambda (u) (u (lambda (x) (lambda (n) ((f (u x)) n)))))
+     (lambda (x) (x x)))))
 
-
-; Introduction of a logical variable
-(define-syntax let-lv
-  (syntax-rules ()
-    [(_ () body) body]
-    [(_ () body0 body1 body2 ...) (begin body0 body1 body2 ...)]
-    [(_ (id ...) body0 body1 ...)
-     (let ([id (logical-variable 'id)] ...) body0 body1 ...)]))
-
-
-; (define logical-var-tag (list '*logical-var-tag*)) ; unique for eq?
-; (define native-pair? pair?)
-; (define logical-variable
-;   (lambda (id)
-;     (cons logical-var-tag id)))
-; (define var?
-;   (lambda (x)
-;     (and (native-pair? x) (eq? (car x) logical-var-tag))))
-; (define logical-variable-id
-;   (lambda (x)
-;     (if (var? x) (cdr x) 
-;       (errorf 'logical-variable-id "Invalid Logic Variable: ~s" x))))
-; (define pair?
-;   (lambda (x)
-;     (and (native-pair? x) (not (eq? (car x) logical-var-tag)))))
-
-
-; Eigen-variables -- unique symbols that represent universally-quantified
-; variables in a term
-; For identification, we prefix the name of the eigen-variable with
-; the exclamation mark. The mark makes sure the symbol stands out when
-; printed.
-
-(define eigen-variable
-  (lambda (id)
-    (symbol-append '! id '_ (gensym))))
-
-(define eigen-var?
-  (lambda (x)
-    (and (symbol? x)
-      (let ((str (symbol->string x)))
-	(> (string-length str) 2)
-	(char=? (string-ref str 0) #\!)))))
-
-
-; (eigen (id ...) body) -- evaluate body in the environment
-; extended with the bindings of id ... to the corresponding
-; eigen-variables
-(define-syntax eigen
-  (syntax-rules ()
-    ((_ (id ...) body)
-      (let ((id (eigen-variable 'id)) ...) body))))
-
-(test-check 'eigen
-  (and
-    (eigen () #t)
-    (eigen (x) (eigen-var? x))
-    (eigen (x y)
-      (begin (display "eigens: ") (display (list x y))
-	(newline) #t)))
-  #t)
-
-;;; ------------------------------------------------------
-
-(define commitment cons)             ;;; change to list
-(define commitment->term cdr)        ;;; and change to cadr
-(define commitment->var car)
-
-(define empty-subst '())
-(define empty-subst? null?)
-
-(define unit-subst
-  (lambda (var t)
-    (if (and (var? t) (eq? t _)) empty-subst (list (commitment var t)))))
-
-(define extend-subst
-  (lambda (unbound-var contains-no-bound-vars subst)
-    (cons (commitment unbound-var contains-no-bound-vars) subst)))
-
-(define cons-if-real-commitment
-  (lambda (var term subst)
-    (cond
-      [(eq? term var) subst]
-      [else (cons (commitment var term) subst)])))
-
-; get the free vars of a term (a list without duplicates)
-(define vars-of
-  (lambda (term)
-    (let loop ([term term] [fv '()])
-      (cond
-        [(var? term) (if (memq term fv) fv (cons term fv))]
-        [(pair? term) (loop (cdr term) (loop (car term) fv))]
-        [else fv]))))
-
-; Check to see if a var occurs in a term
-(define occurs?
-  (lambda (var term)
-    (cond
-      [(var? term) (eq? term var)]
-      [(pair? term) (or (occurs? var (car term)) (occurs? var (cdr term)))]
-      [else #f])))
-
-
-(define compose-subst/own-survivors
-  (lambda (base refining survivors)
-    (let refine ([b* base])
-      (if (null? b*) survivors
-          (cons-if-real-commitment
-            (commitment->var (car b*))
-            (subst-in (commitment->term (car b*)) refining)
-            (refine (cdr b*)))))))
-
-(define compose-subst
-  (lambda (base refining)
-    (cond
-      [(null? base) refining]
-      [(null? refining) base]
-      [else
-        (compose-subst/own-survivors base refining
-          (let survive ([r* refining])
-            (cond
-              [(null? r*) '()]
-              [(assq (commitment->var (car r*)) base) (survive (cdr r*))]
-              [else (cons (car r*) (survive (cdr r*)))])))])))
-
-; Replace a logical variable with the corresponding eigen-variable
-; Note: to be really right, universalize should be a scoping predicate,
-; something like exists:
-; (universalize (term) ant)
-; to prove 'ant' in the env where term is universalized.
-; In that case, the introduced eigen-variables do not escape.
-; Also, perhaps universalize should take a subst and first
-; do (subst-in term subst) and then universalize the remaining
-; logical variables -- which by that time would surely be free.
-(define universalize
-  (lambda (term)
-    (let ([fv (vars-of term)])
-      (let ([subst
-              (map
-                (lambda (v)
-                  (commitment v (eigen-variable (logical-variable-id v))))
-                fv)])
-        (subst-in term subst)))))
-
-; copy-term TERM -> TERM
-; return a TERM that is identical to the input term modulo the replacement
-; of variables in TERM with fresh logical variables. 
-; If a logical variable occurs several times in TERM, the result
-; will have the same number of occurrences of the replacement fresh
-; variable.
-; This is a sort-of dual to universalize, to be used on the other side
-; of the implication. It replaces the existential quantification
-; (implicit in free logical variables of a term) with the universal
-; quantification.
-(define copy-term
-  (lambda (t)
-    (let* ((fv (vars-of t))
-	   (subst
-	     (map (lambda (old-var)
-		    (commitment old-var
-		      (logical-variable (logical-variable-id old-var))))
-	       fv)))
-      (subst-in t subst))))
-
-
-; Similar to universalize: makes nicer symbols for variables that look
-; nicer when printed. The 'reverse' in (reverse (vars-of t))
-; just makes the output look as it used to look before. Consider it
-; a historical accident.
-(define concretize
-  (lambda (t)
-    (subst-in-deep t
-      (let loop ([fv (reverse (vars-of t))] [env '()])
-	(cond
-	  [(null? fv) empty-subst]
-	  [else (let ([id (logical-variable-id (car fv))])
-		  (let ([num (let*-and 0 ([pr (assq id env)]) (+ (cdr pr) 1))])
-		    (cons (commitment (car fv) (artificial-id id num))
-		      (loop (cdr fv) (cons (cons id num) env)))))])))))
-
-(define subst-in-deep ; it will later become just subst-in...
-  (lambda (t subst)
-    (cond
-      [(var? t)
-       (let ([c (assq t subst)])
-         (if c (subst-in-deep (commitment->term c) subst) t))]
-      [(pair? t)
-       (cons
-         (subst-in-deep (car t) subst)
-         (subst-in-deep (cdr t) subst))]
-      [else t])))
-
-(define artificial-id
-  (lambda (t-id num)
-    (string->symbol
-      (string-append
-        (symbol->string t-id) "." (number->string num)))))
-
-(define-syntax concretize-subst/vars
-  (syntax-rules ()
-    [(_ subst) '()]
-    [(_ subst x ... )
-      (concretize (list (list x (subst-in x subst)) ...))]))
-
-
-(define subst-in  ;;; This definition will change several times.
-  (lambda (t subst)
-    (cond
-      [(var? t)
-       (cond
-         [(assq t subst) => commitment->term]
-         [else t])]
-      [else t])))
-
-(define unify
-  (lambda (t u subst)
-    (let ([t (subst-in t subst)] [u (subst-in u subst)])
-      (cond
-        [(trivially-equal? t u) subst]
-        [(var? t) (compose-subst subst (unit-subst t u))]
-        [(var? u) (compose-subst subst (unit-subst u t))]
-        [else #f]))))
-
-(define unify-free/any unify)		; will be re-defined later
-
-(define trivially-equal?
-  (lambda (t u)
-    (or (eqv? t u) ;;; must stay eqv?
-        (and (string? t) (string? u) (string=? t u))
-        (eq? t _)
-        (eq? u _))))
-
-(define _ (let-lv (_) _))
-
-(test-check 'test-nonrecursive-unify
-  (let-lv (x y)
-    (and
-      (equal?
-	(unify x 3 empty-subst)
-	`(,(commitment x 3)))
-      (equal?
-	(unify 4 y empty-subst)
-	`(,(commitment y 4)))
-      (equal?
-	(unify x y empty-subst)
-	`(,(commitment x y)))
-      (equal?
-	(unify 'x 'x empty-subst)
-	'())
-      (equal?
-	(unify x x empty-subst)
-	'())
-      (equal?
-	(unify 4 'y empty-subst)
-	#f)
-      (equal?
-	(unify 'x 3 empty-subst)
-	#f)
-      (equal?
-	(unify 3 4 empty-subst)
-	#f)))
-  #t)
-
-
-(define concretize-subst concretize)
-
-(define assq/var-id
-  (lambda (id env)
-    (cond
-      [(null? env) #f]
-      [(eq? (logical-variable-id (caar env)) id) (car env)]
-      [else (assq/var-id id (cdr env))])))
-
-(let-lv (x y)
-  (test-check 'test-compose-subst-0
-    (append (unit-subst x y) (unit-subst y 52))
-    `(,(commitment x y) ,(commitment y 52))))
-
-
-(test-check 'test-compose-subst-1
-  (let-lv (x y)
-    (equal?
-      (compose-subst (unit-subst x y) (unit-subst y 52))
-      `(,(commitment x 52) ,(commitment y 52))))
-  #t)
-
-(test-check 'test-compose-subst-2
-  (let-lv (w x y)
-    (equal?
-      (let ([s (compose-subst (unit-subst y w) (unit-subst w 52))])
-	(compose-subst (unit-subst x y) s))
-      `(,(commitment x 52) ,(commitment y 52) ,(commitment w 52))))
-  #t)
-
-(test-check 'test-compose-subst-3
-  (let-lv (w x y)
-    (equal?
-      (let ([s (compose-subst (unit-subst w 52) (unit-subst y w))])
-	(compose-subst (unit-subst x y) s))
-      `(,(commitment x w) ,(commitment w 52) ,(commitment y w))))
-  #t)
-
-(test-check 'test-compose-subst-4
-  (let-lv (x y z)
-    (equal?
-      (let ([s (compose-subst (unit-subst y z) (unit-subst x y))]
-	    [r (compose-subst
-		 (compose-subst (unit-subst x 'a) (unit-subst y 'b))
-		 (unit-subst z y))])
-	(compose-subst s r))
-      `(,(commitment x 'b) ,(commitment z y))))
-  #t)
-
-(test-check 'test-compose-subst-5
-  (concretize-subst
-    (compose-subst
-      (let-lv (x) (unit-subst x 3))
-      (let-lv (x) (unit-subst x 4))))
-  '((x.0 . 3) (x.1 . 4)))
+; An attempt to do a limited beta-substitution at macro-expand time
+; (define-syntax @    
+;   (syntax-rules (syntax-rules)
+;     [(_ (syntax-rules sdata ...) rand0 ...)
+;       (let-syntax 
+; 	((tempname (syntax-rules sdata ...)))
+; 	(tempname rand0 ...))]
+;     [(_ rator rand0 rand1 ...)
+;      (@-simple rator rand0 rand1 ...)]))
 
 
 ;  Fk  = () -> Ans
@@ -1533,66 +1152,6 @@
          (@ sk fk subst)))]))
 
 
-
-;------------------------------------------------------------------------
-;;;;; Starts the real work of the system.
-
-(define father  
-  (relation ()
-    (to-show 'jon 'sam)))
-
-(test-check 'test-father0
-  (let ([result
-          (@ (father 'jon 'sam)
-             initial-sk initial-fk empty-subst)])
-    (and
-      (equal? (car result) '())
-      (equal? ((cdr result)) '())))
-  #t)
-
-
-(define child-of-male
-  (relation (child dad)
-    (to-show child dad)
-    (father dad child)))
-
-(test-check 'test-child-of-male-0
-  (concretize-subst
-    (car (@ (child-of-male 'sam 'jon)
-	    initial-sk initial-fk empty-subst)))
-  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))
-  '())  ; variables shouldn't leak
-
-
-; The mark should be found here...
-(define child-of-male-1
-  (relation (child dad)
-    (to-show child dad)
-    (child-of-male dad child)))
-(test-check 'test-child-of-male-1
-  (concretize-subst
-    (car (@ (child-of-male 'sam 'jon)
-	    initial-sk initial-fk empty-subst)))
-  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))
-  '())
-
-(define rob/sal
-  (relation ()
-    (to-show 'rob 'sal)))
-
-(define new-father
-  (extend-relation (a1 a2) father rob/sal))
-
-(test-check 'test-father-1
-  (let ([result
-	  (@ (new-father 'rob 'sal)
-	    initial-sk initial-fk empty-subst)])
-    (and
-      (equal? (car result) '())
-      (equal? ((cdr result)) '())))
-  #t)
-
-
 ;	query (redo-k subst id ...) A SE ... -> result or '()
 ; The macro 'query' runs the antecedent A in the empty
 ; initial substitution, and reifies the resulting
@@ -1617,69 +1176,12 @@
 	  (lambda () '())
 	  empty-subst)))))
 
-(test-check 'test-father-2
-  (query (redo-k subst x)
-    (new-father 'rob x)
-    (list (equal? (car subst) (commitment x 'sal)) (redo-k)))
-  '(#t ()))
-
-
-(test-check 'test-father-3
-  (query (_ subst x)
-    (new-father 'rob x)
-    (concretize-subst/vars subst x))
-  '((x.0 sal)))
-
-(test-check 'test-father-4
-  (query (_ subst x y)
-    (new-father x y)
-    (concretize-subst/vars subst x y))
-  '((x.0 jon) (y.0 sam)))
-
-(define rob/pat
-  (relation ()
-    (to-show 'rob 'pat)))
-
-(define newer-father
-  (extend-relation (a1 a2) new-father rob/pat))
-
-(test-check 'test-father-5
-  (query (redok subst x)
-    (newer-father 'rob x)
-    (pretty-print subst)
-    (cons
-      (concretize-subst/vars subst x)
-      (redok)))
-  '(((x.0 sal)) ((x.0 pat))))
-
 (define stream-prefix
   (lambda (n strm)
     (if (null? strm) '()
       (cons (car strm)
         (if (zero? n) '()
           (stream-prefix (- n 1) ((cdr strm))))))))
-
-; A simple version of query: useful as an illustration
-; It returns a stream of concretized substitutions
-(define-syntax query-stream
-  (syntax-rules ()
-    ((_ (id ...) A)
-      (query (redo-k subst id ...) A (cons (concretize-subst subst) redo-k)))))
-
-(test-check 'test-father-4-1
-  (car (query-stream (x y)
-	 (new-father x y)))
-  '((y.0 . sam) (x.0 . jon)))
-
-(test-check 'test-father-5-1
-  (let* ((ans1
-	   (query-stream (x y)
-	     (newer-father 'rob x)))
-	  (ans2 ((cdr ans1)))
-	  (ans3 ((cdr ans2))))
-    (list (car ans1) (car ans2) ans3))
-  '(((x.0 . sal)) ((x.0 . pat)) ()))
-
 
 (define-syntax solve
   (syntax-rules ()
@@ -1688,86 +1190,8 @@
 	(stream-prefix (- n 1)
 	  (query (redo-k subst var0 ...)
 	    ant
-	    (cons (concretize-subst/vars subst var0 ...) redo-k))))]))
+	    (cons (reify-subst (list var0 ...) subst) redo-k))))]))
 
-(define sam/rob
-  (relation ()
-    (to-show 'sam 'rob)))
-
-(define newest-father (extend-relation (a1 a2) newer-father sam/rob))
-
-(test-check 'test-father-6/solve
-  (and
-    (equal?
-      (solve 5 (x) (newest-father 'rob x))
-      '(((x.0 sal)) ((x.0 pat))))
-    (equal?
-      (solve 6 (x y) (newest-father x y))
-      '(((x.0 jon) (y.0 sam))
-        ((x.0 rob) (y.0 sal))
-        ((x.0 rob) (y.0 pat))
-        ((x.0 sam) (y.0 rob)))))
-  #t)
-
-; (define-syntax binary-intersect
-;   (syntax-rules ()
-;     ((_ ant1 ant2)
-;       (lambda@ (sk)
-; 	(@ ant1 (@ ant2 sk))))))
-
-(define-syntax binary-intersect
-  (syntax-rules ()
-    [(_ ant1 ant2) (all ant1 ant2)]))
-
-(define-rel-lifted-comb binary-intersect-relation binary-intersect)
-
-(define parents-of-scouts
-  (extend-relation (a1 a2)
-    (fact () 'sam 'rob)
-    (fact () 'roz 'sue)
-    (fact () 'rob 'sal)))
-
-(define parents-of-athletes
-  (extend-relation (a1 a2)
-    (fact () 'sam 'roz)
-    (fact () 'roz 'sue)
-    (fact () 'rob 'sal)))
-
-(define busy-parents
-  (binary-intersect-relation (a1 a2) 
-    parents-of-scouts parents-of-athletes))
-
-(define busy-parents
-  (binary-intersect-relation (a1 a2) 
-    parents-of-scouts parents-of-athletes))
-
-(test-check 'test-busy-parents
-  (solve 5 (x) (exists (y) (trace-ant-raw 'busy-parents (busy-parents x y))))
-  '(((x.0 roz)) ((x.0 rob))))
-
-; (define-syntax intersect-relation
-;   (syntax-rules ()
-;     [(_ (id ...) rel-exp) rel-exp]
-;     [(_ (id ...) rel-exp0 rel-exp1 rel-exp2 ...)
-;      (binary-intersect-relation (id ...) rel-exp0
-;        (intersect-relation (id ...) rel-exp1 rel-exp2 ...))]))
-
-(define-rel-lifted-comb intersect-relation all)
-
-(define busy-parents
-  (intersect-relation (a1 a2) parents-of-scouts parents-of-athletes))
-
-(define conscientious-parents
-  (extend-relation (a1 a2) parents-of-scouts parents-of-athletes))
-
-(test-check 'test-conscientious-parents
-  (solve 7 (x y) (conscientious-parents x y))
-  '(((x.0 sam) (y.0 rob))
-    ((x.0 roz) (y.0 sue))
-    ((x.0 rob) (y.0 sal))
-    ((x.0 sam) (y.0 roz))
-    ((x.0 roz) (y.0 sue))
-    ((x.0 rob) (y.0 sal))))
 
 (define-syntax solution
   (syntax-rules ()
@@ -1775,321 +1199,6 @@
      (let ([ls (solve 1 (var0 ...) x)])
        (if (null? ls) #f (car ls)))]))
 
-(test-check 'test-father-7/solution
-  (solution (x) (newest-father 'rob x))
-  '((x.0 sal)))
-
-(define grandpa-sam
-  (relation (grandchild)
-    (to-show grandchild)
-    (exists (parent)
-      (lambda (sk)
-        ((newest-father 'sam parent)
-         ((newest-father parent grandchild) sk))))))
-
-(test-check 'test-grandpa-sam-1
-  (solve 6 (y) (grandpa-sam y))
-  '(((y.0 sal)) ((y.0 pat))))
-
-(define grandpa-sam
-  (relation ((once grandchild))
-    (to-show grandchild)
-    (exists (parent)
-      (lambda (sk)
-        ((newest-father 'sam parent)
-         ((newest-father parent grandchild) sk))))))
-
-(test-check 'test-grandpa-sam-1-1
-  (solve 6 (y) (grandpa-sam y))
-  '(((y.0 sal)) ((y.0 pat))))
-
-(define child
-  (relation ((once child) (once dad))
-    (to-show child dad)
-    (newest-father dad child)))
-
-(test-check 'test-child-1
-  (solve 10 (x y) (child x y))
-  '(((x.0 sam) (y.0 jon))
-    ((x.0 sal) (y.0 rob))
-    ((x.0 pat) (y.0 rob))
-    ((x.0 rob) (y.0 sam))))
-
-(define grandpa-sam
-  (relation (grandchild)
-    (to-show grandchild)
-    (exists (parent)
-      (all
-        (newest-father 'sam parent)
-        (newest-father parent grandchild)))))
-
-(test-check 'test-grandpa-sam-2
-  (solve 6 (y) (grandpa-sam y))
-  '(((y.0 sal)) ((y.0 pat))))
-
-(define grandpa-maker
-  (lambda (grandad)
-    (relation ((once grandchild))
-      (to-show grandchild)
-      (exists (parent)
-        (all
-          (newest-father grandad parent)
-          (newest-father parent grandchild))))))
-
-(test-check 'test-grandpa-maker-1
-  (solve 6 (x) ((grandpa-maker 'sam) x))
-  '(((x.0 sal)) ((x.0 pat))))
-
-(define grandpa-maker
-  (lambda (guide* grandad*)
-    (relation (grandchild)
-      (to-show grandchild)
-      (exists (parent)
-        (all
-          (guide* grandad* parent)
-          (guide* parent grandchild))))))
-
-(test-check 'test-grandpa-maker-2
-  (solve 4 (x) ((grandpa-maker newest-father 'sam) x))
-  '(((x.0 sal)) ((x.0 pat))))
-
-(define grandpa
-  (relation ((once grandad) (once grandchild))
-    (to-show grandad grandchild)
-    (exists (parent)
-      (all
-        (newest-father grandad parent)
-        (newest-father parent grandchild)))))
-
-(test-check 'test-grandpa-1
-  (solve 4 (x) (grandpa 'sam x))
-  '(((x.0 sal)) ((x.0 pat))))
-
-(define father
-  (extend-relation (a1 a2)
-    (fact () 'jon 'sam)
-    (extend-relation (a1 a2)
-      (fact () 'sam 'rob)
-      (extend-relation (a1 a2)
-        (fact () 'sam 'roz)
-        (extend-relation (a1 a2)
-          (fact () 'rob 'sal)
-          (fact () 'rob 'pat))))))
-
-(define mother
-  (extend-relation (a1 a2)
-    (fact () 'roz 'sue)
-    (fact () 'roz 'sid)))
-
-(define grandpa
-  (extend-relation (a1 a2)
-    (relation (grandad grandchild)
-      (to-show grandad grandchild)
-      (exists (parent)
-        (all
-          (father grandad parent)
-          (father parent grandchild))))
-    (relation (grandad grandchild)
-      (to-show grandad grandchild)
-      (exists (parent)
-        (all
-          (father grandad parent)
-          (mother parent grandchild))))))
-
-(test-check 'test-grandpa-2
-  (solve 10 (y) (grandpa 'sam y))
-  '(((y.0 sal)) ((y.0 pat)) ((y.0 sue)) ((y.0 sid))))
-
-(define grandpa/father
-  (relation (grandad grandchild)
-    (to-show grandad grandchild)
-    (exists (parent)
-      (all
-        (father grandad parent)
-        (father parent grandchild)))))
-
-(define grandpa/mother
-  (relation (grandad grandchild)
-    (to-show grandad grandchild)
-    (exists (parent)
-      (all
-        (father grandad parent)
-        (mother parent grandchild)))))
-
-(define grandpa
-  (extend-relation (a1 a2) grandpa/father grandpa/mother))
-
-(test-check 'test-grandpa-5
-  (solve 10 (y) (grandpa 'sam y))
-  '(((y.0 sal)) ((y.0 pat)) ((y.0 sue)) ((y.0 sid))))
-
-(define grandpa-sam
-  (let ([r (relation (child)
-             (to-show child)
-             (exists (parent)
-               (all
-                 (father 'sam parent)
-                 (father parent child))))])
-    (relation (child)
-      (to-show child)
-      (r child))))
-
-(test-check 'test-grandpa-55
-  (solve 6 (y) (grandpa-sam y))
-  '(((y.0 sal)) ((y.0 pat))))
-
-; The solution that used cuts
-; (define grandpa/father
-;   (relation/cut cut (grandad grandchild)
-;     (to-show grandad grandchild)
-;     (exists (parent)
-;       (all
-;         (father grandad parent)
-;         (father parent grandchild)
-;         cut))))
-;
-; (define grandpa/mother
-;   (relation (grandad grandchild)
-;     (to-show grandad grandchild)
-;     (exists (parent)
-;       (all
-;         (father grandad parent)
-;         (mother parent grandchild)))))
-
-
-; Now we don't need it
-(define grandpa/father
-  (relation (grandad grandchild)
-    (to-show grandad grandchild)
-    (exists (parent)
-      (all!
-        (father grandad parent)
-        (father parent grandchild)))))
-
-(define grandpa/mother
-  (relation (grandad grandchild)
-    (to-show grandad grandchild)
-    (exists (parent)
-      (all
-        (father grandad parent)
-        (mother parent grandchild)))))
-
-(define grandpa
-  (lift-to-relations (a1 a2)
-    (all!
-      (extend-relation (a1 a2) grandpa/father grandpa/mother))))
-
-(test-check 'test-grandpa-8
-  (solve 10 (x y) (grandpa x y))
-  '(((x.0 jon) (y.0 rob))))
-
-; The solution that used to require cuts
-; (define grandpa/father
-;   (relation/cut cut (grandad grandchild)
-;     (to-show grandad grandchild)
-;     (exists (parent)
-;       (all cut (father grandad parent) (father parent grandchild)))))
-
-(define grandpa/father
-  (relation (grandad grandchild)
-    (to-show grandad grandchild)
-    (exists (parent)
-      (all (father grandad parent) (father parent grandchild)))))
-
-; Properly, this requires soft cuts, aka *->, or Mercury's
-; if-then-else. But we emulate it...
-(define grandpa
-  (let-ants (a1 a2) ([grandpa/father grandpa/father]
-		     [grandpa/mother grandpa/mother])
-    (if-only (succeeds grandpa/father) grandpa/father grandpa/mother)))
-
-(test-check 'test-grandpa-10
-  (solve 10 (x y) (grandpa x y))
-  '(((x.0 jon) (y.0 rob))
-    ((x.0 jon) (y.0 roz))
-    ((x.0 sam) (y.0 sal))
-    ((x.0 sam) (y.0 pat))))
-
-(test-check 'test-grandpa-10-1
-  (solve 10 (x) (grandpa x 'sue))
-  '(((x.0 sam))))
-
-; The same as above, with if-all! -- just to test the latter.
-(define grandpa
-  (let-ants (a1 a2) ([grandpa/father grandpa/father]
-		     [grandpa/mother grandpa/mother])
-    (if-only (all! (succeeds grandpa/father) (succeeds grandpa/father))
-      grandpa/father grandpa/mother)))
-
-(test-check 'test-grandpa-10
-  (solve 10 (x y) (grandpa x y))
-  '(((x.0 jon) (y.0 rob))
-    ((x.0 jon) (y.0 roz))
-    ((x.0 sam) (y.0 sal))
-    ((x.0 sam) (y.0 pat))))
-
-(test-check 'test-grandpa-10-1
-  (solve 10 (x) (grandpa x 'sue))
-  '(((x.0 sam))))
-
-; Now do it with soft-cuts
-(define grandpa
-  (let-ants (a1 a2) ([grandpa/father grandpa/father]
-		     [grandpa/mother grandpa/mother])
-    (if-some grandpa/father succeed grandpa/mother)))
-
-(test-check 'test-grandpa-10-soft-cut
-  (solve 10 (x y) (grandpa x y))
-  '(((x.0 jon) (y.0 rob))
-    ((x.0 jon) (y.0 roz))
-    ((x.0 sam) (y.0 sal))
-    ((x.0 sam) (y.0 pat))))
-
-(define a-grandma
-  (relation (grandad grandchild)
-    (to-show grandad grandchild)
-    (exists (parent)
-      (all! (mother grandad parent)))))
-
-(define no-grandma-grandpa
-  (let-ants (a1 a2) ([a-grandma a-grandma] [grandpa grandpa])
-    (if-only a-grandma fail grandpa)))
-
-(test-check 'test-no-grandma-grandpa-1
-  (solve 10 (x) (no-grandma-grandpa 'roz x))
-  '())
-
-(define parents-of-scouts
-  (extend-relation (a1 a2)
-    (fact () 'sam 'rob)
-    (fact () 'roz 'sue)
-    (fact () 'rob 'sal)))
-
-(define fathers-of-cubscouts
-  (extend-relation (a1 a2)
-    (fact () 'sam 'bob)
-    (fact () 'tom 'adam)
-    (fact () 'tad 'carl)))
-
-(test-check 'test-partially-eval-sant
-  (let-lv (p1 p2)
-    (let* ([parents-of-scouts-sant
-	     (ant->sant (parents-of-scouts p1 p2) empty-subst)]
-           [cons@ (lambda@ (x y) (cons x y))]
-           [split1 (@ 
-                    partially-eval-sant parents-of-scouts-sant
-                    cons@ (lambda () '()))]
-           [a1 (car split1)]
-           [split2 (@ partially-eval-sant (cdr split1) cons@
-                     (lambda () '()))]
-           [a2 (car split2)]
-           [split3 (@ partially-eval-sant (cdr split2) cons@
-                     (lambda () '()))]
-           [a3 (car split3)])
-      (map (lambda (subst)
-             (concretize-subst/vars subst p1 p2))
-	(list a1 a2 a3))))
-  '(((p1.0 sam) (p2.0 rob)) ((p1.0 roz) (p2.0 sue)) ((p1.0 rob) (p2.0 sal))))
 
 (define-syntax project
   (syntax-rules ()
@@ -2115,7 +1224,7 @@
   (lambda (t)
     (if (var? t)
       (errorf 'nonvar! "Logic variable ~s found after substituting."
-	(concretize t))
+	(reify t))
       t)))
 
 ; TRACE-VARS TITLE (VAR ...)
@@ -2140,198 +1249,569 @@
 	   (for-each 
 	     (lambda (name val)
 	       (cout title " " name ": " val nl))
-             '(var0 ...) (concretize `(,var0 ...)))
+             '(var0 ...) (reify `(,var0 ...)))
 	   )))]))
 
-(define grandpa
-  (relation (grandad grandchild)
-    (to-show grandad grandchild)
-    (exists (parent)
-      (all 
-        (father grandad parent)
-        (project (parent)
-          (all
-            (predicate (starts-with-r? parent))
-            (father parent grandchild)))))))
+;equality predicate: X == Y in Prolog
+;if X is a var, then X == Y holds only if Y
+;is the same var
+(define *equal?
+  (lambda (x y)
+    (cond
+      [(and (var? x) (var? y)) (eq? x y)]
+      [(var? x) #f]                     ; y is not a var
+      [(var? y) #f]                     ; x is not a var
+      [else (equal? x y)])))
 
-(define starts-with-r?
-  (lambda (x)
+; extend-relation-with-recur-limit LIMIT VARS RELS -> REL
+; This is a variation of 'extend-relation' that makes sure
+; that the extended relation is not recursively entered more
+; than LIMIT times. The form extend-relation-with-recur-limit
+; can be used to cut a left-recursive relation, and to implement
+; an iterative deepening strategy.
+; extend-relation-with-recur-limit must be a special form
+; because we need to define the depth-counter-var
+; outside of relations' lambda (so we count the recursive invocations
+; for all arguments).
+(define-syntax extend-relation-with-recur-limit
+  (syntax-rules ()
+    ((_ limit ids rel ...)
+      (let ((depth-counter-var (logical-variable '*depth-counter*)))
+	(lambda ids
+	  (let ((ant (any (rel . ids) ...)))
+	    (lambda@ (sk fk subst)
+	      (cond
+		[(assq depth-counter-var subst)
+		  => (lambda (cmt)
+		       (let ([counter (commitment->term cmt)])
+			 (if (>= counter limit)
+			   (fk)
+			   (let ([s (extend-subst depth-counter-var
+				      (+ counter 1) subst)])
+			     (@ ant sk fk s)))))]
+		[else
+		  (let ([s (extend-subst depth-counter-var 1 subst)])
+		    (@ ant sk fk s))]))))))
+    ))
+
+; ?- help(call_with_depth_limit/3).
+; call_with_depth_limit(+Goal, +Limit, -Result)
+;     If  Goal can be proven  without recursion deeper than Limit  levels,
+;     call_with_depth_limit/3 succeeds,  binding  Result  to  the  deepest
+;     recursion  level  used  during the  proof.    Otherwise,  Result  is
+;     unified  with depth_limit_exceeded  if the limit was exceeded  during
+;     the  proof,  or the  entire predicate  fails if  Goal fails  without
+;     exceeding Limit.
+
+;     The  depth-limit is  guarded by the  internal machinery.   This  may
+;     differ  from the depth computed based  on a theoretical model.   For
+;     example,  true/0  is  translated  into an  inlined  virtual  machine
+;     instruction.   Also, repeat/0 is not implemented as below, but  as a
+;     non-deterministic foreign predicate.
+
+;     repeat.
+;     repeat :-
+;             repeat.
+
+;     As  a  result, call_with_depth_limit/3 may  still loop  inifitly  on
+;     programs  that should  theoretically finish  in finite time.    This
+;     problem  can be cured by  using Prolog equivalents to such  built-in
+;     predicates.
+
+;     This   predicate  may  be   used  for  theorem-provers  to   realise
+;     techniques  like iterrative  deepening.   It  was implemented  after
+;     discussion with Steve Moyle smoyle@ermine.ox.ac.uk.
+
+;------------------------------------------------------------------------
+;;;;; Starts the real work of the system.
+
+(let* ((father  
+	(relation ()
+	  (to-show 'jon 'sam)))
+      (child-of-male
+	(relation (child dad)
+	  (to-show child dad)
+	  (father dad child)))
+       (child-of-male1
+	 (relation (child dad)
+	   (to-show child dad)
+	   (child-of-male dad child)))
+       )
+  (test-check 'test-father0
+    (let ([result
+	    (@ (father 'jon 'sam)
+	      initial-sk initial-fk empty-subst)])
+      (and
+	(equal? (car result) '())
+	(equal? ((cdr result)) '())))
+    #t)
+
+  (test-check 'test-child-of-male-0
+    (reify-subst '()
+      (car (@ (child-of-male 'sam 'jon)
+	     initial-sk initial-fk empty-subst)))
+  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))
+  '())  ; variables shouldn't leak
+
+
+  ; The mark should be found here...
+  (test-check 'test-child-of-male-1
+  (reify-subst '()
+    (car (@ (child-of-male 'sam 'jon)
+	    initial-sk initial-fk empty-subst)))
+  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))
+  '())
+)
+
+(let* ((father  
+	(relation ()
+	  (to-show 'jon 'sam)))
+       (rob/sal
+	 (relation ()
+	   (to-show 'rob 'sal)))
+       (new-father
+	 (extend-relation (a1 a2) father rob/sal))
+	(rob/pat
+	  (relation ()
+	    (to-show 'rob 'pat)))
+	(newer-father
+	  (extend-relation (a1 a2) new-father rob/pat))
+
+	)
+  (test-check 'test-father-1
+    (let ([result
+	    (@ (new-father 'rob 'sal)
+	      initial-sk initial-fk empty-subst)])
+      (and
+	(equal? (car result) '())
+	(equal? ((cdr result)) '())))
+    #t)
+
+  (test-check 'test-father-2
+    (query (redo-k subst x)
+      (new-father 'rob x)
+      (list (equal? (car subst) (commitment x 'sal)) (redo-k)))
+    '(#t ()))
+
+  (test-check 'test-father-3
+    (query (_ subst x)
+      (new-father 'rob x)
+      (reify-subst (list x) subst))
+    '((x.0 sal)))
+
+  (test-check 'test-father-4
+    (query (_ subst x y)
+      (new-father x y)
+      (reify-subst (list x y) subst))
+    '((x.0 jon) (y.0 sam)))
+
+  (test-check 'test-father-5
+    (query (redok subst x)
+      (newer-father 'rob x)
+      (pretty-print subst)
+      (cons
+	(reify-subst (list x) subst)
+	(redok)))
+    '(((x.0 sal)) ((x.0 pat))))
+
+)
+
+(let* ((father  
+	 (extend-relation (a1 a2)
+	   (relation () (to-show 'jon 'sam))
+	   (relation () (to-show 'rob 'sal))
+	   (relation () (to-show 'rob 'pat))
+	   (relation () (to-show 'sam 'rob)))
+	 ))
+
+  (test-check 'test-father-6/solve
     (and
-      (symbol? x)
-      (string=? (string (string-ref (symbol->string x) 0)) "r"))))
+      (equal?
+	(solve 5 (x) (father 'rob x))
+	'(((x.0 sal)) ((x.0 pat))))
+      (equal?
+	(solve 6 (x y) (father x y))
+	'(((x.0 jon) (y.0 sam))
+	   ((x.0 rob) (y.0 sal))
+	   ((x.0 rob) (y.0 pat))
+	   ((x.0 sam) (y.0 rob)))))
+  #t)
 
-(test-check 'test-grandpa-11
-  (solve 10 (x y) (grandpa x y))
-  '(((x.0 sam) (y.0 sal)) ((x.0 sam) (y.0 pat))))
+  (test-check 'test-father-7/solution
+    (solution (x) (father 'rob x))
+    '((x.0 sal)))
+)
 
-(define check
-  (lambda (id f)
-    (lambda term
-      (if (not (procedure? f))
-          (errorf id "Non-procedure found: ~s" f))
-      (if (ormap var? term)
-          (errorf id "Variable found: ~s" term))
-      (apply f term))))
 
-(test-check 'test-grandpa-12
-  (solve 10 (x y) (grandpa x y))
-  '(((x.0 sam) (y.0 sal)) ((x.0 sam) (y.0 pat))))
 
-(define fun    
-  (lambda (f)
-    (fun-nocheck (check 'fun f))))
+; (define-syntax intersect-relation
+;   (syntax-rules ()
+;     [(_ (id ...) rel-exp) rel-exp]
+;     [(_ (id ...) rel-exp0 rel-exp1 rel-exp2 ...)
+;      (binary-intersect-relation (id ...) rel-exp0
+;        (intersect-relation (id ...) rel-exp1 rel-exp2 ...))]))
 
-(define test1
-  (lambda (x)
-    (any (predicate (< 4 5))
-      (== x (< 6 7)))))
+(define-rel-lifted-comb intersect-relation all)
 
-(test-check 'test-test1
-  (solution (x) (test1 x))
-  '((x.0 x.0)))
+(let*
+  ((parents-of-scouts
+     (extend-relation (a1 a2)
+       (fact () 'sam 'rob)
+       (fact () 'roz 'sue)
+       (fact () 'rob 'sal)))
+    (parents-of-athletes
+      (extend-relation (a1 a2)
+	(fact () 'sam 'roz)
+	(fact () 'roz 'sue)
+	(fact () 'rob 'sal)))
 
-(define test2
-  (lambda (x)
-    (any (predicate (< 5 4))
-      (== x (< 6 7)))))
+    (busy-parents
+      (intersect-relation (a1 a2) parents-of-scouts parents-of-athletes))
 
-(test-check 'test-test2
-  (solution (x) (test2 x))
+    (conscientious-parents
+      (extend-relation (a1 a2) parents-of-scouts parents-of-athletes))
+    )
+
+  (test-check 'test-conscientious-parents
+    (solve 7 (x y) (conscientious-parents x y))
+    '(((x.0 sam) (y.0 rob))
+       ((x.0 roz) (y.0 sue))
+       ((x.0 rob) (y.0 sal))
+       ((x.0 sam) (y.0 roz))
+       ((x.0 roz) (y.0 sue))
+       ((x.0 rob) (y.0 sal))))
+)
+
+(let* ((father  
+	 (extend-relation (a1 a2)
+	   (relation () (to-show 'jon 'sam))
+	   (relation () (to-show 'rob 'sal))
+	   (relation () (to-show 'rob 'pat))
+	   (relation () (to-show 'sam 'rob)))
+	 ))
+
+  (let
+    ((grandpa-sam
+       (relation (grandchild)
+	 (to-show grandchild)
+	 (exists (parent)
+	   (all (father 'sam parent)
+	        (father parent grandchild))))))
+    (test-check 'test-grandpa-sam-1
+      (solve 6 (y) (grandpa-sam y))
+      '(((y.0 sal)) ((y.0 pat))))
+   )
+
+  (let
+    ((grandpa-sam
+       (relation ((once grandchild))
+	 (to-show grandchild)
+	 (exists (parent)
+	   (all (father 'sam parent)
+	        (father parent grandchild))))))
+    (test-check 'test-grandpa-sam-1
+      (solve 6 (y) (grandpa-sam y))
+      '(((y.0 sal)) ((y.0 pat))))
+    )
+
+  (let ((child
+	  (relation ((once child) (once dad))
+	    (to-show child dad)
+	    (father dad child))))
+    (test-check 'test-child-1
+      (solve 10 (x y) (child x y))
+      '(((x.0 sam) (y.0 jon))
+	 ((x.0 sal) (y.0 rob))
+	 ((x.0 pat) (y.0 rob))
+	 ((x.0 rob) (y.0 sam))))
+    )
+
+  (let ((grandpa
+	  (relation ((once grandad) (once grandchild))
+	    (to-show grandad grandchild)
+	    (exists (parent)
+	      (all
+		(father grandad parent)
+		(father parent grandchild))))))
+    (test-check 'test-grandpa-1
+      (solve 4 (x) (grandpa 'sam x))
+      '(((x.0 sal)) ((x.0 pat)))))
+
+  (let ((grandpa-maker
+	  (lambda (guide* grandad*)
+	    (relation (grandchild)
+	      (to-show grandchild)
+	      (exists (parent)
+		(all
+		  (guide* grandad* parent)
+		  (guide* parent grandchild)))))))
+    (test-check 'test-grandpa-maker-2
+      (solve 4 (x) ((grandpa-maker father 'sam) x))
+      '(((x.0 sal)) ((x.0 pat)))))
+  
+)
+
+(let*
+  ((father
+     (extend-relation (a1 a2)
+       (fact () 'jon 'sam)
+       (extend-relation (a1 a2)
+	 (fact () 'sam 'rob)
+	 (extend-relation (a1 a2)
+	   (fact () 'sam 'roz)
+	   (extend-relation (a1 a2)
+	     (fact () 'rob 'sal)
+	     (fact () 'rob 'pat))))))
+    (mother
+      (extend-relation (a1 a2)
+	(fact () 'roz 'sue)
+	(fact () 'roz 'sid)))
+    )
+
+  (let*
+    ((grandpa/father
+       (relation (grandad grandchild)
+	 (to-show grandad grandchild)
+	 (exists (parent)
+	   (all
+	     (father grandad parent)
+	     (father parent grandchild)))))
+     (grandpa/mother
+       (relation (grandad grandchild)
+	 (to-show grandad grandchild)
+	 (exists (parent)
+	   (all
+	     (father grandad parent)
+	     (mother parent grandchild)))))
+     (grandpa
+       (extend-relation (a1 a2) grandpa/father grandpa/mother)))
+
+    (test-check 'test-grandpa-5
+      (solve 10 (y) (grandpa 'sam y))
+      '(((y.0 sal)) ((y.0 pat)) ((y.0 sue)) ((y.0 sid))))
+    )
+
+  ; A relation is just a function
+  (let
+    ((grandpa-sam
+       (let ([r (relation (child)
+		  (to-show child)
+		  (exists (parent)
+		    (all
+		      (father 'sam parent)
+		      (father parent child))))])
+	 (relation (child)
+	   (to-show child)
+	   (r child)))))
+
+    (test-check 'test-grandpa-55
+      (solve 6 (y) (grandpa-sam y))
+      '(((y.0 sal)) ((y.0 pat))))
+    )
+
+; The solution that used cuts
+; (define grandpa/father
+;   (relation/cut cut (grandad grandchild)
+;     (to-show grandad grandchild)
+;     (exists (parent)
+;       (all
+;         (father grandad parent)
+;         (father parent grandchild)
+;         cut))))
+;
+; (define grandpa/mother
+;   (relation (grandad grandchild)
+;     (to-show grandad grandchild)
+;     (exists (parent)
+;       (all
+;         (father grandad parent)
+;         (mother parent grandchild)))))
+
+
+; Now we don't need it
+  (let*
+    ((grandpa/father
+       (relation (grandad grandchild)
+	 (to-show grandad grandchild)
+	 (exists (parent)
+	   (all!
+	     (father grandad parent)
+	     (father parent grandchild)))))
+
+      (grandpa/mother
+	(relation (grandad grandchild)
+	  (to-show grandad grandchild)
+	  (exists (parent)
+	    (all
+	      (father grandad parent)
+	      (mother parent grandchild)))))
+
+      (grandpa
+	(lift-to-relations (a1 a2)
+	  (all!
+	    (extend-relation (a1 a2) grandpa/father grandpa/mother))))
+      )
+    (test-check 'test-grandpa-8
+      (solve 10 (x y) (grandpa x y))
+      '(((x.0 jon) (y.0 rob))))
+    )
+  
+; The solution that used to require cuts
+; (define grandpa/father
+;   (relation/cut cut (grandad grandchild)
+;     (to-show grandad grandchild)
+;     (exists (parent)
+;       (all cut (father grandad parent) (father parent grandchild)))))
+
+  (let
+    ((grandpa/father
+       (relation (grandad grandchild)
+	 (to-show grandad grandchild)
+	 (exists (parent)
+	   (all
+	     (father grandad parent) (father parent grandchild)))))
+
+      (grandpa/mother
+	(relation (grandad grandchild)
+	  (to-show grandad grandchild)
+	  (exists (parent)
+	    (all
+	      (father grandad parent) (mother parent grandchild)))))
+      )
+
+; Properly, this requires soft cuts, aka *->, or Mercury's
+; if-then-else. But we emulate it...
+    (let
+      ((grandpa
+	 (let-ants (a1 a2) ([grandpa/father grandpa/father]
+			    [grandpa/mother grandpa/mother])
+	   (if-only (succeeds grandpa/father) grandpa/father grandpa/mother)))
+	)
+      (test-check 'test-grandpa-10
+	(solve 10 (x y) (grandpa x y))
+	'(((x.0 jon) (y.0 rob))
+	   ((x.0 jon) (y.0 roz))
+	   ((x.0 sam) (y.0 sal))
+	   ((x.0 sam) (y.0 pat))))
+      (test-check 'test-grandpa-10-1
+	(solve 10 (x) (grandpa x 'sue))
+	'(((x.0 sam))))
+      )
+
+; The same as above, with if-all! -- just to test the latter.
+    (let
+      ((grandpa
+	 (let-ants (a1 a2) ([grandpa/father grandpa/father]
+			    [grandpa/mother grandpa/mother])
+	   (if-only (all! (succeeds grandpa/father) (succeeds grandpa/father))
+	     grandpa/father grandpa/mother))))
+
+      (test-check 'test-grandpa-10
+	(solve 10 (x y) (grandpa x y))
+	'(((x.0 jon) (y.0 rob))
+	   ((x.0 jon) (y.0 roz))
+	   ((x.0 sam) (y.0 sal))
+	   ((x.0 sam) (y.0 pat))))
+
+      (test-check 'test-grandpa-10-1
+	(solve 10 (x) (grandpa x 'sue))
+	'(((x.0 sam))))
+      )
+
+
+; Now do it with soft-cuts
+    (let
+      ((grandpa
+	 (let-ants (a1 a2) ([grandpa/father grandpa/father]
+			    [grandpa/mother grandpa/mother])
+	   (if-some grandpa/father succeed grandpa/mother)))
+	)
+      (test-check 'test-grandpa-10-soft-cut
+	(solve 10 (x y) (grandpa x y))
+	'(((x.0 jon) (y.0 rob))
+	   ((x.0 jon) (y.0 roz))
+	   ((x.0 sam) (y.0 sal))
+	   ((x.0 sam) (y.0 pat))))
+      )
+
+    (let*
+      ((a-grandma
+	 (relation (grandad grandchild)
+	   (to-show grandad grandchild)
+	   (exists (parent)
+	     (all! (mother grandad parent)))))
+	(no-grandma-grandpa
+	  (let-ants (a1 a2) ([a-grandma a-grandma]
+			     [grandpa (lift-to-relations (a1 a2)
+					(all!
+					  (extend-relation (a1 a2) 
+					    grandpa/father grandpa/mother)))])
+	    (if-only a-grandma fail grandpa)))
+	)
+      (test-check 'test-no-grandma-grandpa-1
+	(solve 10 (x) (no-grandma-grandpa 'roz x))
+	'()))
+))
+
+(let
+  ((parents-of-scouts
+     (extend-relation (a1 a2)
+       (fact () 'sam 'rob)
+       (fact () 'roz 'sue)
+       (fact () 'rob 'sal)))
+    (fathers-of-cubscouts
+      (extend-relation (a1 a2)
+	(fact () 'sam 'bob)
+	(fact () 'tom 'adam)
+	(fact () 'tad 'carl)))
+    )
+
+  (test-check 'test-partially-eval-sant
+   (let-lv (p1 p2)
+    (let* ([parents-of-scouts-sant
+	     (ant->sant (parents-of-scouts p1 p2) empty-subst)]
+           [cons@ (lambda@ (x y) (cons x y))]
+           [split1 (@ 
+                    partially-eval-sant parents-of-scouts-sant
+                    cons@ (lambda () '()))]
+           [a1 (car split1)]
+           [split2 (@ partially-eval-sant (cdr split1) cons@
+                     (lambda () '()))]
+           [a2 (car split2)]
+           [split3 (@ partially-eval-sant (cdr split2) cons@
+                     (lambda () '()))]
+           [a3 (car split3)])
+      (map (lambda (subst)
+             (reify-subst (list p1 p2) subst))
+	(list a1 a2 a3))))
+  '(((p1.0 sam) (p2.0 rob)) ((p1.0 roz) (p2.0 sue)) ((p1.0 rob) (p2.0 sal))))
+)
+
+
+(test-check 'test-pred1
+  (let ((test1
+	  (lambda (x)
+	    (any (predicate (< 4 5))
+	      (== x (< 6 7))))))
+    (solution (x) (test1 x)))
+  '((x.0 _.0)))
+
+(test-check 'test-pred2
+  (let ((test2
+	  (lambda (x)
+	    (any (predicate (< 5 4))
+	      (== x (< 6 7))))))
+    (solution (x) (test2 x)))
   '((x.0 #t)))
 
-(define test3
-  (lambda (x y)
-    (any
-      (== x (< 5 4))
-      (== y (< 6 7)))))
-
-(test-check 'test-test3
-  (solution (x y) (test3 x y))
-  `((x.0 #f) (y.0 y.0)))
-
-(define grandpa
-  (relation (grandad grandchild)
-    (to-show grandad grandchild)
-    (exists (parent)
-      (all
-        (father grandad parent)
-        (project (parent)
-          (all
-            (fails (predicate (starts-with-r? parent)))
-            (father parent grandchild)))))))
-
-(test-check 'test-grandpa-13
-  (solve 10 (x y) (grandpa x y))
-  '(((x.0 jon) (y.0 rob)) ((x.0 jon) (y.0 roz))))
-
-(define view-subst
-  (lambda (t)
-    (lambda@ (sk fk subst)
-      (pretty-print (subst-in t subst))
-      (pretty-print (concretize-subst subst))
-      (@ sk fk subst))))
-
-(define grandpa
-  (relation (grandad grandchild)
-    (to-show grandad grandchild)
-    (exists (parent)
-      (all
-        (father grandad parent)
-        (father parent grandchild)
-        (view-subst grandchild)))))
-
-(test-check 'test-grandpa-14/view-subst
-  (solve 10 (x y) (grandpa x y))
-  (begin
-    'rob
-    '((grandad.0 x.0)
-      (grandchild.0 y.0)
-      (x.0 jon)
-      (parent.0 sam)
-      (y.0 rob))
-    'roz
-    '((grandad.0 x.0)
-      (grandchild.0 y.0)
-      (x.0 jon)
-      (parent.0 sam)
-      (y.0 roz))
-    'sal 
-    '((grandad.0 x.0)
-      (grandchild.0 y.0)
-      (x.0 sam)
-      (parent.0 rob)
-      (y.0 sal))
-    'pat
-    '((grandad.0 x.0)
-      (grandchild.0 y.0)
-      (x.0 sam)
-      (parent.0 rob)
-      (y.0 pat))
-    '(((x.0 jon) (y.0 rob))
-      ((x.0 jon) (y.0 roz))
-      ((x.0 sam) (y.0 sal))
-      ((x.0 sam) (y.0 pat)))))
-
-(define father
-  (extend-relation (a1 a2) father
-    (extend-relation (a1 a2) (fact () 'jon 'hal)
-      (extend-relation (a1 a2) (fact () 'hal 'ted) (fact () 'sam 'jay)))))
-
-(define ancestor
-  (extend-relation (a1 a2)
-    (relation (old young)
-      (to-show old young)
-      (father old young))
-    (relation (old young)
-      (to-show old young)
-      (exists (not-so-old)
-        (all (father old not-so-old) (ancestor not-so-old young))))))
-
-(test-check 'test-ancestor
-  (solve 21 (x) (ancestor 'jon x))
-  '(((x.0 sam))
-    ((x.0 hal))
-    ((x.0 rob))
-    ((x.0 roz))
-    ((x.0 jay))
-    ((x.0 sal))
-    ((x.0 pat))
-    ((x.0 ted))))
-
-(define common-ancestor
-  (relation (young-a young-b old)
-    (to-show young-a young-b old)
-    (all
-      (ancestor old young-a)
-      (ancestor old young-b))))
-
-(test-check 'test-common-ancestor
-  (solve 4 (x) (common-ancestor 'pat 'jay x))
-  '(((x.0 jon)) ((x.0 sam))))
-
-(define younger-common-ancestor
-  (relation (young-a young-b old not-so-old)
-    (to-show young-a young-b old not-so-old)
-    (all
-      (common-ancestor young-a young-b not-so-old)
-      (common-ancestor young-a young-b old)
-      (ancestor old not-so-old))))
-
-(test-check 'test-younger-common-ancestor
-  (solve 4 (x) (younger-common-ancestor 'pat 'jay 'jon x))
-  '(((x.0 sam))))
-
-(define youngest-common-ancestor
-  (relation (young-a young-b not-so-old)
-    (to-show young-a young-b not-so-old)
-    (all
-      (common-ancestor young-a young-b not-so-old)
-      (exists (y)
-        (fails (younger-common-ancestor young-a young-b not-so-old y))))))
-
-(test-check 'test-youngest-common-ancestor
-  (solve 4 (x) (youngest-common-ancestor 'pat 'jay x))
-  '(((x.0 sam))))
+(test-check 'test-pred3
+  (let ((test3
+	  (lambda (x y)
+	    (any
+	      (== x (< 5 4))
+	      (== y (< 6 7))))))
+    (solution (x y) (test3 x y)))
+  `((x.0 #f) (y.0 _.0)))
 
 (test-check 'test-Seres-Spivey
   (let ([father
@@ -2389,139 +1869,9 @@
   nl nl
   )
 
-(define subst-in
-  (lambda (t subst)
-    (cond
-      [(eq? t _) t]
-      [(var? t)
-       (cond
-         [(assq t subst) => commitment->term]
-         [else t])]
-      [(pair? t)
-       (cons
-         (subst-in (car t) subst)
-         (subst-in (cdr t) subst))]
-      [else t])))
-
-(test-check 'test-compose-subst-5
-  (let-lv (x y z)
-    (equal?
-      (let ([term `(p ,x ,y (g ,z))])
-	(let ([s (compose-subst (unit-subst y z) (unit-subst x `(f ,y)))]
-	      [r (compose-subst (unit-subst x 'a) (unit-subst z 'b))])
-	  (let ([term1 (subst-in term s)])
-	    (write term1)
-	    (newline)
-	    (let ([term2 (subst-in term1 r)])
-	      (write term2)
-	      (newline)
-	      (let ([sr (compose-subst s r)])
-		(write sr)
-		(newline)
-		(subst-in term sr))))))
-      (begin
-	`(p (f ,y) ,z (g ,z))
-	`(p (f ,y) b (g b))
-	`(,(commitment y 'b) ,(commitment x `(f ,y)) ,(commitment z 'b))
-	`(p (f ,y) b (g b)))))
-  #t)
-
-(define unify
-  (lambda (t u subst)
-    (let loop ([t (subst-in t subst)][u (subst-in u subst)] [subst subst])
-      (cond
-        [(trivially-equal? t u) subst]
-        [(var? t)
-         (if (occurs? t u) #f (compose-subst subst (unit-subst t u)))]
-        [(var? u)
-         (if (occurs? u t) #f (compose-subst subst (unit-subst u t)))]
-        [(and (pair? t) (pair? u))
-         (let*-and #f ([subst (loop (car t) (car u) subst)]
-                       [subst (unify (cdr t) (cdr u) subst)])
-           subst)]
-        [else #f]))))
-
-(test-check 'test-unify/pairs
-  (let-lv (w x y z u)
-    (and
-      (and
-        (equal?
-          (unify `(,x ,4) `(3 ,x) empty-subst)
-          #f)
-        (equal?
-          (unify `(,x ,x) '(3 4) empty-subst)
-          #f))
-      (and
-        (equal?
-          (unify `(,x ,y) '(3 4) empty-subst)
-          `(,(commitment x 3) ,(commitment y 4)))
-        (equal?
-          (unify `(,x 4) `(3 ,y) empty-subst)
-          `(,(commitment x 3) ,(commitment y 4))))
-      (and
-        (equal?
-          (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst)
-          `(,(commitment x 3) ,(commitment y 4) ,(commitment w z)))
-        (equal?
-          (unify `(,x 4) `(,y ,y) empty-subst)
-          `(,(commitment x 4) ,(commitment y 4)))
-        (equal?
-          (unify `(,x 4 3) `(,y ,y ,x) empty-subst)
-          #f)
-        (equal?
-          (unify `(,w (,x (,y ,z) 8)) `(,w (,u (abc ,u) ,z)) empty-subst)
-          `(,(commitment x 8)
-            ,(commitment y 'abc)
-            ,(commitment z 8)
-            ,(commitment u 8)))
-        (equal?
-          (unify `(p (f a) (g ,x)) `(p ,x ,y) empty-subst)
-          `(,(commitment x '(f a)) ,(commitment y '(g (f a)))))
-        (equal?
-          (unify `(p (g ,x) (f a)) `(p ,y ,x) empty-subst)
-          `(,(commitment y '(g (f a))) ,(commitment x '(f a))))
-        (equal?
-          (unify `(p a ,x (h (g ,z))) `(p ,z (h ,y) (h ,y)) empty-subst)
-          `(,(commitment z 'a)
-            ,(commitment x '(h (g a)))
-            ,(commitment y '(g a))))
-        (equal? ;;; Oleg's succeeds on this.
-          (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)
-          #f))))
-  #t)
-
-;Baader & Snyder
-(test-check 'test-pathological
-  (list
-      (let-lv (x0 x1 y0 y1)
-        (pretty-print
-          (concretize-subst
-            (unify
-              `(h ,x1 (f ,y0 ,y0) ,y1)
-              `(h (f ,x0 ,x0) ,y1 ,x1)
-              empty-subst)))
-        (newline) #t)
-
-      (let-lv (x0 x1 x2 y0 y1 y2)
-        (pretty-print
-          (concretize-subst
-            (unify
-              `(h ,x1 ,x2 (f ,y0 ,y0) (f ,y1 ,y1) ,y2)
-              `(h (f ,x0 ,x0) (f ,x1 ,x1) ,y1 ,y2 ,x2)
-              empty-subst)))
-        (newline) #t)
-
-      (let-lv (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
-        (pretty-print
-          (concretize-subst
-            (unify
-              `(h ,x1 ,x2 ,x3 ,x4 (f ,y0 ,y0) (f ,y1 ,y1) (f ,y2 ,y2) (f ,y3 ,y3) ,y4)
-              `(h (f ,x0 ,x0) (f ,x1 ,x1) (f ,x2 ,x2) (f ,x3 ,x3) ,y1 ,y2 ,y3 ,y4 ,x4)
-              empty-subst))) #t))
-  (list #t #t #t))
 
 (test-check 'test-fun-resubst
-  (concretize
+  (reify
     (let ([j (relation (x w z)
 	       (to-show z)
 	       (let ([x 4]
@@ -2560,602 +1910,9 @@
   (solution (path) (towers-of-hanoi-path 3 path))
   '((path.0 ((l m) (l r) (m r) (l m) (r l) (r m) (l m)))))
 
-(define unify
-  (lambda (t u subst)
-    (cond
-      [(trivially-equal? t u) subst]
-      [(var? t) (unify/var t (subst-in u subst) subst)]
-      [(var? u) (unify/var u (subst-in t subst) subst)]
-      [(and (pair? t) (pair? u))
-       (let*-and #f ([subst (unify (car t) (car u) subst)]
-                     [subst (unify (cdr t) (cdr u) subst)])
-         subst)]
-      [else #f])))
-
-(define unify/var
-  (lambda (t-var u subst)
-    (cond
-      [(assq t-var subst) (unify (subst-in t-var subst) u subst)] 
-      [(occurs? t-var u) #f]
-      [else (compose-subst subst (unit-subst t-var u))])))
-
-(define unify/var
-  (lambda (t-var u subst)
-    (cond
-      [(assq t-var subst) (unify (subst-in t-var subst) u subst)] 
-      [(occurs? t-var u) #f]
-      [else (compose-subst subst (unit-subst t-var u))])))
-
-(test-check 'test-unify/pairs-lazy
-  (let-lv (w x y z u)
-    (and
-      (and
-        (equal?
-          (unify `(,x ,4) `(3 ,x) empty-subst)
-          #f)
-        (equal?
-          (unify `(,x ,x) '(3 4) empty-subst)
-          #f))
-      (and
-        (equal?
-          (unify `(,x ,y) '(3 4) empty-subst)
-          `(,(commitment x 3) ,(commitment y 4)))
-        (equal?
-          (unify `(,x 4) `(3 ,y) empty-subst)
-          `(,(commitment x 3) ,(commitment y 4))))
-      (and
-        (equal?
-          (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst)
-          `(,(commitment x 3) ,(commitment y 4) ,(commitment w z)))
-        (equal?
-          (unify `(,x 4) `(,y ,y) empty-subst)
-          `(,(commitment x 4) ,(commitment y 4)))
-        (equal?
-          (unify `(,x 4 3) `(,y ,y ,x) empty-subst)
-          #f)
-        (equal?            
-          (unify `(,w (,x (,y ,z) 8)) `(,w (,u (abc ,u) ,z)) empty-subst)
-          `(,(commitment x 8)
-            ,(commitment y 'abc)
-            ,(commitment z 8)
-            ,(commitment u 8)))
-        (equal?
-          (unify `(p (f a) (g ,x)) `(p ,x ,y) empty-subst)
-          `(,(commitment x '(f a)) ,(commitment y '(g (f a)))))
-        (equal?
-          (unify `(p (g ,x) (f a)) `(p ,y ,x) empty-subst)
-          `(,(commitment y '(g (f a))) ,(commitment x '(f a))))
-        (equal?
-          (unify `(p a ,x (h (g ,z))) `(p ,z (h ,y) (h ,y)) empty-subst)            
-          `(,(commitment z 'a)
-            ,(commitment x '(h (g a)))
-            ,(commitment y '(g a))))
-        (equal? ;;; Oleg's succeeds on this.
-          (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)
-          #f))))
-  #t)
-
-(test-check 'test-fun-resubst-lazy
-  (concretize
-    (let ([j (relation (x w z)
-	       (to-show z)
-               (let ([x 4]
-                     [w 3])
-                 (== z (cons x w))))])
-      (solve 4 (q) (j q))))
-  '(((q.0 (4 . 3)))))
-
-(test-check 'test-pathological-lazy
-  (list
-      (let-lv (x0 x1 y0 y1)
-        (pretty-print
-          (concretize-subst
-            (unify
-              `(h ,x1 (f ,y0 ,y0) ,y1)
-              `(h (f ,x0 ,x0) ,y1 ,x1)
-              empty-subst)))
-        (newline) #t)
-
-      (let-lv (x0 x1 x2 y0 y1 y2)
-        (pretty-print
-          (concretize-subst
-            (unify
-              `(h ,x1 ,x2 (f ,y0 ,y0) (f ,y1 ,y1) ,y2)
-              `(h (f ,x0 ,x0) (f ,x1 ,x1) ,y1 ,y2 ,x2)
-              empty-subst)))
-        (newline) #t)
-
-      (let-lv (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
-        (pretty-print
-          (concretize-subst
-            (unify
-              `(h ,x1 ,x2 ,x3 ,x4 (f ,y0 ,y0) (f ,y1 ,y1) (f ,y2 ,y2) (f ,y3 ,y3) ,y4)
-              `(h (f ,x0 ,x0) (f ,x1 ,x1) (f ,x2 ,x2) (f ,x3 ,x3) ,y1 ,y2 ,y3 ,y4 ,x4)
-              empty-subst)))
-	#t))
-  (list #t #t #t))
-
-;;; ;-------------------------------------------------------
-;;; This is the unifier of Oleg Kiselov
-;;; These two definitions are for displaying purposes, only
-;;; They have nothing to do with unification.
-
-(define normalize-subst
-  (lambda (subst)
-    (map (lambda (c)
-           (commitment (commitment->var c)
-             (subst-vars-recursively (commitment->term c) subst)))
-      subst)))
-
-(define subst-vars-recursively
-  (lambda (t subst)
-    (cond
-      [(var? t)
-       (cond
-         [(assq t subst) =>
-          (lambda (c)
-            (subst-vars-recursively
-              (commitment->term c) (remq c subst)))]
-         [else t])]
-      [(pair? t)
-       (cons
-         (subst-vars-recursively (car t) subst)
-         (subst-vars-recursively (cdr t) subst))]
-      [else t])))
-
-;;;; ------------------------------------------------------
-
-;;;; This new subst-in is essential to Oleg's unifier.
-(define subst-in
-  (lambda (t subst)
-    (cond
-      [(var? t)
-       (let ([c (assq t subst)])
-         (if c (subst-in (commitment->term c) subst) t))]
-      [(pair? t)
-       (cons
-         (subst-in (car t) subst)
-         (subst-in (cdr t) subst))]
-      [else t])))
-
-;;;; This is Oleg's unifier
-
-; Either t or u may be:
-; _
-; free-var
-; bound-var
-; pair
-; other-value
-; So, we have in general 25 possibilities to consider.
-; actually, a pair or components of a pair can be variable-free
-; or not. In the latter case, we have got to traverse them.
-; Also, if a term to unify has come from subst, it has special properties,
-; which we can exploit. See below.
-;
-; "Measurements of the dynamic behavior of unification on four real
-; programs show that one or both of the arguments are variables about
-; 85% of the time [63]. A subroutine call is made only if both arguments
-; are nonvariables." (Peter Van Roy, The Wonder Years ...)
-;
-; Just like in the union-find unification algorithm, we produce
-; substitutions in the "triangular form" (see Baader, Snyder, Unification
-; Theory). Circularity is detected only at the end (when we do subst-in).
-
-(define unify
-  (lambda (t u subst)
-    (cond
-      [(eq? t u) subst]			; quick tests first
-      [(eq? t _) subst]
-      [(eq? u _) subst]
-      [(var? t)
-       (let*-and (unify-free/any t u subst) ([ct (assq t subst)])
-	 (if (var? u)			; ct is a bound var, u is a var
-	   (let*-and (unify-free/bound u ct subst) ([cu (assq u subst)])
-	     (unify-bound/bound ct cu subst))
-	   (unify-bound/nonvar ct u subst)))]
-      [(var? u)				; t is not a variable...
-       (let*-and
-         (cond
-           [(pair? t) (unify-free/list u t subst)]
-           ; t is not a var and is not a pair: it's atomic
-           [else (extend-subst u t subst)])
-         ([cu (assq u subst)])
-         (unify-bound/nonvar cu t subst))]
-      [(and (pair? t) (pair? u))
-       (let*-and #f ([subst (unify (car t) (car u) subst)])
-         (unify (cdr t) (cdr u) subst))]
-      [else (and (equal? t u) subst)])))
-
-; ct is a commitment to a bound variable, u is a atomic or a composite
-; value -- but not a variable
-(define unify-bound/nonvar
-  (lambda (ct u subst)
-    (let ((t (commitment->term ct)))
-      (cond				; search for the end of ct -> chain
-	[(eq? t u) subst]
-	[(var? t)
-	  (let*-and 
-	    (cond
-	      [(pair? u) (unify-free/list t u subst)]
-              ; u is not a var and is not a pair: it's atomic
-	      [else (extend-subst t u subst)])
-	    ([ct (assq t subst)])
-	    (unify-bound/nonvar ct u subst))]
-	; t is some simple or composite value. So is u.
-      [(and (pair? t) (pair? u))
-	(let*-and #f ([subst (unify-internal/any (car t) (car u) subst)])
-	  (unify-internal/any (cdr t) (cdr u) subst))]
-      [else (and (equal? t u) subst)]))))
-
-
-; Just like unify. However, the first term, t, comes from
-; an internalized term. We know it can't be _ and can't contain _
-
-(define unify-internal/any
-  (lambda (t u subst)
-    (cond
-      [(eq? t u) subst]			; quick tests first
-      [(eq? u _) subst]
-      [(var? t)
-       (let*-and (unify-free/any t u subst) ([ct (assq t subst)])
-	 (if (var? u)			; ct is a bound var, u is a var
-	   (let*-and (unify-free/bound u ct subst) ([cu (assq u subst)])
-	     (unify-bound/bound ct cu subst))
-	   (unify-bound/nonvar ct u subst)))]
-      [(var? u)				; t is not a variable...
-       (let*-and			; It's a part of an internal term
-	 (extend-subst u t subst)	; no further checks needed
-         ([cu (assq u subst)])
-         (unify-internals (commitment->term cu) t subst))]
-      [(and (pair? t) (pair? u))
-       (let*-and #f ([subst (unify-internal/any (car t) (car u) subst)])
-         (unify-internal/any (cdr t) (cdr u) subst))]
-      [else (and (equal? t u) subst)])))
-
-
-; Unify two already bound variables represented by their commitments
-; ct and cu.
-; We single out this case because in the future we may wish
-; to unify the classes of these variables, by making a redundant
-; binding of (commitment->var ct) to (commitment->term cu) or
-; the other way around.
-; Aside from the above, this function can take advantage of the following
-; facts about (commitment->term cx) (where cx is an existing commitment):
-;   - it is never _
-;   - it never contains _
-; Most importantly, if, for example, (commitment->term ct) is a free variable,
-; we enter its binding to (commitment->term cu) with fewer checks.
-; in particular, we never need to call unify-free/list nor
-; unify-free/any as we do need to rebuild any terms.
-
-(define unify-internals
-  (lambda (t u subst)
-      (cond
-	[(eq? t u) subst]               ; quick tests first
-	[(var? t)
-         (let*-and (cond                ; t is a free variable
-                     [(var? u)
-                      (let*-and (extend-subst t u subst) ([cu (assq u subst)])
-                        (unify-free/bound t cu subst))]
-                     [else              ; t is free, u is not a var: done
-                       (extend-subst t u subst)])
-           ([ct (assq t subst)])
-           (cond			; t is a bound variable
-             [(var? u) 
-              (let*-and (unify-free/bound u ct subst) ([cu (assq u subst)])
-                (unify-bound/bound ct cu subst))]
-             [else                      ; unify bound and a value
-               (unify-internals (commitment->term ct) u subst)]))]
-	[(var? u)                       ; t is not a variable...
-         (let*-and (extend-subst u t subst) ([cu (assq u subst)])
-           (unify-internals (commitment->term cu) t subst))]
-        [(and (pair? t) (pair? u))
-         (let*-and #f ([subst (unify-internals (car t) (car u) subst)])
-           (unify-internals (cdr t) (cdr u) subst))]
-        [else (and (equal? t u) subst)])))
-
-(define unify-bound/bound
-  (lambda (ct cu subst)
-    (unify-internals (commitment->term ct) (commitment->term cu) subst)))
-
-
-; t-var is a free variable, u can be anything
-; This is analogous to get_variable instruction of Warren Abstract Machine
-; (WAM).
-; This function is not recursive and always succeeds, 
-; because unify-free/bound and unify-free/list always succeed.
-(define unify-free/any
-  (lambda (t-var u subst)
-    (cond
-      [(eq? u _) subst]
-      [(var? u)
-       (let*-and (extend-subst t-var u subst) ([cu (assq u subst)])
-         (unify-free/bound t-var cu subst))]
-      [(pair? u) (unify-free/list t-var u subst)]
-      [else ; u is not a var and is not a pair: it's atomic
-	(extend-subst t-var u subst)])))
-
-; On entrance: t-var is free.
-; we are trying to unify it with a bound variable (commitment->var cu)
-; Chase the binding chain, see below for comments
-; This also works somewhat like union-find...
-; This function always succeeds. The resulting substitution is either
-; identical to the input one, or differs only in the binding to t-var.
-;
-; Unlike the previous version of the unifier,
-; The following code does not introduce the temp variables *a and *d
-; It makes substitutions more complex. Therefore, pruning them
-; will take a while, and will break up the sharing. Therefore, we
-; don't do any pruning.
-
-(define unify-free/bound
-  (lambda (t-var cu s)
-    (let loop ([cm cu])
-      (let ([u-term (commitment->term cm)])
-	(cond
-	  [(eq? u-term t-var) s]
-	  [(var? u-term)
-	    (cond
-	      [(assq u-term s) => loop]
-	      [else (extend-subst t-var u-term s)])] ; u-term is free here
-	  [else (extend-subst t-var u-term s)])))))
-
-; ((and (pattern-var? tree2) (assq tree2 env)) => ; tree2 is a bound var
-;        ; binding a free variable to a bound. Search for a substantial binding
-;        ; or a loop. If we find a loop tree1->tree2->...->tree1
-;        ; then we do not enter the binding to tree1, because tree1 is not
-;        ; actually constrained.
-;       (lambda (tree2-binding)
-; 	(let loop ((binding tree2-binding))
-; 	  (cond
-; 	    ((eq? tree1 (cdr binding)) env)  ; loop: no binding needed
-; 	    ((and (pattern-var? (cdr binding)) (assq (cdr binding) env))
-; 	      => loop)
-; 	    (else (cons (cons tree1 (cdr binding)) env))))))
-
-(define ground?
-  (lambda (t)
-    (cond
-      [(var? t) #f]
-      [(pair? t) (and (ground? (car t)) (ground? (cdr t)))]
-      [else #t])))
-
-; t-var is a free variable, u-value is a proper or improper
-; list, which may be either fully or partially grounded (or not at all).
-; We scan the u-value for _, and if, found, replace them with fresh
-; variables. We then bind t-var to the term.
-; This function is not recursive and always succeeds.
-;
-; We assume that more often than not u-value does not contain _.
-; Therefore, to avoid the wasteful rebuilding of u-value, we 
-; first scan it for the occurrence of _. If the scan returns negative,
-; we can use u-value as it is.
-
-      ; Rebuild lst replacing all anonymous variables with some
-      ; fresh logical variables
-      ; If lst contains no anonymous variables, return #f
-      ; Note that lst itself may be #f -- and yet no contradiction arises.
-(define ufl-rebuild-without-anons
-  (lambda (lst)
-    (cond
-      [(eq? lst _) (logical-variable '*anon)]
-      [(not (pair? lst)) #f]
-      [(null? (cdr lst))
-	(let [(new-car (ufl-rebuild-without-anons (car lst)))]
-	  (and new-car (cons new-car '())))]
-      [else
-	(let [(new-car (ufl-rebuild-without-anons (car lst)))
-              (new-cdr (ufl-rebuild-without-anons (cdr lst)))]
-	  (if new-car
-	    (cons new-car (or new-cdr (cdr lst)))
-	    (and new-cdr (cons (car lst) new-cdr))))])))
-
-(define unify-free/list
-  (lambda (t-var u-value subst)
-    (extend-subst t-var
-      (or (ufl-rebuild-without-anons u-value) u-value)
-      subst)))
-
-
 ;------------------------------------------------------------------------
-(test-check 'test-unify/pairs-oleg1
-  (let-lv (x y)
-    (unify `(,x ,4) `(3 ,x) empty-subst))
-  #f)
 
-(test-check 'test-unify/pairs-oleg2
-  (let-lv (x y)
-    (unify `(,x ,x) '(3 4) empty-subst))
-  #f)
-
-(let-lv (x y)
-  (test-check 'test-unify/pairs-oleg3
-    (unify `(,x ,y) '(3 4) empty-subst)
-    `(,(commitment y 4) ,(commitment x 3))))
-
-(let-lv (x y)
-  (test-check 'test-unify/pairs-oleg4
-    (unify `(,x 4) `(3 ,y) empty-subst)
-    `(,(commitment y 4) ,(commitment x 3))))
-
-(let-lv (x y w z)
-  (test-check 'test-unify/pairs-oleg5
-    (let ([s (normalize-subst
-	       (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst))])
-      (let ([vars (list w y x)])
-	(map commitment
-	  vars
-	  (subst-vars-recursively vars s))))
-    `(,(commitment w z)
-       ,(commitment y 4)
-       ,(commitment x 3))))
-
-(let-lv (x y w z)
-  (test-check 'test-unify/pairs-oleg6
-    (let ([s (normalize-subst
-	       (unify `(,x 4) `(,y ,y) empty-subst))])
-      (let ([vars (list y x)])
-	(map commitment
-	  vars
-	  (subst-vars-recursively vars s))))
-    `(,(commitment y 4) ,(commitment x 4))))
-
-(test-check 'test-unify/pairs-oleg7
-  (let-lv (x y)
-    (unify `(,x 4 3) `(,y ,y ,x) empty-subst))
-    #f)
-
-(let-lv (x y w z u)
-  (test-check 'test-unify/pairs-oleg8
-    (let ([s (normalize-subst
-	       (unify
-		 `(,w (,x (,y ,z) 8))
-		 `(,w (,u (abc ,u) ,z))
-		 empty-subst))])
-      (let ([vars (list u z y x)])
-	(map commitment
-	  vars
-	  (subst-vars-recursively vars s))))
-    `(,(commitment u 8)
-       ,(commitment z 8)
-       ,(commitment y 'abc)
-       ,(commitment x 8))))
-
-(let-lv (x y w z u)
-  (test-check 'test-unify/pairs-oleg8
-    (let ([s (normalize-subst
-	       (unify `(p (f a) (g ,x)) `(p ,x ,y) empty-subst))])
-      (let ([vars (list y x)])
-	(map commitment
-	  vars
-	  (subst-vars-recursively vars s))))
-    `(,(commitment y '(g (f a)))
-       ,(commitment x '(f a)))))
-
-(let-lv (x y w z u)
-  (test-check 'test-unify/pairs-oleg10
-    (let ([s (normalize-subst
-	       (unify `(p (g ,x) (f a)) `(p ,y ,x) empty-subst))])
-      (let ([vars (list x y)])
-	(map commitment
-	  vars
-	  (subst-vars-recursively vars s))))
-    `(,(commitment x '(f a))
-       ,(commitment y '(g (f a))))))
-
-(let-lv (x y w z u)
-  (test-check 'test-unify/pairs-oleg11
-    (let ([s (normalize-subst
-	       (unify
-		 `(p a ,x (h (g ,z)))
-		 `(p ,z (h ,y) (h ,y))
-		 empty-subst))])
-      (let ([vars (list y x z)])
-	(map commitment
-	  vars
-	  (subst-vars-recursively vars s))))
-    `(,(commitment y '(g a))
-       ,(commitment x '(h (g a)))
-       ,(commitment z 'a))))
-
-; The following loops...
-; (concretize-subst
-;   (let-lv (x y)
-;     (let* ((s (unify x `(1 ,x) '()))
-; 	   (s (unify y `(1 ,y) s))
-; 	   (s (unify x y s))) s)))
-
-
-
-; (let-lv (x y w z u)
-;   (test-check 'test-unify/pairs-oleg12
-;     (concretize-subst ;;; was #f
-;       (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
-; 	(let ([var (map commitment->var s)])
-; 	  (map commitment
-; 	    var
-; 	    (subst-vars-recursively var s)))))
-;     `(;,(commitment '*d.0 '())
-;        ,(commitment '*a.0 '(f *a.0))
-;        ;,(commitment '*d.1 '((f . *d.1)))
-;        ,(commitment '*d.0 '((f . *d.0)))
-;        ;,(commitment '*a.1 'f)
-;        ;,(commitment 'y.0  '(f (f . *d.1)))
-;        ,(commitment 'y.0  '(f (f . *d.0)))
-;        ,(commitment 'x.0  '(f (f . *d.0))))))
-
-; (let-lv (x y w z u)
-;   (test-check 'test-unify/pairs-oleg13
-;     (concretize-subst ;;; was #f
-;       (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
-; 	(let ([var (map commitment->var s)])
-; 	  (map commitment
-; 	    var
-; 	    (subst-vars-recursively var s)))))
-;     `(;,(commitment '*d.0 '())
-;        ,(commitment '*a.0 '(f *a.0))
-;        ;,(commitment '*d.1 '((f . *d.1)))
-;        ,(commitment '*d.0 '((f . *d.0)))
-;        ;,(commitment '*a.1 'f)
-;        ;,(commitment 'y.0  '(f (f . *d.1)))
-;        ,(commitment 'y.0  '(f (f . *d.0)))
-;        ,(commitment 'x.0  '(f (f . *d.0))))))
-
-(test-check 'test-fun-resubst-oleg
-  (concretize
-    (let ([j (relation (x w z)
-	       (to-show z)
-               (let ([x 4]
-                     [w 3])
-                 (== z (cons x w))))])
-      (solve 4 (q) (j q))))
-  '(((q.0 (4 . 3)))))
           
-;Baader & Snyder
-(test-check 'test-pathological-oleg
-  (list
-    (let-lv (x0 x1 y0 y1)
-      (pretty-print
-	(concretize-subst
-	  (let ([s (unify
-		     `(h ,x1 (f ,y0 ,y0) ,y1)
-		     `(h (f ,x0 ,x0) ,y1 ,x1)
-		     empty-subst)])
-	    (let ([vars (map commitment->var s)])
-	      (map commitment
-		vars
-		(subst-vars-recursively vars s))))))
-      (newline) #t)
-
-    (let-lv (x0 x1 x2 y0 y1 y2)
-      (pretty-print
-	(concretize-subst
-	  (let ([s (unify
-		     `(h ,x1 ,x2 (f ,y0 ,y0) (f ,y1 ,y1) ,y2)
-		     `(h (f ,x0 ,x0) (f ,x1 ,x1) ,y1 ,y2 ,x2)
-		     empty-subst)])
-	    (let ([vars (map commitment->var s)])
-	      (map commitment
-		vars
-		(subst-vars-recursively vars s))))))
-      (newline) #t)
-
-    (let-lv (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
-      (pretty-print
-	(concretize-subst
-	  (let ([s (unify
-		     `(h ,x1 ,x2 ,x3 ,x4 (f ,y0 ,y0) (f ,y1 ,y1)
-			(f ,y2 ,y2) (f ,y3 ,y3) ,y4)
-		     `(h (f ,x0 ,x0) (f ,x1 ,x1) (f ,x2 ,x2)
-			(f ,x3 ,x3) ,y1 ,y2 ,y3 ,y4 ,x4)
-		     empty-subst)])
-	    (let ([vars (map commitment->var s)])
-	      (map commitment
-		vars
-		(subst-vars-recursively vars s))))))
-      #t))
-  (list #t #t #t))
-
 (test-check 'unification-of-free-vars-1
   (solve 1 (x)
     (let-lv (y)
@@ -3186,38 +1943,33 @@
       (all! (== y x) (== y 5) (== x y))))
   '(((x.0 5))))
 
-(test-check 'length-of-subst
-  (let-lv (x y z)
-    (let* ((subst (unify x `(1 2 3 4 5 ,z) '()))
-	    (subst (unify x `(1 . ,y) subst))
-	    (subst (unify z 42 subst)))
-      (concretize-subst subst)))
-  '((z.0 . 42) (y.0 2 3 4 5 z.0) (x.0 1 2 3 4 5 z.0)))
-  ;'((z.0 . 42) (y.0 2 3 4 5 a*.0) (a*.0 . z.0) (x.0 1 2 3 4 5 a*.0)))
 
-(define concat
-  (lambda (xs ys)
-    (cond
-      [(null? xs) ys]
-      [else (cons (car xs) (concat (cdr xs) ys))])))
+(letrec
+  ((concat
+     (lambda (xs ys)
+       (cond
+	 [(null? xs) ys]
+	 [else (cons (car xs) (concat (cdr xs) ys))]))))
 
-(test-check 'test-concat-as-function
-  (concat '(a b c) '(u v))
-  '(a b c u v))
+  (test-check 'test-concat-as-function
+    (concat '(a b c) '(u v))
+    '(a b c u v))
 
-(test-check 'test-fun-concat
-  (solve 1 (q)
-    (== q (concat '(a b c) '(u v))))
-  '(((q.0 (a b c u v)))))
+  (test-check 'test-fun-concat
+    (solve 1 (q)
+      (== q (concat '(a b c) '(u v))))
+    '(((q.0 (a b c u v)))))
+)
 
-(define concat
-  (extend-relation (a1 a2 a3)
-    (fact (xs) '() xs xs)
-    (relation (x xs (once ys) zs)
-      (to-show `(,x . ,xs) ys `(,x . ,zs))
-      (concat xs ys zs))))
-
-(test-check 'test-concat
+; Now the same with the relation
+(letrec
+  ((concat
+     (extend-relation (a1 a2 a3)
+       (fact (xs) '() xs xs)
+       (relation (x xs (once ys) zs)
+	 (to-show `(,x . ,xs) ys `(,x . ,zs))
+	 (concat xs ys zs)))))
+ (test-check 'test-concat
   (time
     (and
       (equal?
@@ -3239,339 +1991,224 @@
           ((q.0 (a b c u v)) (r.0 ()))))
       (equal?
         (solve 6 (q r s) (concat q r s))
-        '(((q.0 ()) (r.0 r.0) (s.0 r.0))
-          ((q.0 (x.0)) (r.0 r.0) (s.0 (x.0 . r.0)))
-          ((q.0 (x.0 x.1)) (r.0 r.0) (s.0 (x.0 x.1 . r.0)))
-          ((q.0 (x.0 x.1 x.2)) (r.0 r.0) (s.0 (x.0 x.1 x.2 . r.0)))
-          ((q.0 (x.0 x.1 x.2 x.3))
-           (r.0 r.0)
-           (s.0 (x.0 x.1 x.2 x.3 . r.0)))
-          ((q.0 (x.0 x.1 x.2 x.3 x.4))
-           (r.0 r.0)
-           (s.0 (x.0 x.1 x.2 x.3 x.4 . r.0)))))
-      (equal?
+	'(((q.0 ()) (r.0 _.0) (s.0 _.0))
+	  ((q.0 (_.0)) (r.0 _.1) (s.0 (_.0 . _.1)))
+	  ((q.0 (_.0 _.1)) (r.0 _.2) (s.0 (_.0 _.1 . _.2)))
+	  ((q.0 (_.0 _.1 _.2)) (r.0 _.3) (s.0 (_.0 _.1 _.2 . _.3)))
+	  ((q.0 (_.0 _.1 _.2 _.3)) (r.0 _.4) (s.0 (_.0 _.1 _.2 _.3 . _.4)))
+	  ((q.0 (_.0 _.1 _.2 _.3 _.4)) (r.0 _.5)
+	   (s.0 (_.0 _.1 _.2 _.3 _.4 . _.5))))
+	)
+      '(equal?
         (solve 6 (q r) (concat q '(u v) `(a b c . ,r)))
         '(((q.0 (a b c)) (r.0 (u v)))
-          ((q.0 (a b c x.0)) (r.0 (x.0 u v)))
-          ((q.0 (a b c x.0 x.1)) (r.0 (x.0 x.1 u v)))
-          ((q.0 (a b c x.0 x.1 x.2)) (r.0 (x.0 x.1 x.2 u v)))
-          ((q.0 (a b c x.0 x.1 x.2 x.3)) (r.0 (x.0 x.1 x.2 x.3 u v)))
-          ((q.0 (a b c x.0 x.1 x.2 x.3 x.4))
-           (r.0 (x.0 x.1 x.2 x.3 x.4 u v)))))
+          ((q.0 (a b c _.0)) (r.0 (_.0 u v)))
+          ((q.0 (a b c _.0 _.1)) (r.0 (_.0 _.1 u v)))
+          ((q.0 (a b c _.0 _.1 _.2)) (r.0 (_.0 _.1 _.2 u v)))
+          ((q.0 (a b c _.0 _.1 _.2 _.3)) (r.0 (_.0 _.1 _.2 _.3 u v)))
+          ((q.0 (a b c _.0 _.1 _.2 _.3 _.4))
+           (r.0 (_.0 _.1 _.2 _.3 _.4 u v)))))
       (equal?
         (solve 6 (q) (concat q '() q))
         '(((q.0 ()))
-          ((q.0 (x.0)))
-          ((q.0 (x.0 x.1)))
-          ((q.0 (x.0 x.1 x.2)))
-          ((q.0 (x.0 x.1 x.2 x.3)))
-          ((q.0 (x.0 x.1 x.2 x.3 x.4)))))))
+          ((q.0 (_.0)))
+          ((q.0 (_.0 _.1)))
+          ((q.0 (_.0 _.1 _.2)))
+          ((q.0 (_.0 _.1 _.2 _.3)))
+          ((q.0 (_.0 _.1 _.2 _.3 _.4)))))
+      ))
   #t)
+)
 
 ; Using the properties of the unifier to do the proper garbage
 ; collection of logical vars
 
-(test-check 'lv-elim-1
-  (concretize
-    (let-lv (x z dummy)
-      (@ 
-	(exists (y)
-	  (== `(,x ,z ,y) `(5 9 ,x)))
-	(lambda@ (fk subst) subst)
-	initial-fk
-	(unit-subst dummy 'dummy))))
-  '((y.0 . 5) (z.0 . 9) (x.0 . 5) (dummy.0 . dummy)))
-  ;'((z.0 . 9) (x.0 . 5) (dummy.0 . dummy)))
-
-(test-check 'lv-elim-2
-  (concretize
-    (let-lv (x dummy)
-      (@ 
-	(exists (y)
-	  (== `(,x ,y) `((5 ,y) ,7)))
-	(lambda@ (fk subst) subst)
-	initial-fk
-	(unit-subst dummy 'dummy))))
-  '((y.0 . 7) (x.0 5 y.0) (dummy.0 . dummy)))
-  ;'((a*.0 . 7) (x.0 5 a*.0) (dummy.0 . dummy)))
-
-; verifying corollary 2 of proposition 10
-(test-check 'lv-elim-3
-  (concretize
-    (let-lv (x v dummy)
-      (@ 
-	(exists (y)
-	  (== x `(a b c ,v d)))
-	(lambda@ (fk subst) subst)
-	initial-fk
-	(unit-subst dummy 'dummy))))
-  '((x.0 a b c v.0 d) (dummy.0 . dummy)))
-  ;'((a*.0 . v.0) (x.0 a b c a*.0 d) (dummy.0 . dummy)))
-
-; pruning several variables sequentially and in parallel
-(test-check 'lv-elim-4-1
-  (concretize
-    (let-lv (x v b dummy)
-      (@ 
-	(let-lv (y)
-	  (== `(,b ,x ,y) `(,x ,y 1)))
-	(lambda@ (fk subst) subst)
-	initial-fk
-	(unit-subst dummy 'dummy))))
-  '((y.0 . 1) (x.0 . y.0) (b.0 . x.0) (dummy.0 . dummy)))
-
-; (test-check 'lv-elim-4-2
-;   (concretize
-;     (let-lv (v b dummy)
-;       (@ 
-; 	(exists (x)
-; 	  (exists (y)
-; 	    (== `(,b ,x ,y) `(,x ,y 1))))
-; 	  (lambda@ (fk subst) subst)
-; 	  initial-fk
-; 	  (unit-subst dummy 'dummy))))
-;     '((b.0 . 1) (dummy.0 . dummy)))
-
-; (test-check 'lv-elim-4-3
-;   (concretize
-;     (let-lv (v b dummy)
+; (test-check 'lv-elim-1
+;   (reify
+;     (let-lv (x z dummy)
 ;       (@ 
 ; 	(exists (y)
-; 	  (exists (x)
-; 	    (== `(,b ,x ,y) `(,x ,y 1))))
-; 	  (lambda@ (fk subst) subst)
-; 	  initial-fk
-; 	  (unit-subst dummy 'dummy))))
-;     '((b.0 . 1) (dummy.0 . dummy)))
-
-(test-check 'lv-elim-4-4
-  (concretize
-    (let-lv (v b dummy)
-      (@ 
-	(exists (x y)
-	    (== `(,b ,x ,y) `(,x ,y 1)))
-	  (lambda@ (fk subst) subst)
-	  initial-fk
-	  (unit-subst dummy 'dummy))))
-  '((y.0 . 1) (x.0 . y.0) (b.0 . x.0) (dummy.0 . dummy)))
-  ;'((b.0 . 1) (dummy.0 . dummy)))
-
-; pruning several variables sequentially and in parallel
-; for indirect (cyclic) dependency
-(test-check 'lv-elim-5-1
-  (concretize
-    (let-lv (x v b dummy)
-      (@ 
-	(let-lv (y)
-	  (== `(,b ,y ,x) `(,x (1 ,x) ,y)))
-	(lambda@ (fk subst) subst)
-	initial-fk
-	(unit-subst dummy 'dummy))))
-  '((x.0 1 x.0) (y.0 1 x.0) (b.0 . x.0) (dummy.0 . dummy)))
-  ;'((x.0 1 a*.0) (a*.0 . x.0) (y.0 1 a*.0) (b.0 . x.0) (dummy.0 . dummy)))
-
-; (test-check 'lv-elim-5-2
-;   (concretize
-;     (let-lv (v b dummy)
-;       (@ 
-; 	(exists (x)
-; 	  (exists (y)
-; 	  (== `(,b ,y ,x) `(,x (1 ,x) ,y))))
+; 	  (== `(,x ,z ,y) `(5 9 ,x)))
 ; 	(lambda@ (fk subst) subst)
 ; 	initial-fk
 ; 	(unit-subst dummy 'dummy))))
-;   '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
+;   '((y.0 . 5) (z.0 . 9) (x.0 . 5) (dummy.0 . dummy)))
+;   ;'((z.0 . 9) (x.0 . 5) (dummy.0 . dummy)))
 
-; (test-check 'lv-elim-5-3
-;   (concretize
-;     (let-lv (v b dummy)
+; (test-check 'lv-elim-2
+;   (reify
+;     (let-lv (x dummy)
 ;       (@ 
 ; 	(exists (y)
-; 	  (exists (x)
-; 	  (== `(,b ,y ,x) `(,x (1 ,x) ,y))))
+; 	  (== `(,x ,y) `((5 ,y) ,7)))
 ; 	(lambda@ (fk subst) subst)
 ; 	initial-fk
 ; 	(unit-subst dummy 'dummy))))
-;   '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
+;   '((y.0 . 7) (x.0 5 y.0) (dummy.0 . dummy)))
+;   ;'((a*.0 . 7) (x.0 5 a*.0) (dummy.0 . dummy)))
 
-(test-check 'lv-elim-5-4
-  (concretize
-    (let-lv (v b dummy)
-      (@ 
-	(exists (x y)
-	  (== `(,b ,y ,x) `(,x (1 ,x) ,y)))
-	(lambda@ (fk subst) subst)
-	initial-fk
-	(unit-subst dummy 'dummy))))
-  '((x.0 1 x.0) (y.0 1 x.0) (b.0 . x.0) (dummy.0 . dummy)))
- ;'((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
+; ; verifying corollary 2 of proposition 10
+; (test-check 'lv-elim-3
+;   (reify
+;     (let-lv (x v dummy)
+;       (@ 
+; 	(exists (y)
+; 	  (== x `(a b c ,v d)))
+; 	(lambda@ (fk subst) subst)
+; 	initial-fk
+; 	(unit-subst dummy 'dummy))))
+;   '((x.0 a b c v.0 d) (dummy.0 . dummy)))
+;   ;'((a*.0 . v.0) (x.0 a b c a*.0 d) (dummy.0 . dummy)))
 
-; We should only be concerned about a direct dependency:
-;  ((x . y) (y . (1 t)) (t . x) (a . x))
-; pruning x and y in sequence or in parallel gives the same result:
-;  ((t . (1 t)) (a . (1 t)))
+; ; pruning several variables sequentially and in parallel
+; (test-check 'lv-elim-4-1
+;   (reify
+;     (let-lv (x v b dummy)
+;       (@ 
+; 	(let-lv (y)
+; 	  (== `(,b ,x ,y) `(,x ,y 1)))
+; 	(lambda@ (fk subst) subst)
+; 	initial-fk
+; 	(unit-subst dummy 'dummy))))
+;   '((y.0 . 1) (x.0 . y.0) (b.0 . x.0) (dummy.0 . dummy)))
 
+; ; (test-check 'lv-elim-4-2
+; ;   (concretize
+; ;     (let-lv (v b dummy)
+; ;       (@ 
+; ; 	(exists (x)
+; ; 	  (exists (y)
+; ; 	    (== `(,b ,x ,y) `(,x ,y 1))))
+; ; 	  (lambda@ (fk subst) subst)
+; ; 	  initial-fk
+; ; 	  (unit-subst dummy 'dummy))))
+; ;     '((b.0 . 1) (dummy.0 . dummy)))
 
-;;;; *****************************************************************
-;;;; This is the start of a different perspective on logic programming.
-;;;; Unitl I saw (!! fk), it was not possible to do the things that I
-;;;; wanted to do.  This does obviate the need for unify-sequence, so
-;;;; that is good.
+; ; (test-check 'lv-elim-4-3
+; ;   (concretize
+; ;     (let-lv (v b dummy)
+; ;       (@ 
+; ; 	(exists (y)
+; ; 	  (exists (x)
+; ; 	    (== `(,b ,x ,y) `(,x ,y 1))))
+; ; 	  (lambda@ (fk subst) subst)
+; ; 	  initial-fk
+; ; 	  (unit-subst dummy 'dummy))))
+; ;     '((b.0 . 1) (dummy.0 . dummy)))
 
-(define father
-  (lambda (dad child)
-    (all!!
-      (== dad 'jon)
-      (== child 'sam))))
+; (test-check 'lv-elim-4-4
+;   (reify
+;     (let-lv (v b dummy)
+;       (@ 
+; 	(exists (x y)
+; 	    (== `(,b ,x ,y) `(,x ,y 1)))
+; 	  (lambda@ (fk subst) subst)
+; 	  initial-fk
+; 	  (unit-subst dummy 'dummy))))
+;   '((y.0 . 1) (x.0 . y.0) (b.0 . x.0) (dummy.0 . dummy)))
+;   ;'((b.0 . 1) (dummy.0 . dummy)))
 
-(define father
-  (extend-relation (a1 a2) father
-    (lambda (dad child)
-      (all!! 
-	(== dad 'sam)
-	(== child 'rob)))))
+; ; pruning several variables sequentially and in parallel
+; ; for indirect (cyclic) dependency
+; (test-check 'lv-elim-5-1
+;   (reify
+;     (let-lv (x v b dummy)
+;       (@ 
+; 	(let-lv (y)
+; 	  (== `(,b ,y ,x) `(,x (1 ,x) ,y)))
+; 	(lambda@ (fk subst) subst)
+; 	initial-fk
+; 	(unit-subst dummy 'dummy))))
+;   '((x.0 1 x.0) (y.0 1 x.0) (b.0 . x.0) (dummy.0 . dummy)))
+;   ;'((x.0 1 a*.0) (a*.0 . x.0) (y.0 1 a*.0) (b.0 . x.0) (dummy.0 . dummy)))
 
-(define father
-  (extend-relation (a1 a2) father
-    (lambda (dad child)
-      (all!!
-	(== dad 'rob)
-	(== child 'sal)))))
+; ; (test-check 'lv-elim-5-2
+; ;   (concretize
+; ;     (let-lv (v b dummy)
+; ;       (@ 
+; ; 	(exists (x)
+; ; 	  (exists (y)
+; ; 	  (== `(,b ,y ,x) `(,x (1 ,x) ,y))))
+; ; 	(lambda@ (fk subst) subst)
+; ; 	initial-fk
+; ; 	(unit-subst dummy 'dummy))))
+; ;   '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
 
-(define grandpa
-  (lambda (grandfather child)
-    (exists (x)
-      (all (father grandfather x) (father x child)))))
+; ; (test-check 'lv-elim-5-3
+; ;   (concretize
+; ;     (let-lv (v b dummy)
+; ;       (@ 
+; ; 	(exists (y)
+; ; 	  (exists (x)
+; ; 	  (== `(,b ,y ,x) `(,x (1 ,x) ,y))))
+; ; 	(lambda@ (fk subst) subst)
+; ; 	initial-fk
+; ; 	(unit-subst dummy 'dummy))))
+; ;   '((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
 
-(test-check 'grandpa-ng
-  (solve 5 (x y) (grandpa x y))
-  '(((x.0 jon) (y.0 rob)) ((x.0 sam) (y.0 sal))))
+; (test-check 'lv-elim-5-4
+;   (reify
+;     (let-lv (v b dummy)
+;       (@ 
+; 	(exists (x y)
+; 	  (== `(,b ,y ,x) `(,x (1 ,x) ,y)))
+; 	(lambda@ (fk subst) subst)
+; 	initial-fk
+; 	(unit-subst dummy 'dummy))))
+;   '((x.0 1 x.0) (y.0 1 x.0) (b.0 . x.0) (dummy.0 . dummy)))
+;  ;'((a*.0 1 a*.0) (b.0 1 a*.0) (dummy.0 . dummy)))
 
-(define father-rob-sal (fact () 'rob 'sal))
-(define father-sam-rob (fact () 'sam 'rob))
-(define father-jon-sam (fact () 'jon 'sam))
-(define father
-  (extend-relation (a1 a2) father-jon-sam father-sam-rob father-rob-sal))
+; ; We should only be concerned about a direct dependency:
+; ;  ((x . y) (y . (1 t)) (t . x) (a . x))
+; ; pruning x and y in sequence or in parallel gives the same result:
+; ;  ((t . (1 t)) (a . (1 t)))
 
-(test-check 'grandpa-ng-1
-  (solve 5 (x y) (grandpa x y))
-  '(((x.0 jon) (y.0 rob)) ((x.0 sam) (y.0 sal))))
-
-(test-check 'grandpa-ng-2
-  (solve 5 (y) (grandpa 'sam y))
-  '(((y.0 sal))))
-
-(test-check 'grandpa-ng-2
-  (solve 5 (x) (grandpa x 'sal))
-  '(((x.0 sam))))
-
-; No need for the following any more...
-; (define grandpa-sam
-;   (lambda (child)
-;     (lambda@ (sk fk subst)
-;       (let ([next (!! fk)]
-;             [cut (!! cutk)])
-;         (let-lv (grandfather)
-;           (@ (all
-;                (all next (== grandfather 'sam))
-;                cut
-;                (exists (x)
-;                  (all (father grandfather x) (father x child))))
-;              sk fk subst ))))))
-
-(define grandpa-sam
-  (lambda (child)
-    (exists (grandfather)
-      (if-only (== grandfather 'sam)
-	(exists (x)
-	  (all (father grandfather x) (father x child)))))))
-
-(test-check 'grandpa-sam-1
-  (solve 5 () (grandpa-sam 'sal))
-  '(()))
-
-(define grandpa-sam
-  (relation (child)
-    (to-show child)
-    (exists (x)
-      (all (father 'sam x) (father x child)))))
-
-(test-check 'grandpa-sam-2
-  (solve 5 () (grandpa-sam 'sal))
-  '(()))
-
-(define father-rob-sal (fact () 'rob 'sal))
-(define father-sam-rob (fact () 'sam 'rob))
-(define father-jon-sam (fact () 'jon 'sam))
-(define father 
-  (extend-relation (a1 a2) father-jon-sam father-sam-rob father-rob-sal))
-
-(test-check 'grandpa-sam-3
-  (solve 5 () (grandpa-sam 'sal))
-  '(()))
-
-(define father-rob-sal
-  (relation () (to-show 'rob 'sal)))
-
-(define father-sam-rob
-  (relation () (to-show 'sam 'rob)))
-
-(define father-johh-sam
-  (relation () (to-show 'jon 'sam)))
-
-(define father 
-  (extend-relation (a1 a2) father-jon-sam father-sam-rob father-rob-sal))
-
-(test-check 'grandpa-sam-4
-  (solve 5 () (grandpa-sam 'sal))
-  '(()))
-
-;;;; This verifies that the idea works.  Now, to run the book through this
-;;;; system.
 
 ; Extending relations in truly mathematical sense.
 ; First, why do we need this.
+(let*
+  ((fact1 (fact () 'x1 'y1))
+   (fact2 (fact () 'x2 'y2))
+   (fact3 (fact () 'x3 'y3))
+   (fact4 (fact () 'x4 'y4))
 
-(define fact1 (fact () 'x1 'y1))
-(define fact2 (fact () 'x2 'y2))
-(define fact3 (fact () 'x3 'y3))
-(define fact4 (fact () 'x4 'y4))
+   ; R1 and R2 are overlapping
+   (R1 (extend-relation (a1 a2) fact1 fact2))
+   (R2 (extend-relation (a1 a2) fact1 fact3))
+  )
+   ; Infinitary relation
+   ; r(z,z).
+   ; r(s(X),s(Y)) :- r(X,Y).
+  (letrec
+   ((Rinf
+     (extend-relation (a1 a2)
+       (fact () 'z 'z)
+       (relation (x y t1 t2)
+	 (to-show t1 t2)
+	 (all
+	   (== t1 `(s ,x))
+	   (== t2 `(s ,y))
+	   (Rinf x y)))))
+  )
 
-; R1 and R2 are overlapping
-(define R1 (extend-relation (a1 a2) fact1 fact2))
-(define R2 (extend-relation (a1 a2) fact1 fact3)) 
-
-(cout nl "R1:" nl)
-(pretty-print (solve 10 (x y) (R1 x y)))
-(cout nl "R2:" nl)
-(pretty-print (solve 10 (x y) (R2 x y)))
-(cout nl "R1+R2:" nl)
-(pretty-print 
-  (solve 10 (x y)
-    ((extend-relation (a1 a2) R1 R2) x y)))
-
-; Infinitary relation
-; r(z,z).
-; r(s(X),s(Y)) :- r(X,Y).
-
-(define Rinf
-  (extend-relation (a1 a2)
-    (fact () 'z 'z)
-    (relation (x y t1 t2)
-      (to-show t1 t2)
-      (all
-	(== t1 `(s ,x))
-	(== t2 `(s ,y))
-	(Rinf x y)))))
-(cout nl "Rinf:" nl)
-(time (pretty-print (solve 5 (x y) (Rinf x y))))
-(cout nl "Rinf+R1: Rinf starves R1:" nl)
-(time
+  (cout nl "R1:" nl)
+  (pretty-print (solve 10 (x y) (R1 x y)))
+  (cout nl "R2:" nl)
+  (pretty-print (solve 10 (x y) (R2 x y)))
+  (cout nl "R1+R2:" nl)
   (pretty-print 
-    (solve 5 (x y)
-      ((extend-relation (a1 a2) Rinf R1) x y))))
+    (solve 10 (x y)
+      ((extend-relation (a1 a2) R1 R2) x y)))
 
-; Solving starvation problem: extend R1 and R2 so that they
+  (cout nl "Rinf:" nl)
+  (time (pretty-print (solve 5 (x y) (Rinf x y))))
+  (cout nl "Rinf+R1: Rinf starves R1:" nl)
+  (time
+    (pretty-print 
+      (solve 5 (x y)
+	((extend-relation (a1 a2) Rinf R1) x y))))
+
+; Solving the starvation problem: extend R1 and R2 so that they
 ; are interleaved
 ; ((sf-extend R1 R2) sk fk)
 ; (R1 sk fk)
@@ -3582,241 +2219,201 @@
 ; There is a fixpoint in the following algorithm!
 ; Or a second-level shift/reset!
 
-(test-check "Rinf+R1"
-  (time 
+  (test-check "Rinf+R1"
+    (time 
+      (solve 7 (x y)
+	(any-interleave (Rinf x y) (R1 x y))))
+    '(((x.0 z) (y.0 z))
+       ((x.0 x1) (y.0 y1))
+       ((x.0 (s z)) (y.0 (s z)))
+       ((x.0 x2) (y.0 y2))
+       ((x.0 (s (s z))) (y.0 (s (s z))))
+       ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
+       ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z)))))))
+    )
+
+  (test-check "R1+Rinf"
+    (time 
+      (solve 7 (x y)
+	(any-interleave (R1 x y) (Rinf x y))))
+    '(((x.0 x1) (y.0 y1))
+       ((x.0 z) (y.0 z))
+       ((x.0 x2) (y.0 y2))
+       ((x.0 (s z)) (y.0 (s z)))
+       ((x.0 (s (s z))) (y.0 (s (s z))))
+       ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
+       ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z)))))))
+    )
+
+
+  (test-check "R2+R1"
     (solve 7 (x y)
-      (any-interleave (Rinf x y) (R1 x y))))
-  '(((x.0 z) (y.0 z))
-     ((x.0 x1) (y.0 y1))
-     ((x.0 (s z)) (y.0 (s z)))
-     ((x.0 x2) (y.0 y2))
-     ((x.0 (s (s z))) (y.0 (s (s z))))
-     ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
-     ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z)))))))
-  )
+      (any-interleave (R2 x y) (R1 x y)))
+    '(((x.0 x1) (y.0 y1))
+       ((x.0 x1) (y.0 y1))
+       ((x.0 x3) (y.0 y3))
+       ((x.0 x2) (y.0 y2)))
+    )
 
-(test-check "R1+Rinf"
-  (time 
+  (test-check "R1+fact3"
     (solve 7 (x y)
-      (any-interleave (R1 x y) (Rinf x y))))
-  '(((x.0 x1) (y.0 y1))
-    ((x.0 z) (y.0 z))
-    ((x.0 x2) (y.0 y2))
-    ((x.0 (s z)) (y.0 (s z)))
-    ((x.0 (s (s z))) (y.0 (s (s z))))
-    ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
-    ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z)))))))
-)
-
-
-(test-check "R2+R1"
-  (solve 7 (x y)
-    (any-interleave (R2 x y) (R1 x y)))
-  '(((x.0 x1) (y.0 y1))
-    ((x.0 x1) (y.0 y1))
-    ((x.0 x3) (y.0 y3))
-    ((x.0 x2) (y.0 y2)))
-)
-
-(test-check "R1+fact3"
-  (solve 7 (x y)
-    (any-interleave (R1 x y) (fact3 x y)))
+      (any-interleave (R1 x y) (fact3 x y)))
     '(((x.0 x1) (y.0 y1)) ((x.0 x3) (y.0 y3)) ((x.0 x2) (y.0 y2)))
-)
+    )
 
-(test-check "fact3+R1"
-  (solve 7 (x y)
-    (any-interleave (fact3 x y) (R1 x y)))
+  (test-check "fact3+R1"
+    (solve 7 (x y)
+      (any-interleave (fact3 x y) (R1 x y)))
     '(((x.0 x3) (y.0 y3)) ((x.0 x1) (y.0 y1)) ((x.0 x2) (y.0 y2)))
-)
+    )
 
 ; testing all-interleave
-(test-check 'all-interleave-1
-  (solve 100 (x y z)
-    (all-interleave
-      (any (== x 1) (== x 2))
-      (any (== y 3) (== y 4))
-      (any (== z 5) (== z 6) (== z 7))))
-  '(((x.0 1) (y.0 3) (z.0 5))
-    ((x.0 2) (y.0 3) (z.0 5))
-    ((x.0 1) (y.0 4) (z.0 5))
-    ((x.0 2) (y.0 4) (z.0 5))
-    ((x.0 1) (y.0 3) (z.0 6))
-    ((x.0 2) (y.0 3) (z.0 6))
-    ((x.0 1) (y.0 4) (z.0 6))
-    ((x.0 2) (y.0 4) (z.0 6))
-    ((x.0 1) (y.0 3) (z.0 7))
-    ((x.0 2) (y.0 3) (z.0 7))
-    ((x.0 1) (y.0 4) (z.0 7))
-    ((x.0 2) (y.0 4) (z.0 7)))
-)
+  (test-check 'all-interleave-1
+    (solve 100 (x y z)
+      (all-interleave
+	(any (== x 1) (== x 2))
+	(any (== y 3) (== y 4))
+	(any (== z 5) (== z 6) (== z 7))))
+    '(((x.0 1) (y.0 3) (z.0 5))
+       ((x.0 2) (y.0 3) (z.0 5))
+       ((x.0 1) (y.0 4) (z.0 5))
+       ((x.0 2) (y.0 4) (z.0 5))
+       ((x.0 1) (y.0 3) (z.0 6))
+       ((x.0 2) (y.0 3) (z.0 6))
+       ((x.0 1) (y.0 4) (z.0 6))
+       ((x.0 2) (y.0 4) (z.0 6))
+       ((x.0 1) (y.0 3) (z.0 7))
+       ((x.0 2) (y.0 3) (z.0 7))
+       ((x.0 1) (y.0 4) (z.0 7))
+       ((x.0 2) (y.0 4) (z.0 7)))
+    )
 
-(test-check "R1 * Rinf: clearly starvation"
-  (solve 5 (x y u v)
-    (all (R1 x y) (Rinf u v)))
+  (test-check "R1 * Rinf: clearly starvation"
+    (solve 5 (x y u v)
+      (all (R1 x y) (Rinf u v)))
   ; indeed, only the first choice of R1 is apparent
-  '(((x.0 x1) (y.0 y1) (u.0 z) (v.0 z))
-    ((x.0 x1) (y.0 y1) (u.0 (s z)) (v.0 (s z)))
-    ((x.0 x1) (y.0 y1) (u.0 (s (s z))) (v.0 (s (s z))))
-    ((x.0 x1) (y.0 y1) (u.0 (s (s (s z)))) (v.0 (s (s (s z)))))
-    ((x.0 x1) (y.0 y1) (u.0 (s (s (s (s z))))) (v.0 (s (s (s (s z)))))))
-)
+    '(((x.0 x1) (y.0 y1) (u.0 z) (v.0 z))
+       ((x.0 x1) (y.0 y1) (u.0 (s z)) (v.0 (s z)))
+       ((x.0 x1) (y.0 y1) (u.0 (s (s z))) (v.0 (s (s z))))
+       ((x.0 x1) (y.0 y1) (u.0 (s (s (s z)))) (v.0 (s (s (s z)))))
+       ((x.0 x1) (y.0 y1) (u.0 (s (s (s (s z))))) (v.0 (s (s (s (s z)))))))
+    )
 
-(test-check "R1 * Rinf: interleaving"
-  (solve 5 (x y u v)
-    (all-interleave (R1 x y) (Rinf u v)))
+  (test-check "R1 * Rinf: interleaving"
+    (solve 5 (x y u v)
+      (all-interleave (R1 x y) (Rinf u v)))
   ; both choices of R1 are apparent
-  '(((x.0 x1) (y.0 y1) (u.0 z) (v.0 z))
-    ((x.0 x2) (y.0 y2) (u.0 z) (v.0 z))
-    ((x.0 x1) (y.0 y1) (u.0 (s z)) (v.0 (s z)))
-    ((x.0 x2) (y.0 y2) (u.0 (s z)) (v.0 (s z)))
-    ((x.0 x1) (y.0 y1) (u.0 (s (s z))) (v.0 (s (s z)))))
-)
+    '(((x.0 x1) (y.0 y1) (u.0 z) (v.0 z))
+       ((x.0 x2) (y.0 y2) (u.0 z) (v.0 z))
+       ((x.0 x1) (y.0 y1) (u.0 (s z)) (v.0 (s z)))
+       ((x.0 x2) (y.0 y2) (u.0 (s z)) (v.0 (s z)))
+       ((x.0 x1) (y.0 y1) (u.0 (s (s z))) (v.0 (s (s z)))))
+    )
 
-;;; Test for nonoverlapping.
+  ;; Test for nonoverlapping.
 
-(cout nl "any-union" nl)
-(test-check "R1+R2"
-  (solve 10 (x y)
-    (any-union (R1 x y) (R2 x y)))
-  '(((x.0 x1) (y.0 y1))
-    ((x.0 x2) (y.0 y2))
-    ((x.0 x3) (y.0 y3))))
+  (cout nl "any-union" nl)
+  (test-check "R1+R2"
+    (solve 10 (x y)
+      (any-union (R1 x y) (R2 x y)))
+    '(((x.0 x1) (y.0 y1))
+       ((x.0 x2) (y.0 y2))
+       ((x.0 x3) (y.0 y3))))
 
-(test-check "R2+R1"
-  (solve 10 (x y)
-    (any-union (R2 x y) (R1 x y)))
-  '(((x.0 x1) (y.0 y1))
-    ((x.0 x3) (y.0 y3))
-    ((x.0 x2) (y.0 y2))))
+  (test-check "R2+R1"
+    (solve 10 (x y)
+      (any-union (R2 x y) (R1 x y)))
+    '(((x.0 x1) (y.0 y1))
+       ((x.0 x3) (y.0 y3))
+       ((x.0 x2) (y.0 y2))))
+  
+  (test-check "R1+R1"
+    (solve 10 (x y)
+      (any-union (R1 x y) (R1 x y)))
+    '(((x.0 x1) (y.0 y1))
+       ((x.0 x2) (y.0 y2))))
+  
+  (test-check "Rinf+R1"
+    (solve 7 (x y)
+      (any-union (Rinf x y) (R1 x y)))
+    '(((x.0 z) (y.0 z))
+     ((x.0 x1) (y.0 y1))
+      ((x.0 (s z)) (y.0 (s z)))
+      ((x.0 x2) (y.0 y2))
+      ((x.0 (s (s z))) (y.0 (s (s z))))
+      ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
+      ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z))))))))
 
-(test-check "R1+R1"
-  (solve 10 (x y)
-    (any-union (R1 x y) (R1 x y)))
-  '(((x.0 x1) (y.0 y1))
-    ((x.0 x2) (y.0 y2))))
-
-(test-check "Rinf+R1"
-  (solve 7 (x y)
-    (any-union (Rinf x y) (R1 x y)))
-  '(((x.0 z) (y.0 z))
-    ((x.0 x1) (y.0 y1))
-    ((x.0 (s z)) (y.0 (s z)))
-    ((x.0 x2) (y.0 y2))
-    ((x.0 (s (s z))) (y.0 (s (s z))))
-    ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
-    ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z))))))))
-
-(test-check "R1+RInf"
-  (solve 7 (x y)
-    (any-union (R1 x y) (Rinf x y)))
-  '(((x.0 x1) (y.0 y1))
-    ((x.0 z) (y.0 z))
-    ((x.0 x2) (y.0 y2))
-    ((x.0 (s z)) (y.0 (s z)))
-    ((x.0 (s (s z))) (y.0 (s (s z))))
-    ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
-    ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z))))))))
+  (test-check "R1+RInf"
+    (solve 7 (x y)
+      (any-union (R1 x y) (Rinf x y)))
+    '(((x.0 x1) (y.0 y1))
+       ((x.0 z) (y.0 z))
+       ((x.0 x2) (y.0 y2))
+       ((x.0 (s z)) (y.0 (s z)))
+       ((x.0 (s (s z))) (y.0 (s (s z))))
+       ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
+       ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z))))))))
 
 
 ; Infinitary relation Rinf2
 ; r(z,z).
 ; r(s(s(X)),s(s(Y))) :- r(X,Y).
 ; Rinf2 overlaps with Rinf in the infinite number of points
+  (letrec
+    ((Rinf2
+       (extend-relation (a1 a2)
+	 (fact () 'z 'z)
+	 (relation (x y t1 t2)
+	   (to-show t1 t2)
+	   (all
+	     (== t1 `(s (s ,x)))
+	     (== t2 `(s (s ,y)))
+	     (Rinf2 x y)))))
+      )
+    (test-check "Rinf2"
+      (solve 5 (x y) (Rinf2 x y))
+      '(((x.0 z) (y.0 z))
+	 ((x.0 (s (s z))) (y.0 (s (s z))))
+	 ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z))))))
+	 ((x.0 (s (s (s (s (s (s z)))))))
+	   (y.0 (s (s (s (s (s (s z))))))))
+	 ((x.0 (s (s (s (s (s (s (s (s z)))))))))
+	   (y.0 (s (s (s (s (s (s (s (s z))))))))))))
 
-(define Rinf2
-  (extend-relation (a1 a2)
-    (fact () 'z 'z)
-    (relation (x y t1 t2)
-      (to-show t1 t2)
-      (all
-	(== t1 `(s (s ,x)))
-	(== t2 `(s (s ,y)))
-	(Rinf2 x y)))))
+    (test-check "Rinf+Rinf2"
+      (solve 9 (x y)
+	(any-union (Rinf x y) (Rinf2 x y)))
+      '(((x.0 z) (y.0 z))
+	 ((x.0 (s z)) (y.0 (s z)))
+	 ((x.0 (s (s z))) (y.0 (s (s z))))
+	 ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z))))))
+	 ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
+	 ((x.0 (s (s (s (s (s (s z)))))))
+	   (y.0 (s (s (s (s (s (s z))))))))
+	 ((x.0 (s (s (s (s (s (s (s (s z)))))))))
+	   (y.0 (s (s (s (s (s (s (s (s z))))))))))
+	 ((x.0 (s (s (s (s (s z)))))) (y.0 (s (s (s (s (s z)))))))
+	 ((x.0 (s (s (s (s (s (s (s (s (s (s z)))))))))))
+	   (y.0 (s (s (s (s (s (s (s (s (s (s z))))))))))))))
+    
+    (test-check "Rinf2+Rinf"
+      (solve 9 (x y)
+	(any-union (Rinf2 x y) (Rinf x y)))
+      '(((x.0 z) (y.0 z))
+	 ((x.0 (s z)) (y.0 (s z)))
+	 ((x.0 (s (s z))) (y.0 (s (s z))))
+	 ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
+	 ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z))))))
+	 ((x.0 (s (s (s (s (s z)))))) (y.0 (s (s (s (s (s z)))))))
+	 ((x.0 (s (s (s (s (s (s z)))))))
+	   (y.0 (s (s (s (s (s (s z))))))))
+	 ((x.0 (s (s (s (s (s (s (s z))))))))
+	   (y.0 (s (s (s (s (s (s (s z)))))))))
+	 ((x.0 (s (s (s (s (s (s (s (s z)))))))))
+	   (y.0 (s (s (s (s (s (s (s (s z))))))))))))
+    )))
 
-(test-check "Rinf2"
-  (solve 5 (x y) (Rinf2 x y))
-  '(((x.0 z) (y.0 z))
-    ((x.0 (s (s z))) (y.0 (s (s z))))
-    ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z))))))
-    ((x.0 (s (s (s (s (s (s z)))))))
-     (y.0 (s (s (s (s (s (s z))))))))
-    ((x.0 (s (s (s (s (s (s (s (s z)))))))))
-     (y.0 (s (s (s (s (s (s (s (s z))))))))))))
-
-(test-check "Rinf+Rinf2"
-  (solve 9 (x y)
-    (any-union (Rinf x y) (Rinf2 x y)))
-  '(((x.0 z) (y.0 z))
-    ((x.0 (s z)) (y.0 (s z)))
-    ((x.0 (s (s z))) (y.0 (s (s z))))
-    ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z))))))
-    ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
-    ((x.0 (s (s (s (s (s (s z)))))))
-     (y.0 (s (s (s (s (s (s z))))))))
-    ((x.0 (s (s (s (s (s (s (s (s z)))))))))
-     (y.0 (s (s (s (s (s (s (s (s z))))))))))
-    ((x.0 (s (s (s (s (s z)))))) (y.0 (s (s (s (s (s z)))))))
-    ((x.0 (s (s (s (s (s (s (s (s (s (s z)))))))))))
-     (y.0 (s (s (s (s (s (s (s (s (s (s z))))))))))))))
-
-(test-check "Rinf2+Rinf"
-  (solve 9 (x y)
-    (any-union (Rinf2 x y) (Rinf x y)))
-  '(((x.0 z) (y.0 z))
-    ((x.0 (s z)) (y.0 (s z)))
-    ((x.0 (s (s z))) (y.0 (s (s z))))
-    ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
-    ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z))))))
-    ((x.0 (s (s (s (s (s z)))))) (y.0 (s (s (s (s (s z)))))))
-    ((x.0 (s (s (s (s (s (s z)))))))
-     (y.0 (s (s (s (s (s (s z))))))))
-    ((x.0 (s (s (s (s (s (s (s z))))))))
-     (y.0 (s (s (s (s (s (s (s z)))))))))
-    ((x.0 (s (s (s (s (s (s (s (s z)))))))))
-     (y.0 (s (s (s (s (s (s (s (s z))))))))))))
-
-;equality predicate: X == Y in Prolog
-;if X is a var, then X == Y holds only if Y
-;is the same var
-(define *equal?
-  (lambda (x y)
-    (cond
-      [(and (var? x) (var? y)) (eq? x y)]
-      [(var? x) #f]                     ; y is not a var
-      [(var? y) #f]                     ; x is not a var
-      [else (equal? x y)])))
-
-; extend-relation-with-recur-limit LIMIT VARS RELS -> REL
-; This is a variation of 'extend-relation' that makes sure
-; that the extended relation is not recursively entered more
-; than LIMIT times. The form extend-relation-with-recur-limit
-; can be used to cut a left-recursive relation, and to implement
-; an iterative deepening strategy.
-; extend-relation-with-recur-limit must be a special form
-; because we need to define the depth-counter-var
-; outside of relations' lambda (so we count the recursive invocations
-; for all arguments).
-(define-syntax extend-relation-with-recur-limit
-  (syntax-rules ()
-    ((_ limit ids rel ...)
-      (let ((depth-counter-var (logical-variable '*depth-counter*)))
-	(lambda ids
-	  (let ((ant (any (rel . ids) ...)))
-	    (lambda@ (sk fk subst)
-	      (cond
-		[(assq depth-counter-var subst)
-		  => (lambda (cmt)
-		       (let ([counter (commitment->term cmt)])
-			 (if (>= counter limit)
-			   (fk)
-			   (let ([s (extend-subst depth-counter-var
-				      (+ counter 1) subst)])
-			     (@ ant sk fk s)))))]
-		[else
-		  (let ([s (extend-subst depth-counter-var 1 subst)])
-		    (@ ant sk fk s))]))))))
-    ))
 
 (cout nl "Append with limited depth" nl)
 ; In Prolog, we normally write:
@@ -3826,108 +2423,74 @@
 ; If we switch the clauses, we get non-termination.
 ; In our system, it doesn't matter!
 
-(define extend-clause-1
-  (relation (l)
-    (to-show '() l l)))
+(letrec
+  ((extend-clause-1
+     (relation (l)
+       (to-show '() l l)))
+   (extend-clause-2
+     (relation (x l1 l2 l3)
+       (to-show `(,x . ,l1) l2 `(,x . ,l3))
+       (extend-rel l1 l2 l3)))
+   (extend-rel
+       (extend-relation-with-recur-limit 5 (a b c)
+	 extend-clause-1
+	 extend-clause-2))
+    )
 
-(define extend-clause-2
-  (relation (x l1 l2 l3)
-    (to-show `(,x . ,l1) l2 `(,x . ,l3))
-    (extend-rel l1 l2 l3)))
+  ; Note (solve 100 ...)
+  ; Here 100 is just a large number: we want to print all solutions
+    (cout nl "Extend: clause1 first: " 
+      (solve 100 (a b c) (extend-rel a b c))
+      nl))
 
-(define extend-rel
-  (extend-relation-with-recur-limit 5 (a b c)
-    extend-clause-1
-    extend-clause-2))
+(letrec
+  ((extend-clause-1
+     (relation (l)
+       (to-show '() l l)))
+   (extend-clause-2
+     (relation (x l1 l2 l3)
+       (to-show `(,x . ,l1) l2 `(,x . ,l3))
+       (extend-rel l1 l2 l3)))
+   (extend-rel
+     (extend-relation-with-recur-limit 3 (a b c)
+       extend-clause-2
+       extend-clause-1)))
 
-; Note (solve 100 ...)
-; Here 100 is just a large number: we want to print all solutions
-(cout nl "Extend: clause1 first: " 
-  (solve 100 (a b c) (extend-rel a b c))
-  nl)
-
-(define extend-rel
-  (extend-relation-with-recur-limit 3 (a b c)
-    extend-clause-2
-    extend-clause-1))
-
-(cout nl "Extend: clause2 first. In Prolog, it would diverge!: " 
-  (solve 100 (a b c) (extend-rel a b c)) nl)
-
-
-; ?- help(call_with_depth_limit/3).
-; call_with_depth_limit(+Goal, +Limit, -Result)
-;     If  Goal can be proven  without recursion deeper than Limit  levels,
-;     call_with_depth_limit/3 succeeds,  binding  Result  to  the  deepest
-;     recursion  level  used  during the  proof.    Otherwise,  Result  is
-;     unified  with depth_limit_exceeded  if the limit was exceeded  during
-;     the  proof,  or the  entire predicate  fails if  Goal fails  without
-;     exceeding Limit.
-
-;     The  depth-limit is  guarded by the  internal machinery.   This  may
-;     differ  from the depth computed based  on a theoretical model.   For
-;     example,  true/0  is  translated  into an  inlined  virtual  machine
-;     instruction.   Also, repeat/0 is not implemented as below, but  as a
-;     non-deterministic foreign predicate.
-
-;     repeat.
-;     repeat :-
-;             repeat.
-
-;     As  a  result, call_with_depth_limit/3 may  still loop  inifitly  on
-;     programs  that should  theoretically finish  in finite time.    This
-;     problem  can be cured by  using Prolog equivalents to such  built-in
-;     predicates.
-
-;     This   predicate  may  be   used  for  theorem-provers  to   realise
-;     techniques  like iterrative  deepening.   It  was implemented  after
-;     discussion with Steve Moyle smoyle@ermine.ox.ac.uk.
+  (cout nl "Extend: clause2 first. In Prolog, it would diverge!: " 
+    (solve 100 (a b c) (extend-rel a b c)) nl))
 
 
-;(exit 0)
+(letrec
+  ((base-+-as-relation
+     (fact (n) 'zero n n))
+   (recursive-+-as-relation
+     (relation (n1 n2 n3)
+       (to-show `(succ ,n1) n2 `(succ ,n3))
+       (+-as-relation n1 n2 n3)))
+   ; Needed eta-expansion here: otherwise, SCM correctly reports
+   ; an error (but Petite doesn't, alas)
+   ; This is a peculiarity of extend-relation as a macro
+   ; Potentially, we need the same approach as in minikanren
+   (+-as-relation
+     (extend-relation (a1 a2 a3)
+       (lambda (a1 a2 a3) (base-+-as-relation a1 a2 a3))
+       (lambda (a1 a2 a3) (recursive-+-as-relation a1 a2 a3))
+       ))
+    )
 
-(define base-+-as-relation
-  (fact (n) 'zero n n))
+  (test-check "Addition"
+    (solve 20 (x y)
+      (+-as-relation x y '(succ (succ (succ (succ (succ zero)))))))
+    '(((x.0 zero) (y.0 (succ (succ (succ (succ (succ zero)))))))
+       ((x.0 (succ zero)) (y.0 (succ (succ (succ (succ zero))))))
+       ((x.0 (succ (succ zero))) (y.0 (succ (succ (succ zero)))))
+       ((x.0 (succ (succ (succ zero)))) (y.0 (succ (succ zero))))
+       ((x.0 (succ (succ (succ (succ zero))))) (y.0 (succ zero)))
+       ((x.0 (succ (succ (succ (succ (succ zero)))))) (y.0 zero))))
 
-(define recursive-+-as-relation
-  (relation (n1 n2 n3)
-    (to-show `(succ ,n1) n2 `(succ ,n3))
-    (+-as-relation n1 n2 n3)))
+  (newline)
+)
 
-(define +-as-relation
-  (extend-relation (a1 a2 a3)
-    base-+-as-relation
-    recursive-+-as-relation))
-
-(test-check "Addition"
-  (solve 20 (x y)
-    (+-as-relation x y '(succ (succ (succ (succ (succ zero)))))))
-  '(((x.0 zero) (y.0 (succ (succ (succ (succ (succ zero)))))))
-    ((x.0 (succ zero)) (y.0 (succ (succ (succ (succ zero))))))
-    ((x.0 (succ (succ zero))) (y.0 (succ (succ (succ zero)))))
-    ((x.0 (succ (succ (succ zero)))) (y.0 (succ (succ zero))))
-    ((x.0 (succ (succ (succ (succ zero))))) (y.0 (succ zero)))
-    ((x.0 (succ (succ (succ (succ (succ zero)))))) (y.0 zero))))
-
-(newline)
-
-(define-syntax nabla
-  (syntax-rules ()
-    [(_ () ant0 ant1 ...)
-     (all ant0 ant1 ...)]
-    [(_ (id ...) ant0 ant1 ...)
-     (let-lv (id ...)
-       (lambda@ (sk fk in-subst)
-	 (@ (all ant0 ant1 ...)
-            (lambda@ (fk out-subst)
-              (let ([ps (lv-elim (list id ...) in-subst out-subst)])
-                (if (ormap (lambda (cmt)
-                             (or (occurs-check? id (commitment->term cmt))
-                                 ...))
-                      ps)
-		  (fk)
-		  (@ sk fk ps))))
-            fk in-subst)))]))
 
 ;(exit 0)
 
