@@ -1965,7 +1965,7 @@
   (extend-relation (a1 a2 a3)
     (fact (xs) '() xs xs)
     (relation _ (x xs ys zs)
-      (to-show `(,x . ,xs) ys `(,x . ,zs))
+      (to-show (cons x xs) ys (cons x zs))
       (concat xs ys zs))))
 
 (define test-concat
@@ -2996,28 +2996,47 @@
 (define nrev
   (extend-relation (a1 a2)
     (fact () '() '())
-    (relation _ (x rest ans)
-      (to-show `(,x . ,rest) ans)
-      (exists (ls)
-        (all
-          (nrev rest ls)
-          (concat ls `(,x) ans))))))
+    (relation _ (x rest ans ls)
+      (to-show (cons x rest) ans)
+      (nrev rest ls)
+      (concat ls (list x) ans))))
 
 (define test-nrev
+  (let ((sample '(1 2 3 4 5 6 7 8 9
+		   10 11 12 13 14 15 16 17 18
+		   19 20 21 22 23 24 25 26 27
+		   28 29 30)))
   (lambda ()
-    (time
-      (exists (x)
-        (solution (nrev '(1 2 3 4 5 6 7 8 9
-                           10 11 12 13 14 15 16 17 18
-                           19 20 21 22 23 24 25 26 27
-                           28 29 30)
-                    x))))))
+    (equal? (reverse sample)
+      (cadr
+	(time
+	  (exists (x)
+	    (solution (nrev sample x)))))))))
 
 (printf "Timing test ~s~n" (test-nrev))
 
 (define get_cpu_time
   (lambda ()
     (vector-ref (statistics) 1)))
+
+(let* ((count 10)
+       (time-start (get_cpu_time))
+       (_ (do ((i 0 (+ 1 i))) ((>= i count))
+	    (exists (x)
+	      (solution (nrev '(1 2 3 4 5 6 7 8 9
+				 10 11 12 13 14 15 16 17 18
+				 19 20 21 22 23 24 25 26 27
+				 28 29 30)
+			  x)))))
+       (time-elapsed (- (get_cpu_time) time-start))
+       (lips (/ (* 496 count) (/ time-elapsed 1000.0))) ; time-elapsed in msec
+	)
+  (printf "~%Simplified LIPS: count ~d " count)
+  (printf "elapsed time ~d (msec) " time-elapsed)
+  (printf "LIPS ~d~%" lips)
+  )
+       
+  
 
 (define lots
   (extend-relation ()
