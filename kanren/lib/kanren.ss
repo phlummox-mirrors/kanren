@@ -24,13 +24,36 @@
     [(_ rator rand) (rator rand)]
     [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
 
-(define test-@-lambda@
-  (lambda ()
-    (equal?
-      (@ (lambda@ (x y z) (+ x (+ y z))) 1 2 3)
-      6)))
+; Regression testing framework
+; test-check TITLE TESTED-EXPRESSION EXPECTED-RESULT 
+; where TITLE is something printable (e.g., a symbol or a string)
+; EXPECTED-RESULT and TESTED-EXPRESSION are both expressions.
+; The expressions are evaluated and their results are compared
+; by equal?
+; If the results compare, we just print the TITLE.
+; Otherwise, we print the TITLE, the TESTED-EXPRESSION, and
+; the both results.
+(define-syntax test-check
+  (syntax-rules ()
+    ((_ title tested-expression expected-result)
+      (begin
+	(printf "Testing ~s~%" title)
+	(let* ((expected expected-result)
+		(produced tested-expression))
+	  (or (equal? expected produced)
+	    (error 'test-check
+	      "Failed: ~s~%Expected: ~s~%Computed: ~s~%"
+	      'tested-expression expected produced)))))))
 
-(printf "~s ~s~%" 'test-@-lambda@ (test-@-lambda@))
+(test-check 'test-@-lambda@
+  (@ (lambda@ (x y z) (+ x (+ y z))) 1 2 3)
+  6)
+
+'(test-check 'test-@-lambda@
+  (@ (lambda@ (x y z) (+ x (+ y z))) 1 2 3)
+  42)
+   
+
 
 (define-record var (id) ())
 (define var make-var)
@@ -84,39 +107,6 @@
 	    (else
 	      (loop (cons (car current) clean) to-remove to-subst
 		(cdr current))))))]))
-'(define-syntax prune
-  (syntax-rules ()
-    [(_ subst) subst]
-    [(_ subst id ...)
-     (let-values (base refining)
-       (split-on-test
-	 (lambda (c)
-	   (or (eqv? (commitment->var c) id) ...))
-	 subst)
-       (let refine ([base base])
-	 (cond
-	   [(null? base) '()]
-	   [(subst-in (commitment->term (car base)) refining) =>
-	    (lambda (new-term)
-	      (if (equal? (commitment->term (car base)) new-term)
-		(cons (car base) (refine (cdr base)))
-		(cons-if-real-commitment
-		  (commitment->var (car base))
-		  new-term
-		  (refine (cdr base)))))]
-	   [else (cons-if-real-commitment
-		  (commitment->var (car base))
-		  (subst-in (commitment->term (car base)) refining)
-		  (refine (cdr base)))])))]))
-
-'(define split-on-test
-  (lambda (tst ls)
-    (cond
-      [(null? ls) (values '() '())]
-      [else (let-values (base refining) (split-on-test tst (cdr ls))
-	      (if (tst (car ls))
-		(values base (cons (car ls) refining))
-		(values (cons (car ls) base) refining)))])))
 
 (print-gensym #f)
 ; (define var
@@ -198,36 +188,35 @@
 
 (define _ (exists (_) _))
 
-(define test-nonrecursive-unify
-  (lambda ()
-    (exists (x y)
-      (and
-        (equal?
-          (unify x 3 empty-subst)
-           `(,(commitment x 3)))
-        (equal?
-          (unify 4 y empty-subst)
-          `(,(commitment y 4)))
-        (equal?
-          (unify x y empty-subst)
-          `(,(commitment x y)))
-        (equal?
-          (unify 'x 'x empty-subst)
-          '())
-        (equal?
-          (unify x x empty-subst)
-          '())
-        (equal?
-          (unify 4 'y empty-subst)
-          #f)
-        (equal?
-          (unify 'x 3 empty-subst)
-          #f)
-        (equal?
-          (unify 3 4 empty-subst)
-          #f)))))
+(test-check 'test-nonrecursive-unify
+  (exists (x y)
+    (and
+      (equal?
+	(unify x 3 empty-subst)
+	`(,(commitment x 3)))
+      (equal?
+	(unify 4 y empty-subst)
+	`(,(commitment y 4)))
+      (equal?
+	(unify x y empty-subst)
+	`(,(commitment x y)))
+      (equal?
+	(unify 'x 'x empty-subst)
+	'())
+      (equal?
+	(unify x x empty-subst)
+	'())
+      (equal?
+	(unify 4 'y empty-subst)
+	#f)
+      (equal?
+	(unify 'x 3 empty-subst)
+	#f)
+      (equal?
+	(unify 3 4 empty-subst)
+	#f)))
+  #t)
 
-(printf "~s ~s~%" 'test-nonrecursive-unify (test-nonrecursive-unify))
 
 (define == 
   (lambda (x y)
@@ -364,56 +353,46 @@
 
 (define empty-subst? null?)
 
-(define test-compose-subst-0
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (append (unit-subst x y) (unit-subst y 52))
-        `(,(commitment x y) ,(commitment y 52))))))
+(exists (x y)
+  (test-check 'test-compose-subst-0
+    (append (unit-subst x y) (unit-subst y 52))
+    `(,(commitment x y) ,(commitment y 52))))
 
-(printf "~s ~s~%" 'test-compose-subst-0 (test-compose-subst-0))
 
-(define test-compose-subst-1
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (compose-subst (unit-subst x y) (unit-subst y 52))
-        `(,(commitment x 52) ,(commitment y 52))))))
+(test-check 'test-compose-subst-1
+  (exists (x y)
+    (equal?
+      (compose-subst (unit-subst x y) (unit-subst y 52))
+      `(,(commitment x 52) ,(commitment y 52))))
+  #t)
 
-(printf "~s ~s~%" 'test-compose-subst-1 (test-compose-subst-1))
+(test-check 'test-compose-subst-2
+  (exists (w x y)
+    (equal?
+      (let ([s (compose-subst (unit-subst y w) (unit-subst w 52))])
+	(compose-subst (unit-subst x y) s))
+      `(,(commitment x 52) ,(commitment y 52) ,(commitment w 52))))
+  #t)
 
-(define test-compose-subst-2
-  (lambda ()
-    (exists (w x y)
-      (equal?
-        (let ([s (compose-subst (unit-subst y w) (unit-subst w 52))])
-          (compose-subst (unit-subst x y) s))
-        `(,(commitment x 52) ,(commitment y 52) ,(commitment w 52))))))
+(test-check 'test-compose-subst-3
+  (exists (w x y)
+    (equal?
+      (let ([s (compose-subst (unit-subst w 52) (unit-subst y w))])
+	(compose-subst (unit-subst x y) s))
+      `(,(commitment x w) ,(commitment w 52) ,(commitment y w))))
+  #t)
 
-(printf "~s ~s~%" 'test-compose-subst-2 (test-compose-subst-2))
+(test-check 'test-compose-subst-4
+  (exists (x y z)
+    (equal?
+      (let ([s (compose-subst (unit-subst y z) (unit-subst x y))]
+	    [r (compose-subst
+		 (compose-subst (unit-subst x 'a) (unit-subst y 'b))
+		 (unit-subst z y))])
+	(compose-subst s r))
+      `(,(commitment x 'b) ,(commitment z y))))
+  #t)
 
-(define test-compose-subst-3
-  (lambda ()
-    (exists (w x y)
-      (equal?
-        (let ([s (compose-subst (unit-subst w 52) (unit-subst y w))])
-          (compose-subst (unit-subst x y) s))
-        `(,(commitment x w) ,(commitment w 52) ,(commitment y w))))))
-
-(printf "~s ~s~%" 'test-compose-subst-3 (test-compose-subst-3))
-
-(define test-compose-subst-4
-  (lambda ()
-    (exists (x y z)
-      (equal?
-        (let ([s (compose-subst (unit-subst y z) (unit-subst x y))]
-              [r (compose-subst
-                   (compose-subst (unit-subst x 'a) (unit-subst y 'b))
-                   (unit-subst z y))])
-          (compose-subst s r))
-        `(,(commitment x 'b) ,(commitment z y))))))
-
-(printf "~s ~s~%" 'test-compose-subst-4 (test-compose-subst-4))
 
 (define initial-fk (lambda () '()))
 (define initial-cutk initial-fk)
@@ -601,13 +580,14 @@
   (relation ()
     (to-show 'john 'sam)))
 
-(printf "~s ~s~%" 'test-father0
+(test-check 'test-father0
   (let ([result
           (@ (father 'john 'sam)
              initial-sk initial-fk empty-subst initial-fk)])
     (and
       (equal? (caar result) '())
-      (equal? ((cdr result)) '()))))
+      (equal? ((cdr result)) '())))
+  #t)
 
 ;;; Now we need concretize-subst about here.
 
@@ -616,16 +596,13 @@
     (to-show child dad)
     (father dad child)))
 
-(define test-child-of-male-0
-  (lambda ()
-    (list ;equal?
-      (concretize-subst
-        (caar (@ (child-of-male 'sam 'john)
-                initial-sk initial-fk empty-subst initial-fk)))
-      `(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'john)))))
+(test-check 'test-child-of-male-0
+  (concretize-subst
+    (caar (@ (child-of-male 'sam 'john)
+	    initial-sk initial-fk empty-subst initial-fk)))
+  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'john)))))
+  '())  ; variables shouldn't leak
 
-(printf "~s ~s~%" 'test-child-of-male-0 (test-child-of-male-0))
-;(exit 0)
 
 (define pete/sal
   (relation ()
@@ -634,16 +611,15 @@
 (define new-father
   (extend-relation (a1 a2) father pete/sal))
 
-(define test-father-1
-  (lambda ()
-    (let ([result
-            (@ (new-father 'pete 'sal)
-               initial-sk initial-fk empty-subst initial-fk)])
-      (and
-        (equal? (caar result) '())
-        (equal? ((cdr result)) '())))))
+(test-check 'test-father-1
+  (let ([result
+	  (@ (new-father 'pete 'sal)
+	    initial-sk initial-fk empty-subst initial-fk)])
+    (and
+      (equal? (caar result) '())
+      (equal? ((cdr result)) '())))
+  #t)
 
-(printf "~s ~s~%" 'test-father-1 (test-father-1))
 
 (define query
   (let ([initial-fk (lambda () '())]
@@ -651,37 +627,31 @@
     (lambda (antecedent)
       (@ antecedent initial-sk initial-fk empty-subst initial-fk))))
 
-(define test-father-2
-  (lambda ()
-    (exists (x)
-      (let ([result (query (new-father 'pete x))])
-        (and
-          (equal? (caar result) `(,(commitment x 'sal)))
-          (equal? ((cdr result)) '()))))))
+(test-check 'test-father-2
+  (exists (x)
+    (let ([result (query (new-father 'pete x))])
+      (and
+	(equal? (caar result) `(,(commitment x 'sal)))
+	(equal? ((cdr result)) '()))))
+  #t)
 
-(printf "~s ~s~%" 'test-father-2 (test-father-2))
+(test-check 'test-father-3
+  (exists (x)
+    (equal?
+      (let ([answer (query (new-father 'pete x))])
+	(let ([subst (caar answer)])
+	  (concretize-sequence (subst-in 'pete subst) (subst-in x subst))))
+        '(pete sal)))
+  #t)
 
-(define test-father-3
-  (lambda ()
-    (exists (x)
-      (equal?
-        (let ([answer (query (new-father 'pete x))])
-          (let ([subst (caar answer)])
-            (concretize-sequence (subst-in 'pete subst) (subst-in x subst))))
-        '(pete sal)))))
-
-(printf "~s ~s~%" 'test-father-3 (test-father-3))
-
-(define test-father-4
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (let ([answer (query (new-father x y))])
-          (let ([subst (caar answer)])
-            (concretize-sequence (subst-in x subst) (subst-in y subst))))
-        '(john sam)))))
-
-(printf "~s ~s~%" 'test-father-4 (test-father-4))
+(test-check 'test-father-4
+  (exists (x y)
+    (equal?
+      (let ([answer (query (new-father x y))])
+	(let ([subst (caar answer)])
+	  (concretize-sequence (subst-in x subst) (subst-in y subst))))
+      '(john sam)))
+  #t)
 
 (define pete/pat
   (relation ()
@@ -690,46 +660,44 @@
 (define newer-father
   (extend-relation (a1 a2) new-father pete/pat))
 
-(define test-father-5
-  (lambda ()
-    (exists (x)
-      (and
-        (equal?
-          (let ([answer1 (query (newer-father 'pete x))])
-            (pretty-print answer1)
-            (let ([subst (caar answer1)])
-              (list
-                (concretize-sequence
-                  (subst-in 'pete subst) (subst-in x subst))
-                (let ([answer2 ((cdr answer1))])
-                  (pretty-print answer2)
-                  (let ([subst (caar answer2)])
-                    (concretize-sequence
-                      (subst-in 'pete subst) (subst-in x subst)))))))
-          '((pete sal) (pete pat)))
-        (equal?
-          (let ([answer1 (query (newer-father 'pete x))])
-            (let ([subst (caar answer1)])
-              (cons
-                (concretize-sequence
-                  (subst-in 'pete subst) (subst-in x subst))
-                (let ([answer2 ((cdr answer1))])
-                  (let ([subst (caar answer2)])
-                    (cons
-                      (concretize-sequence
-                        (subst-in 'pete subst) (subst-in x subst))
-                      (let ([answer3 ((cdr answer2))])
-                        (if (null? answer3)
-                            '()
-                            (let ([subst (car answer3)])
-                              (cons
-                                (concretize-sequence
-                                  (subst-in 'pete subst) (subst-in x subst))
-                                '()))))))))))
-          '((pete sal) (pete pat)))))))
+(test-check 'test-father-5
+  (exists (x)
+    (and
+      (equal?
+	(let ([answer1 (query (newer-father 'pete x))])
+	  (pretty-print answer1)
+	  (let ([subst (caar answer1)])
+	    (list
+	      (concretize-sequence
+		(subst-in 'pete subst) (subst-in x subst))
+	      (let ([answer2 ((cdr answer1))])
+		(pretty-print answer2)
+		(let ([subst (caar answer2)])
+		  (concretize-sequence
+		    (subst-in 'pete subst) (subst-in x subst)))))))
+	'((pete sal) (pete pat)))
+      (equal?
+	(let ([answer1 (query (newer-father 'pete x))])
+	  (let ([subst (caar answer1)])
+	    (cons
+	      (concretize-sequence
+		(subst-in 'pete subst) (subst-in x subst))
+	      (let ([answer2 ((cdr answer1))])
+		(let ([subst (caar answer2)])
+		  (cons
+		    (concretize-sequence
+		      (subst-in 'pete subst) (subst-in x subst))
+		    (let ([answer3 ((cdr answer2))])
+		      (if (null? answer3)
+			'()
+			(let ([subst (car answer3)])
+			  (cons
+			    (concretize-sequence
+			      (subst-in 'pete subst) (subst-in x subst))
+			    '()))))))))))
+	'((pete sal) (pete pat)))))
+  #t)
       
-(printf "~s ~s~%" 'test-father-5 (test-father-5))
-
 (define stream-prefix
   (lambda (n strm)
     (if (null? strm) '()
@@ -751,18 +719,17 @@
 
 (define newest-father (extend-relation (a1 a2) newer-father sam/pete))
 
-(define test-father-6/solve
-  (lambda ()
-    (exists (x y)
-      (and
-        (equal?
-          (solve 5 (newest-father 'pete x))
-          '((pete sal) (pete pat)))
-        (equal?
-          (solve 6 (newest-father x y))
-          '((john sam) (pete sal) (pete pat) (sam pete)))))))
+(test-check 'test-father-6/solve
+  (exists (x y)
+    (and
+      (equal?
+	(solve 5 (newest-father 'pete x))
+	'((pete sal) (pete pat)))
+      (equal?
+	(solve 6 (newest-father x y))
+	'((john sam) (pete sal) (pete pat) (sam pete)))))
+  #t)
             
-(printf "~s ~s~%" 'test-father-6/solve (test-father-6/solve))
 
 (define-syntax binary-intersect-relation
   (syntax-rules ()
@@ -796,16 +763,14 @@
     (fact () 'tad 'carl)))
 
 (define busy-fathers
-  (binary-intersect-relation (a1 a2) fathers-of-cubscouts fathers-of-little-leaguers))
+  (binary-intersect-relation (a1 a2) 
+    fathers-of-cubscouts fathers-of-little-leaguers))
 
-(define test-busy-fathers
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (solve 5 (busy-fathers x y))
-        '((tom adam) (tad carl))))))
+(test-check 'test-busy-fathers
+  (exists (x y)
+    (solve 5 (busy-fathers x y)))
+  '((tom adam) (tad carl)))
             
-(printf "~s ~s~%" 'test-busy-fathers (test-busy-fathers))
 
 (define-syntax intersect-relation
   (syntax-rules ()
@@ -820,14 +785,11 @@
 (define conscientious-fathers
   (extend-relation (a1 a2) fathers-of-cubscouts fathers-of-little-leaguers))
 
-(define test-conscientious-fathers
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (solve 7 (conscientious-fathers x y))
-        '((sam bob) (tom adam) (tad carl) (sam bobo) (tom adam) (tad carl))))))
+(test-check 'test-conscientious-fathers
+  (exists (x y)
+    (solve 7 (conscientious-fathers x y)))
+  '((sam bob) (tom adam) (tad carl) (sam bobo) (tom adam) (tad carl)))
 
-(printf "~s ~s~%" 'test-conscientious-fathers (test-conscientious-fathers))
 
 (define-syntax solution
   (syntax-rules ()
@@ -835,13 +797,10 @@
      (let ([ls (solve 1 x)])
        (if (null? ls) #f (car ls)))]))
 
-(define test-father-7/solution
-  (lambda ()
-    (equal?
-      (exists (x) (solution (newest-father 'pete x)))
-      '(pete sal))))
+(test-check 'test-father-7/solution
+  (exists (x) (solution (newest-father 'pete x)))
+  '(pete sal))
 
-(printf "~s ~s~%" 'test-father-7/solution (test-father-7/solution))
 
 (define grandpa-sam
   (relation (grandchild)
@@ -851,14 +810,11 @@
         ((newest-father 'sam parent)
          ((newest-father parent grandchild) sk))))))
 
-(define test-grandpa-sam-1
-  (lambda ()
-    (exists (y)
-      (equal?
-        (solve 6 (grandpa-sam y))
-        '((sal) (pat))))))
+(test-check 'test-grandpa-sam-1
+  (exists (y)
+    (solve 6 (grandpa-sam y)))
+  '((sal) (pat)))
 
-(printf "~s ~s~%" 'test-grandpa-sam-1 (test-grandpa-sam-1))
 
 (define-syntax any
   (syntax-rules ()
@@ -885,14 +841,10 @@
     (to-show child dad)
     (newest-father dad child)))
 
-(define test-child-1
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (solve 10 (child x y))
-        '((sam john) (sal pete) (pat pete) (pete sam))))))
-
-(printf "~s ~s~%" 'test-child-1 (test-child-1))
+(test-check 'test-child-1
+  (exists (x y)
+    (solve 10 (child x y)))
+  '((sam john) (sal pete) (pat pete) (pete sam)))
 
 (define grandpa-sam
   (relation (grandchild)
@@ -902,14 +854,11 @@
         (newest-father 'sam parent)
         (newest-father parent grandchild)))))
 
-(define test-grandpa-sam-2
-  (lambda ()
-    (exists (y)
-      (equal?
-        (solve 6 (grandpa-sam y))
-        '((sal) (pat))))))
+(test-check 'test-grandpa-sam-2
+  (exists (y)
+    (solve 6 (grandpa-sam y)))
+  '((sal) (pat)))
 
-(printf "~s ~s~%" 'test-grandpa-sam-2 (test-grandpa-sam-2))
 
 (define grandpa-maker
   (lambda (grandad)
@@ -920,14 +869,11 @@
           (newest-father grandad parent)
           (newest-father parent grandchild))))))
 
-(define test-grandpa-maker-1
-  (lambda ()
-    (exists (x)
-      (equal?
-        (solve 6 ((grandpa-maker 'sam) x))
-        '((sal) (pat))))))
+(test-check 'test-grandpa-maker-1
+  (exists (x)
+    (solve 6 ((grandpa-maker 'sam) x)))
+  '((sal) (pat)))
 
-(printf "~s ~s~%" 'test-grandpa-maker-1 (test-grandpa-maker-1))
 
 (define grandpa-maker
   (lambda (guide* grandad*)
@@ -938,14 +884,11 @@
           (guide* grandad* parent)
           (guide* parent grandchild))))))
 
-(define test-grandpa-maker-2
-  (lambda ()
-    (exists (x)
-      (equal?
-        (solve 4 ((grandpa-maker newest-father 'sam) x))
-        '((sal) (pat))))))
+(test-check 'test-grandpa-maker-2
+  (exists (x)
+    (solve 4 ((grandpa-maker newest-father 'sam) x)))
+  '((sal) (pat)))
 
-(printf "~s ~s~%" 'test-grandpa-maker-2 (test-grandpa-maker-2))
 
 (define grandpa
   (relation (grandad grandchild)
@@ -955,14 +898,11 @@
         (newest-father grandad parent)
         (newest-father parent grandchild)))))
 
-(define test-grandpa-1
-  (lambda ()
-    (exists (x)
-      (equal?
-        (solve 4 (grandpa 'sam x))
-        '((sam sal) (sam pat))))))
+(test-check 'test-grandpa-1
+  (exists (x)
+    (solve 4 (grandpa 'sam x)))
+  '((sam sal) (sam pat)))
 
-(printf "~s ~s~%" 'test-grandpa-1 (test-grandpa-1))
 
 (define-syntax fact
   (syntax-rules ()
@@ -1003,14 +943,11 @@
           (father grandad parent)
           (mother parent grandchild))))))
 
-(define test-grandpa-2
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (solve 10 (grandpa 'sam y))
-        '((sam sal) (sam pat) (sam betty) (sam david))))))
+(test-check 'test-grandpa-2
+  (exists (x y)
+    (solve 10 (grandpa 'sam y)))
+  '((sam sal) (sam pat) (sam betty) (sam david)))
 
-(printf "~s ~s~%" 'test-grandpa-2 (test-grandpa-2))
 
 (define grandpa/father
   (relation (grandad grandchild)
@@ -1031,14 +968,11 @@
 (define grandpa
   (extend-relation (a1 a2) grandpa/father grandpa/mother))
 
-(define test-grandpa-5
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (solve 10 (grandpa 'sam y))
-        '((sam sal) (sam pat) (sam betty) (sam david))))))
+(test-check 'test-grandpa-5
+  (exists (x y)
+    (solve 10 (grandpa 'sam y)))
+  '((sam sal) (sam pat) (sam betty) (sam david)))
 
-(printf "~s ~s~%" 'test-grandpa-5 (test-grandpa-5))
 
 '(define grandpa-sam
   (let ([r (relation (child)
@@ -1080,14 +1014,11 @@
 (define grandpa
   (extend-relation (a1 a2) grandpa/father grandpa/mother))
 
-(define test-grandpa-8
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (solve 10 (grandpa x y))
-        '((john pete))))))
+(test-check 'test-grandpa-8
+  (exists (x y)
+    (solve 10 (grandpa x y)))
+  '((john pete)))
 
-(printf "~s ~s~%" 'test-grandpa-8 (test-grandpa-8))
 
 (define grandpa/father
   (relation/cut cut (grandad grandchild)
@@ -1098,14 +1029,11 @@
 (define grandpa
   (extend-relation (a1 a2) grandpa/father grandpa/mother))
 
-(define test-grandpa-10
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (solve 10 (grandpa x y))
-        '((john pete) (john polly) (sam sal) (sam pat))))))
+(test-check 'test-grandpa-10
+  (exists (x y)
+    (solve 10 (grandpa x y)))
+    '((john pete) (john polly) (sam sal) (sam pat)))
 
-(printf "~s ~s~%" 'test-grandpa-10 (test-grandpa-10))
 
 (define fail
   (lambda@ (sk fk subst cutk) (fk)))
@@ -1119,14 +1047,11 @@
 (define no-grandma-grandpa
   (extend-relation (a1 a2) no-grandma grandpa))
 
-(define test-no-grandma-grandpa-1
-  (lambda ()
-    (exists (x)
-      (equal?
-        (solve 1 (no-grandma-grandpa 'polly x))
-        '()))))
+(test-check 'test-no-grandma-grandpa-1
+  (exists (x)
+    (solve 1 (no-grandma-grandpa 'polly x)))
+  '())
 
-(printf "~s ~s~%" 'test-no-grandma-grandpa-1 (test-no-grandma-grandpa-1))
 
 (define-syntax pred-call
   (syntax-rules ()
@@ -1149,7 +1074,8 @@
     [(_ f t u ...)
      (lambda@ (sk fk subst cutk)
        (cond
-         [(unify t ((nonvar! (subst-in f subst)) (nonvar! (subst-in u subst)) ...) subst)
+         [(unify t ((nonvar! (subst-in f subst)) 
+		    (nonvar! (subst-in u subst)) ...) subst)
           => (lambda (subst)
                (@ sk fk subst cutk))]
          [else (fk)]))]))
@@ -1186,14 +1112,11 @@
       (symbol? x)
       (string=? (string (string-ref (symbol->string x) 0)) "p"))))
 
-(define test-grandpa-11
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (solve 10 (grandpa x y))
-        '((sam sal) (sam pat))))))
+(test-check 'test-grandpa-11
+  (exists (x y)
+    (solve 10 (grandpa x y)))
+  '((sam sal) (sam pat)))
 
-(printf "~s ~s~%" 'test-grandpa-11 (test-grandpa-11))
 
 (define check
   (lambda (id f)
@@ -1204,27 +1127,21 @@
           (error id "Variable found: ~s" term))
       (apply f term))))
 
-(define test-grandpa-12
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (solve 10 (grandpa x y))
-        '((sam sal) (sam pat))))))
+(test-check 'test-grandpa-12
+  (exists (x y)
+    (solve 10 (grandpa x y)))
+  '((sam sal) (sam pat)))
 
-(printf "~s ~s~%" 'test-grandpa-12 (test-grandpa-12))
 
 (define fun    
   (lambda (f)
     (fun-nocheck (check 'fun f))))
 
-(define test-fun-*  
-  (lambda ()
-    (exists (q)
-      (equal?
-        (solve 3 (fun-call * q 3 5))
-       `((,* 15 3 5))))))
+(test-check 'test-fun-*  
+  (exists (q)
+    (solve 3 (fun-call * q 3 5)))
+  `((,* 15 3 5)))
 
-(printf "~s ~s~%" 'test-fun-* (test-fun-*))
 
 (define test1
   (lambda (x)
@@ -1237,40 +1154,33 @@
     (let-values (ct new-env) (concretize-term t '())
       ct)))
 
-(define test-test1
-  (lambda ()
-    (exists (x)
-      (equal?
-        (solution (test1 x))
-        `(,(concretize x))))))
-
-(printf "~s ~s~%" 'test-test1 (test-test1))
+(test-check 'test-test1
+  (exists (x)
+    (equal?
+      (solution (test1 x))
+      `(,(concretize x))))
+  #t)
 
 (define test2
   (lambda (x)
     (any (pred-call < 5 4) (fun-call < x 6 7))))
 
-(define test-test2
-  (lambda ()
-    (exists (x)
-      (equal?
-        (solution (test2 x))
-        '(#t)))))
-
-(printf "~s ~s~%" 'test-test2 (test-test2))
+(test-check 'test-test2
+  (exists (x)
+    (solution (test2 x)))
+  '(#t))
 
 (define test3
   (lambda (x y)
     (any (fun-call < x 5 4) (fun-call < y 6 7))))
 
-(define test-test3
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (solution (test3 x y))
-        `(#f ,(concretize y))))))
+(test-check 'test-test3
+  (exists (x y)
+    (equal?
+      (solution (test3 x y))
+      `(#f ,(concretize y))))
+  #t)
 
-(printf "~s ~s~%" 'test-test3 (test-test3))
 
 (define fails
   (lambda (ant)
@@ -1289,14 +1199,11 @@
         (fails (pred-call starts-with-p? parent))
         (father parent grandchild)))))
 
-(define test-grandpa-13
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (solve 10 (grandpa x y))
-        '((john pete) (john polly))))))
+(test-check 'test-grandpa-13
+  (exists (x y)
+    (solve 10 (grandpa x y)))
+  '((john pete) (john polly)))
 
-(printf "~s ~s~%" 'test-grandpa-13 (test-grandpa-13))
 
 (define instantiated
   (lambda (t)
@@ -1318,39 +1225,38 @@
         (father parent grandchild)
         (view-subst grandchild)))))
 
-(define test-grandpa-14/view-subst
-  (lambda ()
-    (exists (x y)
-      (equal?
-        (solve 10 (grandpa x y))
-        (begin
-          'pete
-          '((grandad.0 x.0)
-            (grandchild.0 y.0)
-            (x.0 john)
-            (parent.0 sam)
-            (y.0 pete))
-          'polly
-          '((grandad.0 x.0)
-            (grandchild.0 y.0)
-            (x.0 john)
-            (parent.0 sam)
-            (y.0 polly))
-          'sal 
-          '((grandad.0 x.0)
-            (grandchild.0 y.0)
-            (x.0 sam)
-            (parent.0 pete)
-            (y.0 sal))
-          'pat
-          '((grandad.0 x.0)
-            (grandchild.0 y.0)
-            (x.0 sam)
-            (parent.0 pete)
-            (y.0 pat))
-          '((john pete) (john polly) (sam sal) (sam pat)))))))
+(test-check 'test-grandpa-14/view-subst
+  (exists (x y)
+    (equal?
+      (solve 10 (grandpa x y))
+      (begin
+	'pete
+	'((grandad.0 x.0)
+	   (grandchild.0 y.0)
+	   (x.0 john)
+	   (parent.0 sam)
+	   (y.0 pete))
+	'polly
+	'((grandad.0 x.0)
+	   (grandchild.0 y.0)
+	   (x.0 john)
+	   (parent.0 sam)
+	   (y.0 polly))
+	'sal 
+	'((grandad.0 x.0)
+	   (grandchild.0 y.0)
+	   (x.0 sam)
+	   (parent.0 pete)
+	   (y.0 sal))
+	'pat
+	'((grandad.0 x.0)
+	   (grandchild.0 y.0)
+	   (x.0 sam)
+	   (parent.0 pete)
+	   (y.0 pat))
+	'((john pete) (john polly) (sam sal) (sam pat)))))
+  #t)
 
-(printf "~s ~s~%" 'test-grandpa-14/view-subst (test-grandpa-14/view-subst))
 
 (define father
   (extend-relation (a1 a2) father
@@ -1367,21 +1273,17 @@
       (exists (not-so-old)
         (all (father old not-so-old) (ancestor not-so-old young))))))
 
-(define test-ancestor
-  (lambda ()
-    (exists (x)
-      (equal?
-        (solve 21 (ancestor 'john x))
-        '((john sam)
-          (john harry)
-          (john pete)
-          (john polly)
-          (john ed)
-          (john sal)
-          (john pat)
-          (john carl))))))
-
-(printf "~s ~s~%" 'test-ancestor (test-ancestor))
+(test-check 'test-ancestor
+  (exists (x)
+    (solve 21 (ancestor 'john x)))
+  '((john sam)
+    (john harry)
+    (john pete)
+    (john polly)
+    (john ed)
+    (john sal)
+    (john pat)
+    (john carl)))
 
 (define common-ancestor
   (relation (young-a young-b old)
@@ -1390,14 +1292,10 @@
       (ancestor old young-a)
       (ancestor old young-b))))
 
-(define test-common-ancestor
-  (lambda ()
-    (exists (x)
-      (equal?
-        (solve 4 (common-ancestor 'pat 'ed x))
-        '((pat ed john) (pat ed sam))))))
-
-(printf "~s ~s~%" 'test-common-ancestor (test-common-ancestor))
+(test-check 'test-common-ancestor
+  (exists (x)
+    (solve 4 (common-ancestor 'pat 'ed x)))
+  '((pat ed john) (pat ed sam)))
 
 (define younger-common-ancestor
   (relation (young-a young-b old not-so-old)
@@ -1407,14 +1305,10 @@
       (common-ancestor young-a young-b old)
       (ancestor old not-so-old))))
 
-(define test-younger-common-ancestor
-  (lambda ()
-    (exists (x)
-      (equal?
-        (solve 4 (younger-common-ancestor 'pat 'ed 'john x))
-        '((pat ed john sam))))))
-
-(printf "~s ~s~%" 'test-younger-common-ancestor (test-younger-common-ancestor))
+(test-check 'test-younger-common-ancestor
+  (exists (x)
+    (solve 4 (younger-common-ancestor 'pat 'ed 'john x)))
+  '((pat ed john sam)))
 
 (define youngest-common-ancestor
   (relation (young-a young-b not-so-old)
@@ -1424,49 +1318,42 @@
       (exists (y)
         (fails (younger-common-ancestor young-a young-b not-so-old y))))))
 
-(define test-youngest-common-ancestor
-  (lambda ()
-    (exists (x)
-      (equal?
-        (solve 4 (youngest-common-ancestor 'pat 'ed x))
-        '((pat ed sam))))))
+(test-check 'test-youngest-common-ancestor
+  (exists (x)
+    (solve 4 (youngest-common-ancestor 'pat 'ed x)))
+  '((pat ed sam)))
 
-(printf "~s ~s~%" 'test-youngest-common-ancestor (test-youngest-common-ancestor))
+(test-check 'test-Seres-Spivey
+  (let ([father
+	  (lambda (dad child)
+	    (any
+	      (all (== dad 'john) (== child 'sam))
+	      (all (== dad 'sam) (== child 'pete))
+	      (all (== dad 'sam) (== child 'polly))
+	      (all (== dad 'pete) (== child 'sal))
+	      (all (== dad 'pete) (== child 'pat))
+	      (all (== dad 'john) (== child 'harry))
+	      (all (== dad 'harry) (== child 'carl))
+	      (all (== dad 'sam) (== child 'ed))))])
+    (letrec
+      ([ancestor
+	 (lambda (old young)
+	   (any
+	     (father old young)
+	     (exists (not-so-old)
+	       (all
+		 (father old not-so-old)
+		 (ancestor not-so-old young)))))])
+      (exists (x) (solve 20 (ancestor 'john x)))))
+  '((john sam)
+    (john harry)
+    (john pete)
+    (john polly)
+    (john ed)
+    (john sal)
+    (john pat)
+    (john carl)))
 
-(define test-Seres-Spivey
-  (lambda ()
-    (equal?
-      (let ([father
-              (lambda (dad child)
-                (any
-                  (all (== dad 'john) (== child 'sam))
-                  (all (== dad 'sam) (== child 'pete))
-                  (all (== dad 'sam) (== child 'polly))
-                  (all (== dad 'pete) (== child 'sal))
-                  (all (== dad 'pete) (== child 'pat))
-                  (all (== dad 'john) (== child 'harry))
-                  (all (== dad 'harry) (== child 'carl))
-                  (all (== dad 'sam) (== child 'ed))))])
-        (letrec
-            ([ancestor
-               (lambda (old young)
-                 (any
-                   (father old young)
-                   (exists (not-so-old)
-                     (all
-                       (father old not-so-old)
-                       (ancestor not-so-old young)))))])
-          (exists (x) (solve 20 (ancestor 'john x)))))
-      '((john sam)
-        (john harry)
-        (john pete)
-        (john polly)
-        (john ed)
-        (john sal)
-        (john pat)
-        (john carl)))))
-
-(printf "~s ~s~%" 'test-Seres-Spiver (test-Seres-Spivey))
 
 (define towers-of-hanoi
   (letrec
@@ -1516,30 +1403,28 @@
          (subst-in (cdr t) subst))]
       [else t])))
 
-(define test-compose-subst-5
-  (lambda ()
-    (exists (x y z)
-      (equal?
-        (let ([term `(p ,x ,y (g ,z))])
-          (let ([s (compose-subst (unit-subst y z) (unit-subst x `(f ,y)))]
-                [r (compose-subst (unit-subst x 'a) (unit-subst z 'b))])
-            (let ([term1 (subst-in term s)])
-              (write term1)
-              (newline)
-              (let ([term2 (subst-in term1 r)])
-                (write term2)
-                (newline)
-                (let ([sr (compose-subst s r)])
-                  (write sr)
-                  (newline)
-                  (subst-in term sr))))))
-        (begin
-          `(p (f ,y) ,z (g ,z))
-          `(p (f ,y) b (g b))
-          `(,(commitment y 'b) ,(commitment x `(f ,y)) ,(commitment z 'b))
-          `(p (f ,y) b (g b)))))))
-
-(printf "~s ~s~%" 'test-compose-subst-5 (test-compose-subst-5))
+(test-check 'test-compose-subst-5
+  (exists (x y z)
+    (equal?
+      (let ([term `(p ,x ,y (g ,z))])
+	(let ([s (compose-subst (unit-subst y z) (unit-subst x `(f ,y)))]
+	      [r (compose-subst (unit-subst x 'a) (unit-subst z 'b))])
+	  (let ([term1 (subst-in term s)])
+	    (write term1)
+	    (newline)
+	    (let ([term2 (subst-in term1 r)])
+	      (write term2)
+	      (newline)
+	      (let ([sr (compose-subst s r)])
+		(write sr)
+		(newline)
+		(subst-in term sr))))))
+      (begin
+	`(p (f ,y) ,z (g ,z))
+	`(p (f ,y) b (g b))
+	`(,(commitment y 'b) ,(commitment x `(f ,y)) ,(commitment z 'b))
+	`(p (f ,y) b (g b)))))
+  #t)
 
 (define unify*
   (lambda (t u)
@@ -1566,9 +1451,8 @@
       [(pair? term) (or (occurs? var (car term)) (occurs? var (cdr term)))]
       [else #f])))
 
-(define test-unify/pairs
-  (lambda ()
-    (exists (w x y z u)
+(test-check 'test-unify/pairs
+  (exists (w x y z u)
       (and
         (and
           (equal?
@@ -1613,13 +1497,12 @@
               ,(commitment y '(g a))))
           (equal? ;;; Oleg's succeeds on this.
             (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)
-            #f))))))
+            #f))))
+  #t)
 
-(printf "~s ~s~%" 'test-unify/pairs-eager (test-unify/pairs))
-
-(define test-pathological
-  (lambda ()
-    (list
+;Baader & Snyder
+(test-check 'test-pathological
+  (list
       (exists (x0 x1 y0 y1)
         (pretty-print
           (concretize-subst
@@ -1644,25 +1527,20 @@
             (unify
               `(h ,x1 ,x2 ,x3 ,x4 (f ,y0 ,y0) (f ,y1 ,y1) (f ,y2 ,y2) (f ,y3 ,y3) ,y4)
               `(h (f ,x0 ,x0) (f ,x1 ,x1) (f ,x2 ,x2) (f ,x3 ,x3) ,y1 ,y2 ,y3 ,y4 ,x4)
-              empty-subst)))))))
+              empty-subst)))))
+  (list (void) (void) (void)))
 
-;Baader & Snyder
-(printf "~s ~s~%" 'test-unify/pathological-eager (test-pathological))
+(test-check 'test-fun-resubst
+  (concretize
+    (let ([j (relation (x w z)
+	       (to-show z)
+	       (all
+		 (fun-call (lambda () 4) x)
+		 (fun-call (lambda () 3) w)
+		 (fun-call (lambda (y) (cons x y)) z w)))])
+      (exists (q) (solve 4 (j q)))))
+  '(((4 . 3))))
 
-(define test-fun-resubst
-  (lambda ()
-    (equal?
-      (concretize
-        (let ([j (relation (x w z)
-                   (to-show z)
-                   (all
-                     (fun-call (lambda () 4) x)
-                     (fun-call (lambda () 3) w)
-                     (fun-call (lambda (y) (cons x y)) z w)))])
-          (exists (q) (solve 4 (j q)))))
-      '(((4 . 3))))))
-
-(printf "~s ~s~%" 'test-fun-resubst-eager (test-fun-resubst))
 
 (define towers-of-hanoi-path
   (let ([steps '()])
@@ -1690,14 +1568,11 @@
               (fails (move n 'l 'm 'r))
               (== path (reverse steps)))))))))
 
-(define test-towers-of-hanoi-path
-  (lambda ()
-    (equal?
-      (exists (path)
-        (solution (towers-of-hanoi-path 3 path)))
-      '(3 ((l m) (l r) (m r) (l m) (r l) (r m) (l m))))))
+(test-check 'test-towers-of-hanoi-path
+  (exists (path)
+    (solution (towers-of-hanoi-path 3 path)))
+  '(3 ((l m) (l r) (m r) (l m) (r l) (r m) (l m))))
 
-(printf "~s ~s~%" 'test-towers-of-hanoi-path (test-towers-of-hanoi-path))
 
 (define unify
   (lambda (t u subst)
@@ -1720,9 +1595,8 @@
       [(occurs? t-var u) #f]
       [else (compose-subst subst (unit-subst t-var u))])))
 
-(define test-unify/pairs-lazy
-  (lambda ()
-    (exists (w x y z u)
+(test-check 'test-unify/pairs-lazy
+  (exists (w x y z u)
       (and
         (and
           (equal?
@@ -1767,12 +1641,48 @@
               ,(commitment y '(g a))))
           (equal? ;;; Oleg's succeeds on this.
             (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)
-            #f))))))
+            #f))))
+  #t)
 
-(printf "~s ~s~%" 'test-unify/pairs-lazy (test-unify/pairs-lazy))
-(printf "~s ~s~%" 'test-fun-resubst-lazy (test-fun-resubst))
-;Baader & Snyder
-(printf "~s ~s~%" 'test-unify/pathological-lazy (test-pathological))
+(test-check 'test-fun-resubst-lazy
+  (concretize
+    (let ([j (relation (x w z)
+	       (to-show z)
+	       (all
+		 (fun-call (lambda () 4) x)
+		 (fun-call (lambda () 3) w)
+		 (fun-call (lambda (y) (cons x y)) z w)))])
+      (exists (q) (solve 4 (j q)))))
+  '(((4 . 3))))
+
+(test-check 'test-pathological-lazy
+  (list
+      (exists (x0 x1 y0 y1)
+        (pretty-print
+          (concretize-subst
+            (unify
+              `(h ,x1 (f ,y0 ,y0) ,y1)
+              `(h (f ,x0 ,x0) ,y1 ,x1)
+              empty-subst)))
+        (newline))
+
+      (exists (x0 x1 x2 y0 y1 y2)
+        (pretty-print
+          (concretize-subst
+            (unify
+              `(h ,x1 ,x2 (f ,y0 ,y0) (f ,y1 ,y1) ,y2)
+              `(h (f ,x0 ,x0) (f ,x1 ,x1) ,y1 ,y2 ,x2)
+              empty-subst)))
+        (newline))
+
+      (exists (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
+        (pretty-print
+          (concretize-subst
+            (unify
+              `(h ,x1 ,x2 ,x3 ,x4 (f ,y0 ,y0) (f ,y1 ,y1) (f ,y2 ,y2) (f ,y3 ,y3) ,y4)
+              `(h (f ,x0 ,x0) (f ,x1 ,x1) (f ,x2 ,x2) (f ,x3 ,x3) ,y1 ,y2 ,y3 ,y4 ,x4)
+              empty-subst)))))
+  (list (void) (void) (void)))
 
 ;;; ;-------------------------------------------------------
 ;;; This is the unifier of Oleg Kiselov
@@ -1909,9 +1819,8 @@
       [else (extend-subst t-var u-value s)])))
 
 ;------------------------------------------------------------------------
-(define test-unify/pairs-oleg
-  (lambda ()
-    (exists (w x y z u)
+(test-check 'test-unify/pairs-oleg
+  (exists (w x y z u)
       (and
         (and
           (equal?
@@ -1927,7 +1836,7 @@
           (equal?
             (unify `(,x 4) `(3 ,y) empty-subst)
             `(,(commitment y 4) ,(commitment x 3))))
-        (list
+        (and
           (equal?
             (let ([s (normalize-subst
                        (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst))])
@@ -2007,56 +1916,65 @@
               ,(commitment '*a.1 'f)
               ,(commitment 'y.0  '(f (f . *d.1)))
               ,(commitment 'x.0  '(f (f . *d.1)))))
-          #t)))))
+          #t)))
+  #t)
+
+(test-check 'test-fun-resubst-oleg
+  (concretize
+    (let ([j (relation (x w z)
+	       (to-show z)
+	       (all
+		 (fun-call (lambda () 4) x)
+		 (fun-call (lambda () 3) w)
+		 (fun-call (lambda (y) (cons x y)) z w)))])
+      (exists (q) (solve 4 (j q)))))
+  '(((4 . 3))))
           
-(printf "~s ~s~%" 'test-unify/pairs-oleg (test-unify/pairs-oleg))
-(printf "~s ~s~%" 'test-fun-resubst-oleg (test-fun-resubst))
-
-(define test-pathological
-  (lambda ()
-    (list
-      (exists (x0 x1 y0 y1)
-        (pretty-print
-          (concretize-subst
-            (let ([s (unify
-                       `(h ,x1 (f ,y0 ,y0) ,y1)
-                       `(h (f ,x0 ,x0) ,y1 ,x1)
-                       empty-subst)])
-              (let ([vars (map commitment->var s)])
-                (map commitment
-                  vars
-                  (subst-vars-recursively vars s))))))
-        (newline))
-
-      (exists (x0 x1 x2 y0 y1 y2)
-        (pretty-print
-          (concretize-subst
-            (let ([s (unify
-                       `(h ,x1 ,x2 (f ,y0 ,y0) (f ,y1 ,y1) ,y2)
-                       `(h (f ,x0 ,x0) (f ,x1 ,x1) ,y1 ,y2 ,x2)
-                       empty-subst)])
-              (let ([vars (map commitment->var s)])
-                (map commitment
-                  vars
-                  (subst-vars-recursively vars s))))))
-        (newline))
-
-      (exists (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
-        (pretty-print
-          (concretize-subst
-            (let ([s (unify
-                       `(h ,x1 ,x2 ,x3 ,x4 (f ,y0 ,y0) (f ,y1 ,y1)
-                          (f ,y2 ,y2) (f ,y3 ,y3) ,y4)
-                       `(h (f ,x0 ,x0) (f ,x1 ,x1) (f ,x2 ,x2)
-                          (f ,x3 ,x3) ,y1 ,y2 ,y3 ,y4 ,x4)
-                       empty-subst)])
-              (let ([vars (map commitment->var s)])
-                (map commitment
-                  vars
-                  (subst-vars-recursively vars s))))))))))
 
 ;Baader & Snyder
-(printf "~s ~s~%" 'test-unify/pathological-oleg (test-pathological))
+(test-check 'test-pathological-oleg
+  (list
+    (exists (x0 x1 y0 y1)
+      (pretty-print
+	(concretize-subst
+	  (let ([s (unify
+		     `(h ,x1 (f ,y0 ,y0) ,y1)
+		     `(h (f ,x0 ,x0) ,y1 ,x1)
+		     empty-subst)])
+	    (let ([vars (map commitment->var s)])
+	      (map commitment
+		vars
+		(subst-vars-recursively vars s))))))
+      (newline))
+
+    (exists (x0 x1 x2 y0 y1 y2)
+      (pretty-print
+	(concretize-subst
+	  (let ([s (unify
+		     `(h ,x1 ,x2 (f ,y0 ,y0) (f ,y1 ,y1) ,y2)
+		     `(h (f ,x0 ,x0) (f ,x1 ,x1) ,y1 ,y2 ,x2)
+		     empty-subst)])
+	    (let ([vars (map commitment->var s)])
+	      (map commitment
+		vars
+		(subst-vars-recursively vars s))))))
+      (newline))
+
+    (exists (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
+      (pretty-print
+	(concretize-subst
+	  (let ([s (unify
+		     `(h ,x1 ,x2 ,x3 ,x4 (f ,y0 ,y0) (f ,y1 ,y1)
+			(f ,y2 ,y2) (f ,y3 ,y3) ,y4)
+		     `(h (f ,x0 ,x0) (f ,x1 ,x1) (f ,x2 ,x2)
+			(f ,x3 ,x3) ,y1 ,y2 ,y3 ,y4 ,x4)
+		     empty-subst)])
+	    (let ([vars (map commitment->var s)])
+	      (map commitment
+		vars
+		(subst-vars-recursively vars s))))))))
+  (list (void) (void) (void)))
+
 
 (define concat
   (lambda (xs ys)
@@ -2064,20 +1982,14 @@
       [(null? xs) ys]
       [else (cons (car xs) (concat (cdr xs) ys))])))
 
-(define test-concat-as-function
-  (lambda ()
-    (equal?
-      (concat '(a b c) '(u v))
-      '(a b c u v))))
+(test-check 'test-concat-as-function
+  (concat '(a b c) '(u v))
+  '(a b c u v))
 
-(printf "~s ~s~%" 'test-concat-as-function (test-concat-as-function))
-
-(define test-fun-concat
-  (lambda ()
-    (exists (q)
-      (equal?
-        (solve 1 (fun-call concat q '(a b c) '(u v)))
-        '(((a b c u v) (a b c) (u v)))))))
+'(test-check 'test-fun-concat
+  (exists (q)
+    (solve 1 (fun-call concat q '(a b c) '(u v))))
+    '(((a b c u v) (a b c) (u v))))
 
 (define concat
   (extend-relation (a1 a2 a3)
@@ -2086,9 +1998,9 @@
       (to-show `(,x . ,xs) ys `(,x . ,zs))
       (concat xs ys zs))))
 
-(define test-concat
-  (lambda ()
-    (list
+(test-check 'test-concat
+ (time
+  (and
       (equal?
         (exists (q) (solve 6 (concat '(a b c) '(u v) q)))
         '(((a b c) (u v) (a b c u v))))
@@ -2131,9 +2043,9 @@
           ((x.0 x.1) () (x.0 x.1))
           ((x.0 x.1 x.2) () (x.0 x.1 x.2))
           ((x.0 x.1 x.2 x.3) () (x.0 x.1 x.2 x.3))
-          ((x.0 x.1 x.2 x.3 x.4) () (x.0 x.1 x.2 x.3 x.4)))))))
+          ((x.0 x.1 x.2 x.3 x.4) () (x.0 x.1 x.2 x.3 x.4))))))
+  #t)
 
-(time (printf "~s ~s~%" 'test-concat (test-concat)))
 
 ;;;; Types from here on out.
 
@@ -2308,47 +2220,38 @@
     var-rel int-rel bool-rel zero?-rel sub1-rel +-rel 
     if-rel lambda-rel app-rel fix-rel polylet-rel))
 
-(define test-!-1
-  (lambda ()
-    (and
-      (equal?
-        (exists (g) (solution (!- g '(intc 17) int)))
-        '(g.0 (intc 17) int))
-      (equal?
-        (exists (g ?) (solution (!- g '(intc 17) ?)))
-        '(g.0 (intc 17) int)))))
-
-(printf "~s ~s~%" 'ints-and-bools (test-!-1))
-
-(define test-!-zero?
-  (lambda ()
+(test-check 'test-!-1
+  (and
     (equal?
-      (exists (g ?) (solution (!- g '(zero? (intc 24)) ?)))
-      '(g.0 (zero? (intc 24)) bool))))
-
-(printf "~s ~s~%" 'arithmetic-primitives (test-!-zero?))
-
-(define test-!-sub1
-  (lambda ()
+      (exists (g) (solution (!- g '(intc 17) int)))
+      '(g.0 (intc 17) int))
     (equal?
+      (exists (g ?) (solution (!- g '(intc 17) ?)))
+      '(g.0 (intc 17) int)))
+  #t)
+
+(test-check 'arithmetic-primitives
+  (equal?
+    (exists (g ?) (solution (!- g '(zero? (intc 24)) ?)))
+    '(g.0 (zero? (intc 24)) bool))
+  #t)
+
+(test-check 'test-!-sub1
+  (equal?
       (exists (g ?) (solution (!- g '(zero? (sub1 (intc 24))) ?)))
-      '(g.0 (zero? (sub1 (intc 24))) bool))))
+      '(g.0 (zero? (sub1 (intc 24))) bool))
+  #t)
     
-(printf "~s ~s~%" 'arithmetic-primitives (test-!-sub1))
+(test-check 'test-!-+
+  (equal?
+    (exists (g ?)
+      (solution
+	(!- g '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
+    '(g.0 (zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) bool))
+  #t)
 
-(define test-!-+
-  (lambda ()
-    (equal?
-      (exists (g ?)
-        (solution
-          (!- g '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
-      '(g.0 (zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) bool))))
-
-(printf "~s ~s~%" 'arithmetic-primitives (test-!-+))
-
-(define test-!-2
-  (lambda ()
-    (and
+(test-check 'test-!-2
+  (and
       (equal?
         (exists (g ?) (solution (!- g '(zero? (intc 24)) ?)))
         '(g.0 (zero? (intc 24)) bool))
@@ -2359,97 +2262,73 @@
         (exists (g ?)
           (solution
             (!- g '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
-        '(g.0 (zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) bool)))))
+        '(g.0 (zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) bool)))
+  #t)
 
-(printf "~s ~s~%" 'arithmetic-primitives (test-!-2))
+(test-check 'test-!-3
+  (exists (?)
+    (solution (!- '() '(if (zero? (intc 24)) (intc 3) (intc 4)) ?)))
+  '(() (if (zero? (intc 24)) (intc 3) (intc 4)) int))
 
-(define test-!-3
-  (lambda ()
-    (equal?
-      (exists (?)
-        (solution (!- '() '(if (zero? (intc 24)) (intc 3) (intc 4)) ?)))
-      '(() (if (zero? (intc 24)) (intc 3) (intc 4)) int))))
-
-(printf "~s ~s~%" 'if-expressions (test-!-3))
-
-(define test-!-3a
-  (lambda ()
-    (equal?
-      (exists (g ?)
-        (solution (!- g '(if (zero? (intc 24)) (zero? (intc 3)) (zero? (intc 4))) ?)))
-      '(g.0 (if (zero? (intc 24)) (zero? (intc 3)) (zero? (intc 4))) bool))))
-
-(printf "~s ~s~%" 'if-expressions (test-!-3a))
-
-(define test-!-3
-  (lambda ()
-    (and
-      (equal?
-        (exists (g ?)
-          (solution
-            (env `(non-generic b int (non-generic a bool ,g)) 'a ?)))
-        '((non-generic b int (non-generic a bool g.0)) a bool))
-      (equal?
-        (exists (g ?)
-          (solution 
-            (!- `(non-generic a int ,g) '(zero? (var a)) ?)))
-        '((non-generic a int g.0) (zero? (var a)) bool))
-      (equal?
-        (exists (g ?)
-          (solution
-            (!- `(non-generic b bool (non-generic a int ,g))
-              '(zero? (var a))
-              ?)))
-        '((non-generic b bool (non-generic a int g.0)) (zero? (var a)) bool)))))
-
-(printf "~s ~s~%" 'variables (test-!-3))
-
-(define test-!-4a
-  (lambda ()
+(test-check 'if-expressions
+  (exists (g ?)
+    (solution (!- g '(if (zero? (intc 24)) (zero? (intc 3)) (zero? (intc 4))) ?)))
+  '(g.0 (if (zero? (intc 24)) (zero? (intc 3)) (zero? (intc 4))) bool))
+  
+(test-check 'variables
+  (and
     (equal?
       (exists (g ?)
-        (solution 
-          (!- `(non-generic b bool (non-generic a int ,g))
-            '(lambda (x) (+ (var x) (intc 5)))
-            ?)))
-      '((non-generic b bool (non-generic a int g.0))
-        (lambda (x) (+ (var x) (intc 5)))
-        (--> int int)))))
-
-(printf "~s ~s~%" 'variables-4a (test-!-4a))
-
-(define test-!-4b
-  (lambda ()
+	(solution
+	  (env `(non-generic b int (non-generic a bool ,g)) 'a ?)))
+      '((non-generic b int (non-generic a bool g.0)) a bool))
     (equal?
       (exists (g ?)
-        (solution 
-          (!- `(non-generic b bool (non-generic a int ,g))
-            '(lambda (x) (+ (var x) (var a)))
-            ?)))
-      '((non-generic b bool (non-generic a int g.0))
-        (lambda (x) (+ (var x) (var a)))
-        (--> int int)))))
-
-(printf "~s ~s~%" 'variables-4b (test-!-4b))
-
-(define test-!-4c
-  (lambda ()
+	(solution 
+	  (!- `(non-generic a int ,g) '(zero? (var a)) ?)))
+      '((non-generic a int g.0) (zero? (var a)) bool))
     (equal?
       (exists (g ?)
-        (solution
-          (!- g '(lambda (a) (lambda (x) (+ (var x) (var a)))) ?)))
-      '(g.0 
-         (lambda (a) (lambda (x) (+ (var x) (var a))))
-         (--> int (--> int int))))))
+	(solution
+	  (!- `(non-generic b bool (non-generic a int ,g))
+	    '(zero? (var a))
+	    ?)))
+      '((non-generic b bool (non-generic a int g.0)) (zero? (var a)) bool)))
+  #t)
 
-(printf "~s ~s~%" 'variables-4c (test-!-4c))
+(test-check 'variables-4a
+  (exists (g ?)
+    (solution 
+      (!- `(non-generic b bool (non-generic a int ,g))
+	'(lambda (x) (+ (var x) (intc 5)))
+	?)))
+  '((non-generic b bool (non-generic a int g.0))
+     (lambda (x) (+ (var x) (intc 5)))
+     (--> int int)))
 
-(define test-!-5
-  (lambda ()
-    (list
-      (equal?
-        (exists (g ?)
-          (solution
+(test-check 'variables-4b
+  (exists (g ?)
+    (solution 
+      (!- `(non-generic b bool (non-generic a int ,g))
+	'(lambda (x) (+ (var x) (var a)))
+	?)))
+  '((non-generic b bool (non-generic a int g.0))
+     (lambda (x) (+ (var x) (var a)))
+     (--> int int)))
+
+(test-check 'variables-4c
+  (exists (g ?)
+    (solution
+      (!- g '(lambda (a) (lambda (x) (+ (var x) (var a)))) ?)))
+  '(g.0 
+     (lambda (a) (lambda (x) (+ (var x) (var a))))
+     (--> int (--> int int))))
+
+(test-check 'everything-but-polymorphic-let
+  (and
+    (equal?
+      (exists (g ?)
+	(solution
             (!- g (parse
                     '(lambda (f)
                        (lambda (x)
@@ -2507,108 +2386,94 @@
                              (+ (f 3) 7)))
                        (lambda (x) x)))
               ?)))
-        #f))))
+        #f))
+  #t)
 
-(printf "~s ~s~%" 'everything-but-polymorphic-let (test-!-5))
 
-(define test-!-6
-  (lambda ()
+(test-check 'polymorphic-let
+  (exists (g ?)
+    (solution
+      (!- g
+	(parse
+	  '(let ([f (lambda (x) x)])
+	     (if (f (zero? 5))
+	       (+ (f 4) 8)
+	       (+ (f 3) 7))))
+	?)))
+  `(g.0 
+     ,(parse
+	'(let ([f (lambda (x) x)])
+	   (if (f (zero? 5))
+	     (+ (f 4) 8)
+	     (+ (f 3) 7))))
+     int))
+
+(test-check 'with-robust-syntax
+  (exists (g ?)
+    (solution
+      (!- g
+	'(app
+	   (fix
+	     (lambda (sum)
+	       (lambda (n)
+		 (if (if (zero? (var n)) (boolc #t) (boolc #f))
+		   (intc 0)
+		   (+ (var n) (app (var sum) (sub1 (var n))))))))
+	   (intc 10))
+	?)))
+  '(g.0 (app
+	  (fix (lambda (sum)
+		 (lambda (n)
+		   (if (if (zero? (var n)) (boolc #t) (boolc #f))
+		     (intc 0)
+		     (+ (var n) (app (var sum) (sub1 (var n))))))))
+	  (intc 10))
+     int))
+
+(test-check 'with-robust-syntax-but-long-jumps/poly-let
+  (exists (g ?)
+    (solution
+      (!- g
+	'(let ([f (lambda (x) (var x))])
+	   (if (app (var f) (zero? (intc 5)))
+	     (+ (app (var f) (intc 4)) (intc 8))
+	     (+ (app (var f) (intc 3)) (intc 7))))
+	?)))
+  '(g.0 (let ([f (lambda (x) (var x))])
+	  (if (app (var f) (zero? (intc 5)))
+	    (+ (app (var f) (intc 4)) (intc 8))
+	    (+ (app (var f) (intc 3)) (intc 7))))
+     int))
+
+(test-check 'type-habitation
+  (and
     (equal?
-      (exists (g ?)
-        (solution
-          (!- g
-            (parse
-              '(let ([f (lambda (x) x)])
-                 (if (f (zero? 5))
-                     (+ (f 4) 8)
-                     (+ (f 3) 7))))
-            ?)))
-      `(g.0 
-         ,(parse
-            '(let ([f (lambda (x) x)])
-              (if (f (zero? 5))
-                  (+ (f 4) 8)
-                  (+ (f 3) 7))))
-         int))))
-
-(printf "~s ~s~%" 'polymorphic-let (test-!-6))
-
-(define test-!-7
-  (lambda ()
+      (exists (g ?) 
+	(solution 
+	  (!- g ? '(--> int int))))
+      '((non-generic v.0 (--> int int) g.0)
+	 (var v.0)
+	 (--> int int)))
     (equal?
-      (exists (g ?)
-        (solution
-          (!- g
-            '(app
-               (fix
-                 (lambda (sum)
-                   (lambda (n)
-                     (if (if (zero? (var n)) (boolc #t) (boolc #f))
-                         (intc 0)
-                         (+ (var n) (app (var sum) (sub1 (var n))))))))
-               (intc 10))
-            ?)))
-      '(g.0 (app
-              (fix (lambda (sum)
-                     (lambda (n)
-                       (if (if (zero? (var n)) (boolc #t) (boolc #f))
-                           (intc 0)
-                           (+ (var n) (app (var sum) (sub1 (var n))))))))
-              (intc 10))
-         int))))
-
-(printf "~s ~s~%" 'with-robust-syntax (test-!-7)) 
-
-(define test-!-8
-  (lambda ()
+      (exists (g la f b)
+	(solution
+	  (!- g `(,la (,f) ,b) '(--> int int))))
+      '(g.0 (lambda (v.0) (var v.0)) (--> int int)))
     (equal?
-      (exists (g ?)
-        (solution
-          (!- g
-            '(let ([f (lambda (x) (var x))])
-               (if (app (var f) (zero? (intc 5)))
-                   (+ (app (var f) (intc 4)) (intc 8))
-                   (+ (app (var f) (intc 3)) (intc 7))))
-            ?)))
-      '(g.0 (let ([f (lambda (x) (var x))])
-              (if (app (var f) (zero? (intc 5)))
-                  (+ (app (var f) (intc 4)) (intc 8))
-                  (+ (app (var f) (intc 3)) (intc 7))))
-         int))))
-
-(printf "~s ~s~%" 'with-robust-syntax-but-long-jumps/poly-let (test-!-8))
-
-(define test-!-9
-  (lambda ()
-    (list
-      (equal?
-        (exists (g ?) 
-          (solution 
-            (!- g ? '(--> int int))))
-        '((non-generic v.0 (--> int int) g.0)
-          (var v.0)
-          (--> int int)))
-      (equal?
-        (exists (g la f b)
-          (solution
-            (!- g `(,la (,f) ,b) '(--> int int))))
-        '(g.0 (lambda (v.0) (var v.0)) (--> int int)))
-      (equal?
-        (exists (g h r q z y t)
-          (solution 
-            (!- g `(,h ,r (,q ,z ,y)) t)))
-	'((non-generic v.0 int g.0)
-          (+ (var v.0) (+ (var v.0) (var v.0)))
-          int))
-      (equal?
-        (exists (g h r q z y t u v)
-          (solution
-            (!- g `(,h ,r (,q ,z ,y)) `(,t ,u ,v))))
-        '(g.0 (lambda (v.0) (+ (var v.0) (var v.0)))
-           (--> int int))))))
+      (exists (g h r q z y t)
+	(solution 
+	  (!- g `(,h ,r (,q ,z ,y)) t)))
+      '((non-generic v.0 int g.0)
+	 (+ (var v.0) (+ (var v.0) (var v.0)))
+	 int))
+    (equal?
+      (exists (g h r q z y t u v)
+	(solution
+	  (!- g `(,h ,r (,q ,z ,y)) `(,t ,u ,v))))
+      '(g.0 (lambda (v.0) (+ (var v.0) (var v.0)))
+	 (--> int int))))
+  #t)
         
-(printf "~s ~s~%" 'type-habitation (test-!-9))
-
 ;;; long cuts
 
 (define !-generator
@@ -2660,7 +2525,20 @@
     (to-show g exp t)
     ((!-generator cut) g exp t)))
 
-(printf "~s ~s~%" 'with-robust-syntax-but-long-jumps/poly-let (test-!-8))
+(test-check 'with-robust-syntax-but-long-jumps/poly-let
+  (exists (g ?)
+    (solution
+      (!- g
+	'(let ([f (lambda (x) (var x))])
+	   (if (app (var f) (zero? (intc 5)))
+	     (+ (app (var f) (intc 4)) (intc 8))
+	     (+ (app (var f) (intc 3)) (intc 7))))
+	?)))
+  '(g.0 (let ([f (lambda (x) (var x))])
+	  (if (app (var f) (zero? (intc 5)))
+	    (+ (app (var f) (intc 4)) (intc 8))
+	    (+ (app (var f) (intc 3)) (intc 7))))
+     int))
 
 (define invertible-binary-function->ternary-relation
   (lambda (op inverted-op)
@@ -2683,9 +2561,8 @@
 (define ** (invertible-binary-function->ternary-relation * /))
 (define // (invertible-binary-function->ternary-relation / *))
 
-(define test-instantiated-1
-  (lambda ()
-    (and
+(test-check 'test-instantiated-1
+  (and
       (equal?
         (exists (x) (solution (++ x 16.0 8)))
         '(-8.0 16.0 8))
@@ -2697,9 +2574,8 @@
         '(10 16.0 26.0))
       (equal?
         (exists (x) (solution (-- 10 7 3)))
-        '(10 7 3)))))
-
-(printf "~s ~s~%" 'test-instantiated-1 (test-instantiated-1))
+        '(10 7 3)))
+  #t)
 
 (define symbol->lnum
   (lambda (sym)
@@ -2725,9 +2601,8 @@
 (define name
   (invertible-unary-function->binary-relation symbol->lnum lnum->symbol))
 
-(define test-instantiated-2
-  (lambda ()
-    (and
+(test-check 'test-instantiated-2
+  (and
       (equal?
         (exists (x) (solution (name 'sleep x)))
         '(sleep (115 108 101 101 112)))
@@ -2736,9 +2611,8 @@
         '(sleep (115 108 101 101 112)))
       (equal?
         (exists (x) (solution (name 'sleep '(115 108 101 101 112))))
-        '(sleep (115 108 101 101 112))))))
-
-(printf "~s ~s~%" 'test-instantiated-2 (test-instantiated-2))
+        '(sleep (115 108 101 101 112))))
+  #t)
 
 ;;;; *****************************************************************
 ;;;; This is the start of a different perspective on logic programming.
@@ -2772,16 +2646,25 @@
     (exists (x)
       (all (father grandfather x) (father x child)))))
 
-(pretty-print (exists (x y) (solve 5 (grandpa x y))))
+(test-check 'grandpa-ng
+  (exists (x y) (solve 5 (grandpa x y)))
+  '((john pete) (sam sal)))
 
 (define father-pete-sal (fact () 'pete 'sal))
 (define father-sam-pete (fact () 'sam 'pete))
 (define father-john-sam (fact () 'john 'sam))
-(define father (extend-relation (a1 a2) father-john-sam father-sam-pete father-pete-sal))
+(define father
+  (extend-relation (a1 a2) father-john-sam father-sam-pete father-pete-sal))
 
-(pretty-print (exists (x y) (solve 5 (grandpa x y))))
-(pretty-print (exists (x y) (solve 5 (grandpa 'sam y))))
-(pretty-print (exists (x y) (solve 5 (grandpa x 'sal))))
+(test-check 'grandpa-ng-1
+  (exists (x y) (solve 5 (grandpa x y)))
+  '((john pete) (sam sal)))
+(test-check 'grandpa-ng-2
+  (exists (x y) (solve 5 (grandpa 'sam y)))
+  '((sam sal)))
+(test-check 'grandpa-ng-2
+  (exists (x y) (solve 5 (grandpa x 'sal)))
+  '((sam sal)))
 
 (define grandpa-sam
   (lambda (child)
@@ -2796,9 +2679,10 @@
                  (all (father grandfather x) (father x child))))
              sk fk subst cutk))))))
 
-(pretty-print (exists (x y) (solve 5 (grandpa-sam 'sal))))
+(test-check 'grandpa-sam-1
+  (exists (x y) (solve 5 (grandpa-sam 'sal)))
+  '((sal)))
 
-(pretty-print (exists (x y) (solve 5 (grandpa-sam 'sal))))
 
 (define grandpa-sam
   (relation/cut cut (child)
@@ -2806,7 +2690,9 @@
     (exists (x)
       (all (father 'sam x) (father x child)))))
 
-(pretty-print (exists (x y) (solve 5 (grandpa-sam 'sal))))
+(test-check 'grandpa-sam-2
+  (exists (x y) (solve 5 (grandpa-sam 'sal)))
+  '((sal)))
 
 (define-syntax fact
   (syntax-rules ()
@@ -2816,9 +2702,12 @@
 (define father-pete-sal (fact () 'pete 'sal))
 (define father-sam-pete (fact () 'sam 'pete))
 (define father-john-sam (fact () 'john 'sam))
-(define father (extend-relation (a1 a2) father-john-sam father-sam-pete father-pete-sal))
+(define father 
+  (extend-relation (a1 a2) father-john-sam father-sam-pete father-pete-sal))
 
-(pretty-print (exists (x y) (solve 5 (grandpa-sam 'sal))))
+(test-check 'grandpa-sam-3
+  (exists (x y) (solve 5 (grandpa-sam 'sal)))
+  '((sal)))
 
 (define father-pete-sal
   (relation () (to-show 'pete 'sal)))
@@ -2829,9 +2718,12 @@
 (define father-johh-sam
   (relation () (to-show 'john 'sam)))
 
-(define father (extend-relation (a1 a2) father-john-sam father-sam-pete father-pete-sal))
+(define father 
+  (extend-relation (a1 a2) father-john-sam father-sam-pete father-pete-sal))
 
-(pretty-print (exists (x y) (solve 5 (grandpa-sam 'sal))))
+(test-check 'grandpa-sam-4
+  (exists (x y) (solve 5 (grandpa-sam 'sal)))
+  '((sal)))
 
 ;;;; This verifies that the idea works.  Now, to run the book through this
 ;;;; system.
@@ -2914,26 +2806,42 @@
 ;;; Test for nonoverlapping.
 
 (printf "~%binary-extend-relation-interleave-non-overlap~%")
-(printf "~%R1+R2:~%")
-(pretty-print 
+(test-check "R1+R2"
   (exists (x y) 
     (solve 10 
-      ((binary-extend-relation-interleave-non-overlap (a1 a2) R1 R2) x y))))
-(printf "~%R2+R1:~%")
-(pretty-print 
+      ((binary-extend-relation-interleave-non-overlap (a1 a2) R1 R2) x y)))
+  '((x1 y1) (x2 y2) (x3 y3)))
+
+(test-check "R2+R1"
   (exists (x y) 
     (solve 10 
-      ((binary-extend-relation-interleave-non-overlap (a1 a2) R2 R1) x y))))
-(printf "~%Rinf+R1:~%")
-(pretty-print 
+      ((binary-extend-relation-interleave-non-overlap (a1 a2) R2 R1) x y)))
+  '((x1 y1) (x3 y3) (x2 y2)))
+
+(test-check "Rinf+R1"
   (exists (x y)
     (solve 7
-      ((binary-extend-relation-interleave-non-overlap (a1 a2) Rinf R1) x y))))
-(printf "~%R1+RInf:~%")
-(pretty-print 
+      ((binary-extend-relation-interleave-non-overlap (a1 a2) Rinf R1) x y)))
+  '((z z)
+    (x1 y1)
+    ((s z) (s z))
+    (x2 y2)
+    ((s (s z)) (s (s z)))
+    ((s (s (s z))) (s (s (s z))))
+    ((s (s (s (s z)))) (s (s (s (s z)))))))
+
+(test-check "R1+RInf"
   (exists (x y) 
     (solve 7
-      ((binary-extend-relation-interleave-non-overlap (a1 a2) R1 Rinf) x y))))
+      ((binary-extend-relation-interleave-non-overlap (a1 a2) R1 Rinf) x y)))
+  '((x1 y1)
+    (z z)
+    (x2 y2)
+    ((s z) (s z))
+    ((s (s z)) (s (s z)))
+    ((s (s (s z))) (s (s (s z))))
+    ((s (s (s (s z)))) (s (s (s (s z))))))
+)
 
 ; Infinitary relation Rinf2
 ; r(z,z).
@@ -2948,21 +2856,50 @@
       (== t1 `(s (s ,x)))
       (== t2 `(s (s ,y)))
       (Rinf2 x y))))
-(printf "~%Rinf2:~%")
-(pretty-print (exists (x y) (solve 5 (Rinf2 x y))))
-(printf "~%Rinf+Rinf2~%")
-(pretty-print 
-  (exists (x y)
-    (solve 9
-      ((binary-extend-relation-interleave-non-overlap 
-	 (a1 a2) Rinf Rinf2) x y))))
-(printf "~%Rinf2+Rinf~%")
-(pretty-print 
-  (exists (x y)
-    (solve 9
-      ((binary-extend-relation-interleave-non-overlap 
-	 (a1 a2) Rinf2 Rinf) x y))))
 
+(test-check "Rinf2"
+  (exists (x y) (solve 5 (Rinf2 x y)))
+  '((z z)
+     ((s (s z)) (s (s z)))
+     ((s (s (s (s z)))) (s (s (s (s z)))))
+     ((s (s (s (s (s (s z)))))) (s (s (s (s (s (s z)))))))
+     ((s (s (s (s (s (s (s (s z))))))))
+       (s (s (s (s (s (s (s (s z)))))))))))
+
+(test-check "Rinf+Rinf2"
+  (exists (x y)
+    (solve 9
+      ((binary-extend-relation-interleave-non-overlap 
+	 (a1 a2) Rinf Rinf2) x y)))
+  '((z z)
+     ((s z) (s z))
+     ((s (s z)) (s (s z)))
+     ((s (s (s (s z)))) (s (s (s (s z)))))
+     ((s (s (s z))) (s (s (s z))))
+     ((s (s (s (s (s (s z)))))) (s (s (s (s (s (s z)))))))
+     ((s (s (s (s (s (s (s (s z))))))))
+       (s (s (s (s (s (s (s (s z)))))))))
+     ((s (s (s (s (s z))))) (s (s (s (s (s z))))))
+     ((s (s (s (s (s (s (s (s (s (s z))))))))))
+       (s (s (s (s (s (s (s (s (s (s z))))))))))))
+)
+
+(test-check "Rinf2+Rinf"
+  (exists (x y)
+    (solve 9
+      ((binary-extend-relation-interleave-non-overlap 
+	 (a1 a2) Rinf2 Rinf) x y)))
+  '((z z)
+     ((s z) (s z))
+     ((s (s z)) (s (s z)))
+     ((s (s (s z))) (s (s (s z))))
+     ((s (s (s (s z)))) (s (s (s (s z)))))
+     ((s (s (s (s (s z))))) (s (s (s (s (s z))))))
+     ((s (s (s (s (s (s z)))))) (s (s (s (s (s (s z)))))))
+     ((s (s (s (s (s (s (s z)))))))
+       (s (s (s (s (s (s (s z))))))))
+     ((s (s (s (s (s (s (s (s z))))))))
+       (s (s (s (s (s (s (s (s z)))))))))))
 
 ; nrev([],[]).
 ; nrev([X|Rest],Ans) :- nrev(Rest,L), extend(L,[X],Ans).
@@ -2985,17 +2922,15 @@
           (nrev rest ls)
           (concat ls `(,x) ans))))))
 
-(define test-nrev
-  (lambda ()
+(let ((lst '(1 2 3 4 5 6 7 8 9
+			 10 11 12 13 14 15 16 17 18
+			 19 20 21 22 23 24 25 26 27
+			 28 29 30)))
+  (test-check 'test-nrev
     (time
       (exists (x)
-        (solution (nrev '(1 2 3 4 5 6 7 8 9
-                           10 11 12 13 14 15 16 17 18
-                           19 20 21 22 23 24 25 26 27
-                           28 29 30)
-                    x))))))
-
-(printf "Timing test ~s~n" (test-nrev))
+	(solution (nrev lst x))))
+    (list lst (reverse lst))))
 
 (define get_cpu_time
   (lambda ()
@@ -3108,6 +3043,10 @@
           (fun-call / lips t1 t2))))))
 
 ;(test-lots)
+
+
+(printf "Checking for dependency satisfaction in Haskell typeclasses~%")
+
 ; 	c(A,tuple(A,C,B),C,dict2).
 ; 	c(A,tuple(X,Y,B),C,dict1) :- c(A,B,C,_).
 ; Had I switched the order,
@@ -3207,7 +3146,7 @@
     (solve 4
       (typeclass-counter-example-query a b c1 c2))))
 
-(printf "~%Append with limited depth%")
+(printf "~%Append with limited depth~%")
 ; In Prolog, we normally write:
 ; append([],L,L).
 ; append([X|L1],L2,[X|L3]) :- append(L1,L2,L3).
@@ -3308,9 +3247,10 @@
 	(typeclass-F-instance-1 a b)
 	))))
 
-(printf "~%Typechecking (closed world): ~s~%" 
+(test-check "Typechecking (closed world)" 
   (exists (a) (solve 4
-			(typeclass-F-instance-1 `(list ,a) a))))
+		(typeclass-F-instance-1 `(list ,a) a)))
+  '())					; meaning: does not typecheck!
 
 ; This is an open-world assumption
 (define typeclass-F
@@ -3331,11 +3271,10 @@
   (exists (a) (solve 4
 		(typeclass-F-instance-1 `(list ,a) a))))
 
-(printf "~%Typechecking (open world) f [x] int: ~s~%" 
+(test-check "Typechecking (open world) f [x] int" 
   (exists (a) (solve 4
-		(typeclass-F-instance-1 `(list ,a) 'int))))
-
-
+		(typeclass-F-instance-1 `(list ,a) 'int)))
+  '())					; meaning: does not typecheck!
 
 ; Extendix B.
 
@@ -3684,6 +3623,8 @@
 ; relations.
 ; The output above is a non-empty list: meaning that the inductive
 ; phase of the proof checks.
+
+(exit 0)
 
 ;;; For future thoughts.
 
