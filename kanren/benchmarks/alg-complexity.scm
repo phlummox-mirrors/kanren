@@ -27,33 +27,36 @@
 
 ; Here's the first attempt:
 ; make the disjunction of facts (e 1 2) (e 2 3) ... (e n-1 n) where n>1
-(define (make-e n)
-  (let loop ((i 2))
-    (if (>= i n) (fact () (- i 1) i)
-      (extend-relation (a b)
-	(fact () (- i 1) i)
-	(loop (+ 1 i))))))
+(define make-e
+  (lambda (n)
+    (let loop ((i 2))
+      (if (>= i n) (fact () (- i 1) i)
+          (extend-relation (a b)
+            (fact () (- i 1) i)
+            (loop (+ 1 i)))))))
 
 ; make the disjunction of facts (t 1) ... (t m) where m>=1
-(define (make-t m)
-  (let loop ((i 1))
-    (if (>= i m) (fact () i)
-      (extend-relation (a)
-	(fact () i)
-	(loop (+ 1 i))))))
+(define make-t
+  (lambda (m)
+    (let loop ((i 1))
+      (if (>= i m) (fact () i)
+          (extend-relation (a)
+            (fact () i)
+            (loop (+ 1 i)))))))
 
-(define (p-test m n)
-  (letrec
-    ((e (make-e n))
-      (t (make-t m))
-      (p
-	(extend-relation (x z)
-	  (relation (head-let x z)
-	    (exists (y)
-	      (all (e x y) (p y z))))
-	  (relation (head-let `,n x)
-	    (t x)))))
-    (solve (+ m  1) (x) (p 1 x))))
+(define p-test
+  (lambda (m n)
+    (letrec
+        ((e (make-e n))
+         (t (make-t m))
+         (p
+           (extend-relation (x z)
+             (relation (head-let x z)
+               (exists (y)
+                 (all (e x y) (p y z))))
+             (relation (head-let `,n x)
+               (t x)))))
+      (solve (+ m  1) (x) (p 1 x)))))
 
 (pretty-print (p-test 4 5))
 
@@ -235,12 +238,13 @@
 ; need to do something about the e-relation. We need to make the cost
 ; of answering e-goals constant.
 
-(define (make-e n)
-  (lambda (x y)
-    (all!!
-      (predicate (x) (< x n))
-      (let-inject ((t (x) (+ x 1)))
-	(== t y)))))
+(define make-e
+  (lambda (n)
+    (lambda (x y)
+      (all!!
+        (predicate (x) (< x n))
+        (project (x)
+          (== y (+ x 1)))))))
 
 (pretty-print (p-test 4 5))
 
@@ -270,13 +274,14 @@
 ; direct proportionality: Theta(n*m).
 
 ; The following gives only 9% improvement
-(define (make-e n)
-  (lambda (x y)
-    (lambda@ (sk fk subst)
-      (let ((x (subst-in x subst)))
-	(nonvar! x)
-	(if (< x n) (@ (== y (+ x 1)) sk fk subst)
-	  (fk))))))
+(define make-e
+  (lambda (n)
+    (lambda (x y)
+      (lambda@ (sk fk subst)
+        (let ((x (subst-in x subst)))
+          (nonvar! x)
+          (if (< x n) (@ (== y (+ x 1)) sk fk subst)
+              (fk)))))))
 
 (pretty-print (p-test 4 5))
 
@@ -294,18 +299,19 @@
 (time (p-test 96 192))
 
 
-(define (p-test m n)
-  (letrec
-    ((e (make-e n))
-      (t (make-t m))
-      (p
-	(lambda (x z)
-	  (any
-	    (let-lv (y)
-	      (if-only (e x y) (p y z)))
-	    (if-only (promise-one-answer (== x n))
-	      (t z))))))
-    (solve (+ m  1) (x) (p 1 x))))
+(define p-test
+  (lambda (m n)
+    (letrec
+        ((e (make-e n))
+         (t (make-t m))
+         (p
+           (lambda (x z)
+             (any
+               (let-lv (y)
+                 (if-only (e x y) (p y z)))
+               (if-only (promise-one-answer (== x n))
+                 (t z))))))
+      (solve (+ m  1) (x) (p 1 x)))))
 (pretty-print (p-test 4 5))
 
 (time (p-test 32 64))
@@ -334,36 +340,66 @@
 ; tests is twice as much as the difference between the second and the first.
 
 (printf "~ndetailed prune-subst~n")
-(define prune-subst
+
+'(define prune-subst
   (lambda (vars in-subst subst)
     (printf "vars ~a in-subst: ~a~nsubst ~a~n" vars in-subst subst)
     subst))
-(define prune-subst
+
+'(define prune-subst
   (lambda (vars in-subst subst)
     (printf "vars ~a in-subst: ~a~nsubst ~a~n" vars in-subst subst)
     (if (eq? subst in-subst)
-        subst
-        (let loop ([current subst] [to-remove '()] [clean '()] [to-subst '()])
-          (cond
-            [(null? current) (compose-subst/own-survivors to-subst to-remove clean)]
-            [(eq? current in-subst)
-             (compose-subst/own-survivors to-subst to-remove (append clean current))]
-            [(memq (commitment->var (car current)) vars)
-             (loop (cdr current) (cons (car current) to-remove) clean to-subst)]
-            [(relatively-ground? (commitment->term (car current)) vars)
-             (loop (cdr current) to-remove (cons (car current) clean) to-subst)]
-            [else (loop (cdr current) to-remove clean (cons (car current) to-subst))])))))
+      subst
+      (let ([var-bindings ; the bindings of truly bound vars
+	      (let loop ([vars vars])
+		(if (null? vars) vars
+		  (let ([binding (assq (car vars) subst)])
+		    (if binding
+		      (cons binding (loop (cdr vars)))
+		      (loop (cdr vars))))))])
+	(cond
+	  [(null? var-bindings) subst] ; none of vars are bound
+	  [(null? (cdr var-bindings))
+	    ; only one variable to prune, use the faster version
+	   (prune-subst-1 (commitment->var (car var-bindings))
+	     in-subst subst)]
+	  [(let test ([vb var-bindings]) ; check multiple dependency
+	     (and (pair? vb)
+	       (or (let ([term (commitment->term (car vb))])
+		     (and (var? term) (assq term var-bindings)))
+		 (test (cdr vb)))))
+	    ; do pruning sequentially
+	   (let loop ([var-bindings var-bindings] [subst subst])
+	     (if (null? var-bindings) subst
+	       (loop (cdr var-bindings)
+		 (prune-subst-1 (commitment->var (car var-bindings))
+		   in-subst subst))))]
+	  [else				; do it in parallel
+	    (let loop ([current subst])
+	      (cond
+		[(null? current) current]
+		[(eq? current in-subst) current]
+		[(memq (car current) var-bindings)
+		 (loop (cdr current))]
+		[(assq (commitment->term (car current)) var-bindings) =>
+		 (lambda (ct)
+		   (cons (commitment (commitment->var (car current)) 
+			   (commitment->term ct))
+		     (loop (cdr current))))]
+		[else (cons (car current) (loop (cdr current)))]))])))))
 
-(define (p-test m n)
-  (letrec
-    ((e (make-e n))
-      (t (make-t m))
-      (p
-	(lambda (x z)
-	  (any
-	    (exists (y)
-	      (if-only (e x y) (p y z)))
-	    (if-only (promise-one-answer (== x n))
-	      (t z))))))
-    (solve (+ m  1) (x) (p 1 x))))
+(define p-test
+  (lambda (m n)
+    (letrec
+        ((e (make-e n))
+         (t (make-t m))
+         (p
+           (lambda (x z)
+             (any
+               (exists (y)
+                 (if-only (e x y) (p y z)))
+               (if-only (promise-one-answer (== x n))
+                 (t z))))))
+      (solve (+ m  1) (x) (p 1 x)))))
 (pretty-print (p-test 4 5))
