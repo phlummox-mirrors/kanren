@@ -2897,8 +2897,220 @@
 			(typeclass-counter-example-query a b c1 c2))))
 
 (printf "~%Counter-example: ~s~%" 
-  (exists (a b c1 c2) (solve 4 
+  (exists (a b c1 c2) (solve 4
 			(typeclass-counter-example-query a b c1 c2))))
+
+
+(printf "~%Append with limited depth%")
+
+; In Prolog, we normally write:
+; append([],L,L).
+; append([X|L1],L2,[X|L3]) :- append(L1,L2,L3).
+;
+; If we switch the clauses, we get non-termination.
+; In our system, it doesn't matter!
+
+(define append-clause-1
+  (relation _ (l)
+    (to-show '() l l)))
+
+(define append-clause-2
+  (relation _ (x l1 l2 l3)
+    (to-show `(,x . ,l1) l2 `(,x . ,l3))
+    (append-rel l1 l2 l3)))
+
+(define append-rel
+  (lambda (a b c)
+    (with-depth 3
+      (any
+	(append-clause-1 a b c)
+        (append-clause-2 a b c)))))
+
+; Note (solve 100 ...)
+; Here 100 is just a large number: we want to print all solutions
+(printf "~%Append: clause1 first: ~s~%" 
+  (exists (a b c) (solve 100
+			(append-rel a b c))))
+
+(define append-rel
+  (lambda (a b c)
+    (with-depth 3
+      (any
+	(append-clause-2 a b c)
+        (append-clause-1 a b c)))))
+
+(printf "~%Append: clause2 first. In Prolog, it would diverge!: ~s~%" 
+  (exists (a b c) (solve 100
+			(append-rel a b c))))
+
+
+(printf "~%Inductive proof~%")
+
+; Note that in the following all relations have exactly one
+; argument (which is usually a complex structure)
+; This is not the very efficient way, and it smacks of prolog.
+; Yet it makes it easy to represent assumption.
+; To add an assumption to our knowledge base, we just extend
+; the relation
+
+; First we define the inductive structure
+
+; In Athena:
+;  (structure (BTree S)
+;     (leaf S)
+;     (root (BTree S) (BTree S)))
+
+; In Prolog
+; btree(leaf(S)).
+; btree(root(T1,T2)) :- btree(T1),btree(T2).
+
+; Note, our trees here (as well as those in Prolog) are polytypic
+; (polymorphic): leaves can have values of different sorts.
+
+(define btree
+  (lambda (kb)
+    (extend-relation (t)
+      (fact (val) `(btree (leaf ,val)))
+      (relation _ (t1 t2)
+	(to-show `(btree (root ,t1 ,t2)))
+	(kb `(btree ,t1))
+	(kb `(btree ,t2))))))
+
+
+;%> (declare mirror ((S) -> ((BTree S)) (BTree S)))
+
+; Introduce an equality predicate and the first axiom for mirror
+; In Athena:
+; (define mirror-axiom-1
+;   (forall ?x
+;     (= (mirror (leaf ?x)) (leaf ?x))))
+
+; In Prolog
+; myeq(leaf(X),mirror(leaf(X))).
+
+(define mirror-axiom-eq-1
+  (lambda (kb)
+    (fact (val) `(myeq (leaf ,val) (mirror (leaf ,val))))))
+
+; The second axiom
+; In Athena:
+; (define mirror-axiom-eq-2
+;   (forall ?t1 ?t2
+;     (= (mirror (root ?t1 ?t2))
+;       (root (mirror ?t2) (mirror ?t1)))))
+
+; In Prolog
+; myeq(root(B,A),mirror(root(T1,T2))) :- myeq(A,mirror(T1)),myeq(B,mirror(T2)).
+
+; implicitly the axiom in Prolog and the one below assume
+; the transitivity of myeq
+
+(define mirror-axiom-eq-2
+  (lambda (kb)
+    (relation _ (a b t1 t2)
+      (to-show `(myeq (root ,b ,a)
+		      (mirror (root ,t1 ,t2))))
+      (kb `(myeq ,a (mirror ,t1)))
+      (kb `(myeq ,b (mirror ,t2))))))
+
+; we could also add reflexivity and transitivity and symmetry axioms
+; and with-depth to keep them from diverging.
+; (define myeq
+;   (extend-relation (a b)
+;     mirror-axiom-eq-1
+;     (mirror-axiom-eq-2 myeq)))
+
+; Define the goal
+; In Athena:
+;  (define (goal t)
+;     (= (mirror (mirror t)) t))
+
+; In Prolog
+; Note, the goal is _equivalent_ to the conjunction of the
+; predicates. That's why we couldn't use the standard Prolog
+; notation goal(T) :- btree(T), ...
+; because the latter would give us only the implication.
+; goal(T,[btree(T),myeq(T,mirror(T1)),myeq(T1,mirror(T))]).
+
+(define goal
+  (lambda (t)
+    (exists (t1)
+      (list
+	`(btree ,t)
+	`(myeq ,t  (mirror ,t1))
+	`(myeq ,t1 (mirror ,t))))))
+
+; (by-induction-on ?t (goal ?t)
+;   ((leaf x) (!pf (goal (leaf x)) [mirror-axiom-1]))
+;   ((root t1 t2) 
+;     (!pf (goal (root t1 t2)) [(goal t1) (goal t2)  mirror-axiom-2])))
+
+(define (Y f)
+  ((lambda (u) (u (lambda (x) (lambda (n) ((f (u x)) n)))))
+   (lambda (x) (x x))))
+
+; The initial assumptions: just the btree
+(define init-kb (Y btree))
+
+; A nullary relation that is the conjunction of preds against the
+; assumption base kb
+(define (verify-goal preds kb)
+  (if (null? (cdr preds)) (kb (car preds))
+    (all
+      (kb (car preds))
+      (verify-goal (cdr preds) kb))))
+
+; extend the kb with the list of assumptions
+; this is just like 'any' only it's a procedure rather than a syntax
+(define (extend-kb facts kb)
+  (if (null? facts) kb
+    (any
+      (fact () (car facts))
+      (extend-kb (cdr facts) kb))))
+
+; ?- goal(leaf(X),C),verify(C,[]).
+(printf "~%First check the base case ~s~%"
+  (exists (val) 
+    (query
+      (verify-goal (goal '(leaf x))
+	(extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb)))))
+
+
+; Now, assume the goal holds for t1 and t2 and check if it holds
+; for root(t1,t2)
+;?- goal(t1,A1),goal(t2,A2), append(A1,A2,A), goal(root(t1,t2),C), verify(C,A).
+
+(printf "~%Check the inductive case ~s~%"
+  (exists (val) 
+    (query
+      (verify-goal (goal '(root t1 t2))
+	(Y
+	  (lambda (kb)
+	    (extend-relation (t)
+	      init-kb
+	      (extend-kb (goal 't1) kb)
+	      (extend-kb (goal 't2) kb)
+	      (mirror-axiom-eq-2 kb))))))))
+
+; % First check the base case
+; ?- goal(leaf(X),C),verify(C,[]).
+
+; %X = _G151
+; %C = [btree(leaf(_G151)), myeq(leaf(_G151), mirror(leaf(_G151))), 
+; %     myeq(leaf(_G151), mirror(leaf(_G151)))] 
+; %Yes
+
+; % Now, assume the goal holds for t1 and t2 and check if it holds
+; % for root(t1,t2)
+; ?- goal(t1,A1),goal(t2,A2), append(A1,A2,A), goal(root(t1,t2),C), verify(C,A).
+
+; % A1 = [btree(t1), myeq(t1, mirror(uv3)), myeq(uv3, mirror(t1))]
+; % A2 = [btree(t2), myeq(t2, mirror(uv4)), myeq(uv4, mirror(t2))]
+; % A = [btree(t1), myeq(t1, mirror(uv3)), myeq(uv3, mirror(t1)), 
+;        btree(t2), myeq(t2, mirror(uv4)), myeq(uv4, mirror(t2))]
+; % C = [btree(root(t1, t2)), myeq(root(t1, t2), mirror(root(uv4, uv3))),
+;        myeq(root(uv4, uv3), mirror(root(t1, t2)))] 
+; %Yes
 
 (exit 0)
 
