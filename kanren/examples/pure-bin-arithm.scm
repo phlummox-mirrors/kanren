@@ -688,9 +688,129 @@
 
 ; Exponentiation and discrete logarithm
 ; n = b^q + r, where 0 <= r and q is the largest such integer
+;
+; From the above condition we obtain the upper bound on r:
 ; n >= b^q, n < b^(q+1) = b^q * b = (n-r)* b 
 ; r*b < n*(b-1)
-; We assume that n > 1 and b > 1 (otherwise, the cases are trivial)
+;
+; We can also obtain the bounds on q:
+; if |b| is the bitwidth of b and |n| is the bitwidth of n,
+; we have, by the definition of the bitwidth:
+;  (1) 2^(|b|-1) <= b < 2^|b|
+;  (2) 2^(|n|-1) <= n < 2^|n|
+; Raising (1) to the power of q:
+;      2^((|b|-1)*q) <= b^q
+; OTH, b^q <= n, and n < 2^|n|. So we obtain
+;  (3)   (|b|-1)*q < |n|
+; which defines the upper bound on |q|.
+; OTH, raising (1) to the power of (q+1):
+;    b^(q+1) < 2^(|b|*(q+1))
+; But n < b^(q+1) by definition of exponentiation, and keeping in mind (1)
+; (4) |n|-1 < |b|*(q+1)
+; which is the lower bound on q.
+
+; When b = 2, exponentiation and discrete logarithm are easier to obtain
+; n = 2^q + r, 0<= 2*r < n
+; Here, we just relate n and q.
+;    exp2 n b q
+; holds if: n = (|b|+1)^q + r, q is the largest such number, and
+; (|b|+1) is a power of two.
+; Side condition: (|b|+1) is a power of two and b is L-instantiated.
+; To obtain the binary exp/log relation, invoke the relation as
+;  (exp2 n '() q)
+; Properties: if n is L-instantiated, one answer, q is fully instantiated.
+; If q is fully instantiated: one answer, n is L-instantiated.
+; In any event, q is always fully instantiated in any answer
+; and n is L-instantiated.
+; We depend on the properties of split.
+
+(define exp2
+  (letrec
+    ((r-append				; relational append
+       (extend-relation (a b c)
+	 (fact (b) '() b b)
+	 (relation (ah ar b cr) (to-show `(,ah . ,ar) b `(,ah . ,cr))
+	   (r-append ar b cr)))))
+  (relation (head-let n b q)
+    (any-interleave
+      (all (== n '(1)) (== q '()))  ; 1 = b^0
+      (all (gt1 n) (== q '(1)) (split n b '(1) _))
+      (exists (q1 b2)			; n = (2^k)^(2*q) + r
+	(all-interleave                 ;   = (2^(2*k))^q + r
+	     (== q `(0 . ,q1))
+	     (pos q1)
+	     (<ol b n)
+	     (r-append b `(1 . ,b) b2)
+	     (exp2 n b2 q1)))
+      (exists (q1 n1 b2)		; n = (2^k)^(2*q+1) + r
+	(all-interleave 		; n/(2^k) = (2^(2*k))^q + r'
+	     (== q `(1 . ,q1))
+	     (pos q1)
+	     (pos n1)
+	     (split n b n1 _)
+	     (r-append b `(1 . ,b) b2)
+	     (exp2 n1 b2 q1)))
+      )))
+)
+
+
+; nq = n^q where n is L-instantiated and q is fully instantiated
+(define repeated-mul
+  (extend-relation (n q nq)
+    (fact () `(,_ . ,_) '() '(1))
+    (fact (n) n '(1) n)
+    (relation (head-let n q nq)
+      (all
+	(gt1 q)
+	(exists (q1 nq1)
+	  (all
+	    (++o q1 '(1) q)
+	    (repeated-mul n q1 nq1)
+	    (**o nq1 n nq)))))))
+
+
+(define expo
+  (relation (head-let n b q r)
+    (any-interleave
+      (all (== n '(1)) (pos b) (== q '()) (== r '())) ; 1 = b^0 + 0, b >0
+      ; in the rest, b > 1
+      (all (<o n b) (== q '()) (++o r '(1) n)) ; n = b^0 + (n-1)
+      (all (=ol n b) (== q '(1)) (++o r b n)) ; n = b + r, n and b the same sz
+      ; in the rest, n is longer than b
+      (all (== b '(0 1))		; b = 2
+	   (exists (n1)
+	     (all
+	       (pos n1)
+	       (== n `(,_ ,_ . ,n1))    ; n is at least 4
+	       (exp2 n '() q)		; that will L-instantiate n and n1
+	       (split n n1 _ r))))
+      ; the general case
+      (all
+	(any (== b '(1 1)) (== b `(,_ ,_ ,_ . ,_))) ; b >= 3
+	(<ol b n)			; b becomes L-instantiated
+	(exists (bw nw nw1 bw1 ql1 ql qh qdh qd bql bqd bq bq1)
+	 (all
+	  (exp2 b '() bw1)
+	  (exp2 n '() nw1)		; n becomes L-instantiated
+	  (++o bw1 '(1) bw)
+	  (++o nw1 '(1) nw)
+	  (divo nw bw ql1 _)		; low boundary on q:
+	  (++o ql '(1) ql1)		; |n| = |b|(ql+1) + c
+	  (repeated-mul b ql bql)	; bql = b^ql
+	  (divo nw bw1 qh _)		; upper boundary on q-1
+	  (++o ql qdh qh)
+	  (trace-vars 1 (n bw nw ql qh))
+	  (any (== qd qdh) (<o qd qdh)) ; qd is bounded
+	  (repeated-mul b qd bqd)	; b^qd
+	  (**o bql bqd bq)		; b^q
+	  (**o b   bq  bq1)		; b^(q+1)
+	  (++o bq r n)
+	  (<o n bq1)			; check the r condition
+	  (++o ql qd q)
+	  ))))))
+
+	
+
 
 ;------------------------------------------------------------------------
 ;				Tests
@@ -1065,9 +1185,9 @@
 
 ; check that divo(N,M,Q,R) recursively enumerates all
 ; numbers such as N=M*Q+R, R<M
-;
+; It is a slow test...
 (cout "Test recursive enumerability of division" nl)
-(let ((n 3))
+'(let ((n 3))
   (do ((m 1 (+ 1 m))) ((> m n))
     (do ((q 0 (+ 1 q))) ((> q n))
       (do ((r 0 (+ 1 r))) ((>= r m))
@@ -1083,3 +1203,80 @@
 	      ))
 	  `(((n1.0 ,(build n)) (m1.0 ,(build m))
 	     (q1.0 ,(build q)) (r1.0 ,(build r))))))))))
+
+(test-check 'exp2-1
+  (solve 10 (q) (exp2 '(1 1 1 1) '() q))
+  '(((q.0 (1 1)))))
+
+(test-check 'exp2-2
+  (solve 10 (q) (exp2 '(1 0 1 1 1) '()  q))
+  '(((q.0 (0 0 1)))))
+
+; These are all answers!
+(test-check 'exp2-3
+  (solve 100 (n) (exp2 n '() '(1 0 1)))
+  '(((n.0 (0 0 0 0 0 1)))
+    ((n.0 (1 0 0 0 0 1)))
+    ((n.0 (0 1 0 0 0 1)))
+    ((n.0 (1 1 0 0 0 1)))
+    ((n.0 (0 b.0 1 0 0 1)))
+    ((n.0 (1 b.0 1 0 0 1)))
+    ((n.0 (0 b.0 b.1 1 0 1)))
+    ((n.0 (1 b.0 b.1 1 0 1)))
+    ((n.0 (0 b.0 b.1 b.2 1 1)))
+    ((n.0 (1 b.0 b.1 b.2 1 1))))
+)
+
+
+(test-check 'exp2-4
+  (solve 5 (n q) (exp2 n '() q))
+  '(((n.0 (1)) (q.0 ()))
+    ((n.0 (0 1)) (q.0 (1)))
+    ((n.0 (0 0 1)) (q.0 (0 1)))
+    ((n.0 (0 0 0 1)) (q.0 (1 1)))
+    ((n.0 (1 1)) (q.0 (1)))))
+
+
+(test-check 'expo-15-1
+  (solve 10 (q r) (expo (build 15) (build 2) q r))
+  '(((q.0 (1 1)) (r.0 (1 1 1)))))
+
+(test-check 'expo-15-3
+  (solve 10 (q r) (expo (build 15) (build 3) q r))
+  '(((q.0 (0 1)) (r.0 (0 1 1)))))
+
+(test-check 'expo-15-4
+  (solve 10 (q r) (expo (build 15) (build 4) q r))
+  '(((q.0 (1)) (r.0 (1 1 0 1)))))
+
+(test-check 'expo-15-5
+  (solve 10 (q r) (expo (build 15) (build 5) q r))
+  '(((q.0 (1)) (r.0 (0 1 0 1)))))
+
+(test-check 'expo-15-15
+  (solve 10 (q r) (expo (build 15) (build 15) q r))
+  '(((q.0 (1)) (r.0 ()))))
+
+(test-check 'expo-15-16
+  (solve 10 (q r) (expo (build 15) (build 16) q r))
+  '(((q.0 ()) (r.0 (0 1 1 1)))))
+
+(test-check 'expo-15--3
+  (solve 10 (b r) (expo (build 15) b (build 3) r))
+  '(((b.0 (0 1)) (r.0 (1 1 1)))))
+
+(test-check 'expo-32--4
+  (solve 10 (b r) (expo (build 32) b (build 4) r))
+  '())
+
+(test-check 'expo-33--5
+  (solve 10 (b r) (expo (build 33) b (build 5) r))
+  '(((b.0 (0 1)) (r.0 (1)))))
+
+'(test-check 'expo-2-5
+  (solve 10 (n) (expo n (build 2) (build 5) '(1)))
+  '(((n.0 (1 0 0 0 0 1)))))
+
+'(test-check 'expo-3-2
+  (solve 10 (n) (expo n (build 3) (build 2) '(1)))
+  '(((n.0 (1 0 0 0 0 1)))))
