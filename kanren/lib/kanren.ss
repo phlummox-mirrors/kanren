@@ -1,11 +1,8 @@
-;load "plshared.ss")
-
+;			The body of KANREN
+;
+; The appropriate prelude (e.g., chez-specific.scm) is assumed.
+;
 ; $Id$
-
-(define-syntax let-values
-  (syntax-rules ()
-    [(_ (x ...) vs body0 body1 ...)
-     (call-with-values (lambda () vs) (lambda (x ...) body0 body1 ...))]))
 
 (define-syntax lambda@
   (syntax-rules ()
@@ -72,11 +69,11 @@
   (syntax-rules ()
     [(_ title tested-expression expected-result)
      (begin
-       (printf "Testing ~s~%" title)
+       (cout "Testing " title nl)
        (let* ([expected expected-result]
               [produced tested-expression])
          (or (equal? expected produced)
-             (error 'test-check
+             (errorf 'test-check
                "Failed: ~a~%Expected: ~a~%Computed: ~a~%"
                'tested-expression expected produced))))]))
 
@@ -91,11 +88,18 @@
 ;------------------------------------------------------------------------
 ; Logical variables, substitutions, and commitments (aka bindings)
    
-(define-record logical-variable (id) ())
+(cond-expand
+  (chez
+    (define-record logical-variable (id) ()))
+  (else
+    ; use SRFI-9 records
+    (define-record-type *logical-variable*
+      (make-logical-variable name) logical-variable?
+      (name logical-variable-id))
+    ))
 (define logical-variable make-logical-variable)
 (define var? logical-variable?)
 
-(print-gensym #f)
 
 ; Introduction of a logical variable
 (define-syntax let-lv
@@ -117,7 +121,7 @@
 ; (define logical-variable-id
 ;   (lambda (x)
 ;     (if (var? x) (cdr x) 
-;       (error 'logical-variable-id "Invalid Logic Variable: ~s" x))))
+;       (errorf 'logical-variable-id "Invalid Logic Variable: ~s" x))))
 ; (define pair?
 ;   (lambda (x)
 ;     (and (native-pair? x) (not (eq? (car x) logical-var-tag)))))
@@ -291,41 +295,6 @@
 	#f)))
   #t)
 
-;(load "plprelims.ss")
-
-;(load "expand-only.ss")
-
-;quasiquote has been coded by Oscar Waddell.
-(define-syntax quasiquote
-  (let ([tmplid #'barney-the-purple-dinosaur])
-    (lambda (x)
-      (import scheme)
-      (define lexical?
-        (lambda (id)
-          (not
-            (free-identifier=? id
-              (datum->syntax-object tmplid
-                (syntax-object->datum id))))))
-      (define check
-        (lambda (x)
-          (syntax-case x (unquote unquote-splicing)
-            [(unquote e) (void)]
-            [(unquote-splicing e) (void)]
-            [(,e . rest) (check #'rest)]
-            [(,@e . rest) (check #'rest)]
-            [(car . cdr) (begin (check #'car) (check #'cdr))]
-            [id
-              (identifier? #'id)
-              (when (lexical? #'id)
-                (parameterize ([error-handler (warning-handler)]
-                               [reset-handler values])
-                  (syntax-error #'id "looks like you're missing , or ,@ on")))]
-            [other (void)])))
-      (syntax-case x ()
-        [(_ . whatever)
-         (begin
-           (check #'whatever)
-           #'(quasiquote . whatever))]))))
 
 (define concretize-var    ;;; returns two values
   (lambda (var env)
@@ -352,14 +321,15 @@
              (cond
                [(null? subst) '()]
                [else
-                 (let ([comm (car subst)])
-                   (let-values (cv new-env)
-                     (concretize-var (commitment->var comm) env)
-                     (let-values (ct newer-env)
-                       (concretize-term (commitment->term comm) new-env)
-                       (cons
-                         (commitment cv ct)
-                         (cs (cdr subst) newer-env)))))]))])
+		 (let*-values
+		   ([(comm) (car subst)]
+		    [(cv new-env)
+		      (concretize-var (commitment->var comm) env)]
+		    [(ct newer-env)
+		      (concretize-term (commitment->term comm) new-env)])
+		   (cons
+		     (commitment cv ct)
+		     (cs (cdr subst) newer-env)))]))])
     (lambda (subst)
       (cs subst '()))))
 
@@ -1509,26 +1479,28 @@
 
 (define concretize
   (lambda (t)
-    (let-values (ct new-env) (concretize-term t '())
+    (let*-values ([(ct new-env) (concretize-term t '())])
       ct)))
 
 (define-syntax concretize-subst/vars
   (syntax-rules ()
     [(_ subst) '()]
     [(_ subst x0 x1 ...)
-     (let-values (cx env) (concretize-var x0 '())
-       (let-values (ct env) (concretize-term (subst-in x0 subst) env)
-         (cons (list cx ct)
-           (concretize-subst/vars/env subst env x1 ...))))]))
+     (let*-values
+       ([(cx env) (concretize-var x0 '())]
+	[(ct env) (concretize-term (subst-in x0 subst) env)])
+       (cons (list cx ct)
+	 (concretize-subst/vars/env subst env x1 ...)))]))
 
 (define-syntax concretize-subst/vars/env
   (syntax-rules ()
     [(_ subst env) '()]
     [(_ subst env x0 x1 ...)
-     (let-values (cv env) (concretize-var x0 env)
-       (let-values (ct env) (concretize-term (subst-in x0 subst) env)
-         (cons (list cv ct)
-           (concretize-subst/vars/env subst env x1 ...))))]))
+     (let*-values
+       ([(cv env) (concretize-var x0 env)]
+	[(ct env) (concretize-term (subst-in x0 subst) env)])
+       (cons (list cv ct)
+	 (concretize-subst/vars/env subst env x1 ...)))]))
 
 (test-check 'test-father-3
   (let-lv (x)
@@ -1593,7 +1565,7 @@
 
 (define concretize
   (lambda (t)
-    (let-values (ct new-env) (concretize-term t '())
+    (let*-values ([(ct new-env) (concretize-term t '())])
       ct)))
 
 (define-syntax solve
@@ -2030,7 +2002,7 @@
 (define nonvar!
   (lambda (t)
     (if (var? t)
-      (error 'nonvar! "Logic variable ~s found after substituting."
+      (errorf 'nonvar! "Logic variable ~s found after substituting."
 	(concretize t))
       t)))
 
@@ -2086,9 +2058,9 @@
   (lambda (id f)
     (lambda term
       (if (not (procedure? f))
-          (error id "Non-procedure found: ~s" f))
+          (errorf id "Non-procedure found: ~s" f))
       (if (ormap var? term)
-          (error id "Variable found: ~s" term))
+          (errorf id "Variable found: ~s" term))
       (apply f term))))
 
 (test-check 'test-grandpa-12
@@ -2319,9 +2291,10 @@
     (cond
       [(var? t) (concretize-var t env)]
       [(pair? t)
-       (let-values (carct env) (concretize-term (car t) env)
-         (let-values (cdrct env) (concretize-term (cdr t) env)
-           (values (cons carct cdrct) env)))]
+       (let*-values
+	 ([(carct env) (concretize-term (car t) env)]
+	  [(cdrct env) (concretize-term (cdr t) env)])
+	 (values (cons carct cdrct) env))]
       [else (values t env)])))
 
 (define subst-in
@@ -3474,11 +3447,11 @@
 (define R1 (extend-relation (a1 a2) fact1 fact2))
 (define R2 (extend-relation (a1 a2) fact1 fact3)) 
 
-(printf "~%R1:~%")
+(cout nl "R1:" nl)
 (pretty-print (solve 10 (x y) (R1 x y)))
-(printf "~%R2:~%")
+(cout nl "R2:" nl)
 (pretty-print (solve 10 (x y) (R2 x y)))
-(printf "~%R1+R2:~%")
+(cout nl "R1+R2:" nl)
 (pretty-print 
   (solve 10 (x y)
     ((extend-relation (a1 a2) R1 R2) x y)))
@@ -3496,9 +3469,9 @@
 	(== t1 `(s ,x))
 	(== t2 `(s ,y))
 	(Rinf x y)))))
-(printf "~%Rinf:~%")
+(cout nl "Rinf:" nl)
 (time (pretty-print (solve 5 (x y) (Rinf x y))))
-(printf "~%Rinf+R1: Rinf starves R1:~%")
+(cout nl "Rinf+R1: Rinf starves R1:" nl)
 (time
   (pretty-print 
     (solve 5 (x y)
@@ -3565,7 +3538,7 @@
 
 ;;; Test for nonoverlapping.
 
-(printf "~%any-union~%")
+(cout nl "any-union" nl)
 (test-check "R1+R2"
   (solve 10 (x y)
     (any-union (R1 x y) (R2 x y)))
@@ -3695,7 +3668,7 @@
           (let ([s (extend-subst depth-counter-var 0 subst)])
             (@ ant sk fk s))]))))
 
-(printf "~%Append with limited depth~%")
+(cout nl "Append with limited depth" nl)
 ; In Prolog, we normally write:
 ; append([],L,L).
 ; append([X|L1],L2,[X|L3]) :- append(L1,L2,L3).
@@ -3721,8 +3694,9 @@
 
 ; Note (solve 100 ...)
 ; Here 100 is just a large number: we want to print all solutions
-(printf "~%Extend: clause1 first: ~s~%" 
-  (solve 100 (a b c) (extend-rel a b c)))
+(cout nl "Extend: clause1 first: " 
+  (solve 100 (a b c) (extend-rel a b c))
+  nl)
 
 (define extend-rel
   (lambda (a b c)
@@ -3731,8 +3705,8 @@
 	(extend-clause-2 a b c)
         (extend-clause-1 a b c)))))
 
-(printf "~%Extend: clause2 first. In Prolog, it would diverge!: ~s~%" 
-  (solve 100 (a b c) (extend-rel a b c)))
+(cout nl "Extend: clause2 first. In Prolog, it would diverge!: " 
+  (solve 100 (a b c) (extend-rel a b c)) nl)
 
 
 ; ?- help(call_with_depth_limit/3).

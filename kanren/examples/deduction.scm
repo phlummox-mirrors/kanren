@@ -491,14 +491,15 @@
 	       (cond
 		 [(null? subst) '()]
 		 [else
-		   (let ([comm (car subst)])
-		     (let-values (cv new-env)
-		       (concretize-var (commitment->var comm) env)
-		       (let-values (ct newer-env)
-			 (concretize-term (commitment->term comm) new-env)
-			 (cons
-			   (list cv ct)
-			   (cs (cdr subst) newer-env)))))]))])
+		   (let*-values
+		     ([(comm) (car subst)]
+		      [(cv new-env)
+			(concretize-var (commitment->var comm) env)]
+		      [(ct newer-env)
+			(concretize-term (commitment->term comm) new-env)])
+		     (cons
+		       (list cv ct)
+		       (cs (cdr subst) newer-env)))]))])
 	(lambda (subst)
 	  (cs (flatten-subst subst) '()))))
     

@@ -93,12 +93,13 @@
                 [else (let ([new-var (logical-variable (logical-variable-id t))])
                         (values new-var (cons `(,t . ,new-var) env)))])]
              [(pair? t)
-              (let-values (a-t env) (instantiate-term (car t) env)
-                (let-values (d-t env) (instantiate-term (cdr t) env)
-                  (values (cons a-t d-t) env)))]
+              (let*-values
+		([(a-t env) (instantiate-term (car t) env)]
+		 [(d-t env) (instantiate-term (cdr t) env)])
+		(values (cons a-t d-t) env))]
              [else (values t env)]))])
     (lambda (t)
-      (let-values (ct env) (instantiate-term t '())
+      (let*-values ([(ct env) (instantiate-term t '())])
         ct))))
 
 (define env (extend-relation (a1 a2 a3) env generic-env))
