@@ -2495,11 +2495,17 @@
 ; So, we have in general 25 possibilities to consider.
 ; actually, a pair or components of a pair can be variable-free
 ; or not. In the latter case, we have got to traverse them.
+; Also, if a term to unify has come from subst, it has special properties,
+; which we can exploit. See below.
 ;
 ; "Measurements of the dynamic behavior of unification on four real
 ; programs show that one or both of the arguments are variables about
 ; 85% of the time [63]. A subroutine call is made only if both arguments
 ; are nonvariables." (Peter Van Roy, The Wonder Years ...)
+;
+; Just like in the union-find unification algorithm, we produce
+; substitutions in the "triangular form" (see Baader, Snyder, Unification
+; Theory). Cicularity is detected only at the end (when we do subst-in).
 
 (define unify
   (lambda (t u subst)
@@ -2509,7 +2515,10 @@
       [(eq? u _) subst]
       [(var? t)
        (let*-and (unify-free/any t u subst) ([ct (assq t subst)])
-         (unify-bound/any ct u subst))]
+	 (if (var? u)			; ct is a bound var, u is a var
+	   (let*-and (unify-free/bound u ct subst) ([cu (assq u subst)])
+	     (unify-bound/bound ct cu subst))
+	   (unify-bound/nonvar ct u subst)))]
       [(var? u)				; t is not a variable...
        (let*-and
          (cond
@@ -2517,22 +2526,65 @@
            ; t is not a var and is not a pair: it's atomic
            [else (extend-subst u t subst)])
          ([cu (assq u subst)])
-         (unify (commitment->term cu) t subst))]  
+         (unify-bound/nonvar cu t subst))]
       [(and (pair? t) (pair? u))
        (let*-and #f ([subst (unify (car t) (car u) subst)])
          (unify (cdr t) (cdr u) subst))]
       [else (and (equal? t u) subst)])))
 
-; ct is a commitment to a bound variable, u can be anything
-(define unify-bound/any
+; ct is a commitment to a bound variable, u is a atomic or a composite
+; value -- but not a variable
+(define unify-bound/nonvar
   (lambda (ct u subst)
+    (let ((t (commitment->term ct)))
+      (cond				; search for the end of ct -> chain
+	[(eq? t u) subst]
+	[(var? t)
+	  (let*-and 
+	    (cond
+	      [(pair? u) (unify-free/list t u subst)]
+              ; u is not a var and is not a pair: it's atomic
+	      [else (extend-subst t u subst)])
+	    ([ct (assq t subst)])
+	    (unify-bound/nonvar ct u subst))]
+	; t is some simple or composite value. So is u. Traverse the spine
+      [(and (pair? t) (pair? u))
+	(let loop ((t t) (u u) (subst subst))
+	  (let*-and #f ([subst (unify-internal/any (car t) (car u) subst)])
+	    (if (and (pair? (cdr t)) (pair? (cdr u)))
+	      (loop (cdr t) (cdr u) subst)
+	      (unify-internal/any (cdr t) (cdr u) subst)
+	      )))]
+      [else (and (equal? t u) subst)]))))
+
+
+; Just like unify. However, the first term, t, comes from
+; an internalized term. We know it can't be _
+; We also know that either
+;  t is ground
+;  t is a non-ground, internalized pair but then u is not a pair
+
+(define unify-internal/any
+  (lambda (t u subst)
     (cond
+      [(eq? t u) subst]			; quick tests first
       [(eq? u _) subst]
-      [(var? u)
-       (let*-and (unify-free/bound u ct subst) ([cu (assq u subst)])
-         (unify-bound/bound ct cu subst))] ; both t and u are bound...
-      [else ; unify bound and a value
-	(unify (commitment->term ct) u subst)])))
+      [(var? t)
+       (let*-and (unify-free/any t u subst) ([ct (assq t subst)])
+	 (if (var? u)			; ct is a bound var, u is a var
+	   (let*-and (unify-free/bound u ct subst) ([cu (assq u subst)])
+	     (unify-bound/bound ct cu subst))
+	   (unify-bound/nonvar ct u subst)))]
+      [(var? u)				; t is not a variable...
+       (let*-and			; It's a part of an internal term
+	 (extend-subst u t subst)	; it must be ground
+         ([cu (assq u subst)])
+         (unify-internals (commitment->term cu) t subst))]
+      [(and (pair? t) (pair? u))
+       (let*-and #f ([subst (unify-internal/any (car t) (car u) subst)])
+         (unify-internal/any (cdr t) (cdr u) subst))]
+      [else (and (equal? t u) subst)])))
+
 
 ; Unify two already bound variables represented by their commitments
 ; ct and cu.
@@ -2551,11 +2603,8 @@
 ; in particular, we never need to call unify-free/list nor
 ; unify-free/any as we do need to rebuild any terms.
 
-(define unify-bound/bound
-  (lambda (ct cu subst)
-    (let unify-internal ([t (commitment->term ct)]
-			 [u (commitment->term cu)]
-			 [subst subst])
+(define unify-internals
+  (lambda (t u subst)
       (cond
 	[(eq? t u) subst]               ; quick tests first
 	[(var? t)
@@ -2571,14 +2620,19 @@
               (let*-and (unify-free/bound u ct subst) ([cu (assq u subst)])
                 (unify-bound/bound ct cu subst))]
              [else                      ; unify bound and a value
-               (unify-internal (commitment->term ct) u subst)]))]
+               (unify-internals (commitment->term ct) u subst)]))]
 	[(var? u)                       ; t is not a variable...
          (let*-and (extend-subst u t subst) ([cu (assq u subst)])
-           (unify-internal (commitment->term cu) t subst))]
+           (unify-internals (commitment->term cu) t subst))]
         [(and (pair? t) (pair? u))
-         (let*-and #f ([subst (unify-internal (car t) (car u) subst)])
-           (unify-internal (cdr t) (cdr u) subst))]
-        [else (and (equal? t u) subst)]))))
+         (let*-and #f ([subst (unify-internals (car t) (car u) subst)])
+           (unify-internals (cdr t) (cdr u) subst))]
+        [else (and (equal? t u) subst)])))
+
+(define unify-bound/bound
+  (lambda (ct cu subst)
+    (unify-internals (commitment->term ct) (commitment->term cu) subst)))
+
 
 ; t-var is a free variable, u can be anything
 ; This is analogous to get_variable instruction of Warren Abstract Machine
@@ -2741,6 +2795,19 @@
 ; anon variables.
 ; It all works -- and faster (without pruning). Yet we have to carefully
 ; think it over.
+; Let's unify the variable x with a term `(1 2 3 4 5 ,z). The result
+; will be the binding x -> `(1 2 3 4 5 ,z). Let's unify `(1 . ,y) with
+; x. The result will be a binding y -> `(2 3 4 5 ,z). Note that the
+; bindings of x and y share a tail. Let us now unify z with 42. The
+; result will be a binding z->42. So far, so good. Suppose however that
+; z now "goes out of scope" (the exists form that introduced z
+; finishes). We now have to traverse all the terms in the substitution
+; and replace z with its binding. The result will be a substitution
+; 	x -> (1 2 3 4 5 42)
+; 	y -> (2 3 4 5 42)
+; Now, the bindings of x and y do not share anything at all! The pruning
+; has broke sharing. If we want to unify x and `(1 . ,y) again, we have
+; to fully traverse the corresponding terms again.
 ; (define unify-free/list
 ;   (let ()
 ;   (define (has-anon? term)
@@ -2994,6 +3061,14 @@
     (exists (y)
       (all! (== y x) (== y 5) (== x y))))
   '(((x.0 5))))
+
+(test-check 'length-of-subst
+  (let-lv (x y z)
+    (let* ((subst (unify x `(1 2 3 4 5 ,z) '()))
+	    (subst (unify x `(1 . ,y) subst))
+	    (subst (unify z 42 subst)))
+      (concretize-subst subst)))
+  '((z.0 . 42) (y.0 2 3 4 5 a*.0) (a*.0 . z.0) (x.0 1 2 3 4 5 a*.0)))
 
 (define concat
   (lambda (xs ys)
