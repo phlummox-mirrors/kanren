@@ -37,7 +37,7 @@
 (define on-right
   (extend-relation (a0 a1 a2)
     (fact (item1 item2) item1 item2 `(,item1 ,item2 . ,_))
-    (relation (item1 item2 rest)
+    (relation ((once item1) (once item2) rest)
       (to-show item1 item2 `(,_ . ,rest))
       (on-right item1 item2 rest))))
         
@@ -83,3 +83,12 @@
 ;     19 ms elapsed cpu time, including 0 ms collecting
 ;     19 ms elapsed real time, including 0 ms collecting
 ;     788928 bytes allocated, including 1052312 bytes reclaimed
+;
+; For version of kanren 3.36 (with once annotations)
+; This seems to be similar of SWI-Prolog, which gives 0.01 sec
+; timing for the equivalent zebra code.
+; (time (solution (h) ...))
+;     no collections
+;     11 ms elapsed cpu time
+;     11 ms elapsed real time
+;     532912 bytes allocated
