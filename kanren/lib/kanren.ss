@@ -58,6 +58,17 @@
 (define-record var (id) ())
 (define var make-var)
 
+; A framework to remove introduced variables beyond their scope.
+; To make it removing variables easier, we consider the list
+; of subst as a "stack". Before we add a new variable, we put a mark
+; on the stack. Mark is a special variable binding, whose term is 
+; the current subst. When we about to remove added variables after
+; their scope is ended, we locate the mark (using eq?) and check that
+; the term bound to the mark is indeed the subst after the mark.
+; If it so, then the subst list wasn't perturbed, and we know that
+; anything below the mark can't possibly contain the reference to the
+; variable we're about to remove.
+
 (define-syntax introduce-vars
   (syntax-rules ()
     [(_ () body) body]
@@ -65,9 +76,10 @@
      (all body0 body1 body2 ...)]
     [(_ (id ...) body0 body1 ...)
      (let ([id (var 'id)] ...)
-       (lambda@ (sk)
+       (lambda@ (sk fk in-subst)
 	 (@ (all body0 body1 ...)
-            (lambda@ (fk subst) (@ sk fk (prune subst id ...))))))]))
+            (lambda@ (fk subst) (@ sk fk (prune in-subst subst id ...)))
+	   fk in-subst)))]))
 
 
 ; check if any of vars occur in a term
@@ -79,12 +91,18 @@
 		      (occur-vars? (cdr term) vars)))
     (else #f)))
 
+; PRUNE IN-SUBST SUBST ID ....
+; remove the bindings of ID ... from SUBST (by composing with the
+; rest of subst). IN-SUBST is the mark.
+; If we locate IN-SUBST in SUBST, we know that everything below the
+; mark can't possibly contain ID ...
+
 (define-syntax prune
   (syntax-rules ()
-    [(_ subst) subst]
-    [(_ subst id ...)
+    [(_ in-subst subst) subst]
+    [(_ in-subst subst id ...)
       (let ((vars (list id ...))
-	    (do-subst
+	     (do-subst
 	      (lambda (clean to-remove to-subst)
 		(let loop ((result clean) (to-subst to-subst))
 		  (if (null? to-subst) result
@@ -95,18 +113,25 @@
 			  to-remove)
 			result)
 		      (cdr to-subst)))))))
-	(let loop ((clean '()) (to-remove '()) (to-subst '()) (current subst))
-	  (cond
-	    ((null? current) (do-subst clean to-remove to-subst))
-	    ((memv (commitment->var (car current)) vars)
-	      (loop clean (cons (car current) to-remove) to-subst 
-		(cdr current)))
-	    ((occur-vars? (commitment->term (car current)) vars)
-	      (loop clean to-remove (cons (car current) to-subst)
-		(cdr current)))
-	    (else
-	      (loop (cons (car current) clean) to-remove to-subst
-		(cdr current))))))]))
+	(if (eq? subst in-subst) subst ; no bindings to remove
+	  (let loop ((clean '()) (to-remove '())
+		     (to-subst '()) (current subst))
+	    (cond
+	      ((eq? current in-subst)	; found the mark
+		;(printf "found the mark~%")
+		(do-subst (append clean current) to-remove to-subst))
+	      ((null? current) 
+		(do-subst clean to-remove to-subst))
+	      ((memv (commitment->var (car current)) vars)
+		(loop clean (cons (car current) to-remove) to-subst 
+		  (cdr current)))
+	      ((occur-vars? (commitment->term (car current)) vars)
+		(loop clean to-remove (cons (car current) to-subst)
+		  (cdr current)))
+	      (else
+		(loop (cons (car current) clean) to-remove to-subst
+		  (cdr current)))))))]))
+
 
 (print-gensym #f)
 ; (define var
@@ -547,11 +572,11 @@
      (relation/cut cut-id (ex-id ...) () (x ...) (x ...) ant ...)]
     [(_ cut-id (ex-id ...) (g ...) () (x ...))
      (lambda (g ...)
-       (exists (ex-id ...)
+       (introduce-vars (ex-id ...)
 	 (all! (== g x) ...)))]
     [(_ cut-id (ex-id ...) (g ...) () (x ...) ant ...)
      (lambda (g ...)
-       (exists (ex-id ...)
+       (introduce-vars (ex-id ...)
          (all! (== g x) ...
            (lambda@ (sk fk subst cutk)
              (let ([cut-id (!! cutk)])
@@ -602,6 +627,19 @@
 	    initial-sk initial-fk empty-subst initial-fk)))
   ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'john)))))
   '())  ; variables shouldn't leak
+
+
+; The mark should be found here...
+(define child-of-male-1
+  (relation (child dad)
+    (to-show child dad)
+    (child-of-male dad child)))
+(test-check 'test-child-of-male-1
+  (concretize-subst
+    (caar (@ (child-of-male 'sam 'john)
+	    initial-sk initial-fk empty-subst initial-fk)))
+  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'john)))))
+  '())
 
 
 (define pete/sal
