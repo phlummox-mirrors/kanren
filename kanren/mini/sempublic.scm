@@ -181,13 +181,11 @@
 
 (define-syntax conde-aux
   (syntax-rules (else)
-    ((_ (c1 c2* ...) ()) (condo c1 c2* ...))
-    ((_ (c* ...) ((else . eg)))
-      (conde-aux (c* ... (else . eg)) ()))
-    ((_ (c* ...) ((q . gs) . rest))
-      (conde-aux (c* ... ((once q) . gs)) rest))
-    ))
-
+    ((_ (c0 c ...) ()) (condo c0 c ...))
+    ((_ (c ...) ((else a ...)))
+     (condo c ... (else a ...)))
+    ((_ (c ...) ((a0 a ...) c2 ...))
+     (conde-aux (c ... ((once a0) a ...)) (c2 ...)))))
 
 ;;; This does not change
 
@@ -1085,7 +1083,7 @@
 	(== q (cons x y)))))
   '())
 
-(test-check 'conde-3
+(test-check 'conde-4
   (prefix 10
     (run (q)
       (fresh (x y)
