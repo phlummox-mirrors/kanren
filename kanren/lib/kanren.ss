@@ -2993,13 +2993,44 @@
 
 (printf "~%Inductive proof~%")
 
-; Note that in the following all relations have exactly one
-; argument (which is usually a complex structure)
-; This is not the very efficient way, and it smacks of prolog.
-; Yet it makes it easy to represent and add assumptions.
-; To add an assumption to our knowledge base, we just extend
-; the relation. So we use the same evaluation engine to handle
-; assumptions.
+; First we need an extendible database of relations.
+; We should be able to add to the database later on -- extend
+; it with assumptions.
+;
+; One approach for the database is a finite map (hash table, assoc
+; list) from the name of a relation to the procedure that is a relation
+; in our system. Or, to make it even better, from a tuple
+; (name arity) to the body of the relation.
+; This is the approach of Prolog.
+; Suppose we have a term (foo ?a ?b ?c) where ?a, ?b and ?c are arbitrary
+; terms (logical variables, constants, expressions, etc). 
+; We would like to check if this term is consistent with (i.e., can
+; be proven by) a particular instance of the database.
+; First, we need to look up a key (foo 3) in the database. If the
+; lookup fails, so does our query. If the lookup succeeds, we get
+; a procedure of three arguments. We apply this procedure to
+; ?a, ?b, and ?c and obtain an antecedent, which we can 'solve'
+; as usual.
+
+; In the following, we chose a different approach. We represent the database
+; of relations as a relation itself -- we will call it KB. That
+; relation takes one argument -- the term to prove, and returns an antecedent
+; that represents the answer (that antecedent may be 'fail').
+; A database of one fact
+;  foo(a,b,c).
+; in Prolog notation will be represented in our approach as a relation
+;   (relation _ () (to-show `(foo a b c)))
+; If we want to add another relation, say
+; bar(X,X).
+; we need to _extend_ the above relation with
+;  (relation _ (x) (to-show `(bar x x))).
+;
+; This approach is probably less efficient than the first one. It has
+; however a redeeming value -- we do not need a separate procedure
+; to look up names/arities of relations. We don't need separate procedures
+; for extending our database. We can use the existing machinery of
+; 'solving' relations for 'solving' the database of relations.
+
 
 ; First we define the inductive structure
 
@@ -3015,6 +3046,24 @@
 ; Note, our trees here (as well as those in Prolog) are polytypic
 ; (polymorphic): leaves can have values of different sorts.
 
+; When we attempt to translate
+;	btree(root(T1,T2)) :- btree(T1),btree(T2).
+; into our system, we encounter the first difficulty. To find out
+; if a term btree(root(T1,T2)) is consistent with our database of relations,
+; we need to check if terms  btree(T1) and  btree(T2) are consistent.
+; Thus, to add btree(root(T1,T2)) to our database, we need to use
+; the database itself to verify btree(T1) and btree(T2). Clearly,
+; we need a fixpoint. The need for the fixpoint exists no matter what is
+; the representation of the database -- a finite map or a relation.
+; Prolog solves the fixpoint problem by making the database global
+; and using mutations (similar to the way letrec is implemented in Scheme).
+; If we attempt to be purely functional, we must make the fixpoint explicit
+; and employ Y.
+
+; Note, the kb variable below represents the "current" database.
+; In our approach, the database is a relation of one argument,
+; which is a term to prove. A Second-order relation???
+
 (define btree
   (lambda (kb)
     (extend-relation (t)
@@ -3024,6 +3073,14 @@
 	(pred-call printf "btree ~s ~s ~n" t1 t2)
 	(kb `(btree ,t1))
 	(kb `(btree ,t2))))))
+
+
+(define (Y f)
+  ((lambda (u) (u (lambda (x) (lambda (n) ((f (u x)) n)))))
+   (lambda (x) (x x))))
+
+; The initial database: just the btree
+(define init-kb (Y btree))
 
 
 ;%> (declare mirror ((S) -> ((BTree S)) (BTree S)))
@@ -3052,7 +3109,23 @@
 ; myeq(root(B,A),mirror(root(T1,T2))) :- myeq(A,mirror(T1)),myeq(B,mirror(T2)).
 
 ; implicitly the axiom in Prolog and the one below assume
-; the transitivity of myeq
+; the transitivity of myeq. Indeed, one may think that the direct
+; translation from Athena to Prolog would be
+;
+;   myeq(mirror(root(T1,T2)),root(mirror(T2),mirror(T1)))
+; or
+;   myeq(mirror(root(T1,T2)),root(B,A)) :- B = T2, A = T1.
+; However, Athena actually assumes that B and T2 can be myeq rather
+; than merely identical. We also switched the order of arguments
+; in myeq, assuming symmetry of myeq.
+; It really helped in Prolog. In our system, we could have used
+; the same order as in Athena and add:
+;    myeq(A,A).   % reflexivity: identity implies equality
+;    myeq(A,B) :- myeq(B,A). % symmetry
+; Clearly if we add these relations to Prolog code, it will diverge.
+; In our system, we can use with-depth to keep divergence in check.
+; Still, for simplicity and clarity we will simply model the Prolog solution
+; in our code.
 
 (define mirror-axiom-eq-2
   (lambda (kb)
@@ -3061,10 +3134,6 @@
 		      (mirror (root ,t1 ,t2))))
       (kb `(myeq ,a (mirror ,t1)))
       (kb `(myeq ,b (mirror ,t2))))))
-
-; we could also add reflexivity and transitivity and symmetry axioms
-; and with-depth to keep them from diverging.
-
 
 
 ; Define the goal
@@ -3076,8 +3145,16 @@
 ; Note, the goal is _equivalent_ to the conjunction of the
 ; predicates. That's why we couldn't use the standard Prolog
 ; notation goal(T) :- btree(T), ...
-; because the latter would give us only the implication.
+; because the latter would give us only an _implication_.
 ; goal(T,[btree(T),myeq(T,mirror(T1)),myeq(T1,mirror(T))]).
+
+; The goal here is a function from a term to a list of terms.
+; (goal t) is the list of subgoals of (goal t). If all these
+; subgoals verify against the current database, the goal verifies.
+; The Athena code above defines 'goal' in a similar
+; vein. We also added (btree t) as a 'type predicate'. Athena is
+; a typeful language. Our language is untyped, so we need to make
+; sure that the goal is applied to terms of the right type.
 
 (define goal
   (lambda (t)
@@ -3087,28 +3164,23 @@
 	`(myeq ,t  (mirror ,t1))
 	`(myeq ,t1 (mirror ,t))))))
 
-(define (Y f)
-  ((lambda (u) (u (lambda (x) (lambda (n) ((f (u x)) n)))))
-   (lambda (x) (x x))))
-
-; The initial assumptions: just the btree
-(define init-kb (Y btree))
 
 ; Verification engine
-;	verify-goal PREDS KB
-; returns a nullary relation that is the conjunction of preds against the
-; assumption base kb
-(define (verify-goal preds kb)
-  (if (null? (cdr preds)) (kb (car preds))
+;	verify-goal TERMS KB
+; returns a nullary relation that succeeds only when each TERM
+; in the list of TERMS succeeds against the given database KB.
+
+(define (verify-goal terms kb)
+  (if (null? (cdr terms)) (kb (car terms))
     (all
-      (kb (car preds))
-      (verify-goal (cdr preds) kb))))
+      (kb (car terms))
+      (verify-goal (cdr terms) kb))))
 
 ; A better version of concretize that replaces each variable
 ; with a _unique_! symbol. The unique symbol symbolizes universal
 ; quantification, as usual.
 
-; get the free vars of term
+; get the free vars of term, without duplicates
 (define (free-vars term)
   (let loop ((term term) (fv '()))
     (cond
@@ -3134,7 +3206,23 @@
     (subst-in term subst)))
 
 ; extend the kb with the list of assumptions
-; this is just like 'any' only it's a procedure rather than a syntax
+; this is just like 'any' only it's a procedure rather than a syntax.
+;
+; Why we need concretize?
+; Suppose, the list of facts includes
+;	(fact (x) (foo x)) and (fact (x) (bar x))
+; definitely, we do not want to imply that facts foo and bar _share_
+; the same logical variable. The facts are independent and should
+; not have any variables in common.
+; Furthermore, we do not want to add
+;	(fact (x) (foo x))
+; because that would mean exist x. foo x
+; We want our facts to be universally quantified. So, we add
+;	(fact () (foo 'unique-symbol))
+; See the distinction between sigma and pi in Lambda-Prolog.
+; We use extend-kb to extend the database with assumptions, which most
+; often are universally quantified.
+
 (define (extend-kb facts kb)
   (let ((facts (concretize facts)))
     (printf "Extending KB with ~s~%" facts)
@@ -3145,19 +3233,37 @@
 	  (loop (cdr facts)))))))
 
 
-
+; Here's Athena's induction proof.
+;
 ; (by-induction-on ?t (goal ?t)
 ;   ((leaf x) (!pf (goal (leaf x)) [mirror-axiom-1]))
 ;   ((root t1 t2) 
 ;     (!pf (goal (root t1 t2)) [(goal t1) (goal t2)  mirror-axiom-2])))
 
+; The first part of it, the base case, can be expressed in Prolog
+; as follows.
 ; ?- goal(leaf(X),C),verify(C,[]).
+; Here how it looks in our system:
+
 (printf "~%First check the base case ~s~%"
   (query
     (verify-goal (goal '(leaf x))
       (extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb))))
 
 
+; that is, we obtain the list of subgoals to verify '(leaf x)
+; by invoking the function 'goal'.
+; we extend the initial database (which contains btree facts)
+; with mirror-axiom-eq-1. Thus, mirror-axiom-eq-1 and btree form
+; the assumptions. We then verify the subgoals against the assumptions.
+; Note that we wrote
+;    '(leaf x)
+; rather than
+;    (exists (x) `(leaf ,x))
+; because we want to prove that (goal '(leaf x)) holds for _all_ x
+; rather than for some particular x.
+
+; The inductive case.
 ; Now, assume the goal holds for t1 and t2 and check if it holds
 ; for root(t1,t2)
 ;?- goal(t1,A1),goal(t2,A2), append(A1,A2,A), goal(root(t1,t2),C), verify(C,A).
@@ -3172,7 +3278,7 @@
 
 (printf "~%Another check ~s~%"
   (query
-	;(goal t1), (goal t2) => (btree (root t1 t2))
+	;check that (goal t1), (goal t2) => (btree (root t1 t2))
     (verify-goal '((btree t1) (btree t2)
 		   (btree (root t1 t2)))
       (let ((kb0
@@ -3185,6 +3291,11 @@
 	      kb0
 	      (btree kb)
 	      (mirror-axiom-eq-2 kb))))))))
+
+; now we really need Y because we rely on the clause
+;	btree(root(T1,T2)) :- btree(T1),btree(T2).
+; which is recursive.
+
 
 (printf "~%Check the inductive case ~s~%"
   (query
@@ -3199,6 +3310,12 @@
 	      kb0
 	      (btree kb)
 	      (mirror-axiom-eq-2 kb))))))))
+
+; Again, we use Y because btree and mirror-axiom-eq-2 are recursive.
+; We need the database that is the fixpoint of all constituent
+; relations.
+; The output above is a non-empty list: meaning that the inductive
+; phase of the proof checks.
 
 (exit 0)
 
