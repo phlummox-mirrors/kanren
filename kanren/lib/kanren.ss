@@ -254,76 +254,6 @@
                (@ sk fk subst))]
          [else (lambda (cutk-ign) (fk))]))]))
 
-
-; partially-reduce args vars body
-; is semantically equivalent to a curried applications of args
-; to (lambda (vars) body)
-; that is
-;   (partially-reduce (arg ...) (var ...) body)
-; is semantically the same as
-;  (@ (lambda@ (var ...) body) arg ...)
-; In particular,
-;  (partially-reduce (arg ...) () body)
-; is the same as
-;  (@ body arg ...)
-; and
-; (partially-reduce () (var ...) body)
-; is the same as
-;  (lambda@ (var ...) body)
-; and
-; (partially-reduce () () body)
-; is just the same as body.
-; It goes without saying that variables in vars are generally free in body.
-;
-; The purpose of partially-reduce is to perform some of the beta-redexes
-; at the macro-expand time.
-;
-; examples
-; (partially-reduce () (sk fk) (list sk fk))
-; ==> (lambda@ (sk fk) (list sk fk))
-; (partially-reduce (e1) (sk fk) (list sk fk))
-; ==> (lambda@ (fk) (list e1 fk))
-; (partially-reduce (e1 e2) (sk fk) (list sk fk))
-; ==> (list e1 e2)
-; (partially-reduce (e1 e2) (sk) sk)
-; ==> (e1 e2)
-
-(define-syntax partially-reduce
-  (syntax-rules ()
-    ((_ () () body) body) 		; nop
-    ((_ (e ...) () body) (@ body e ...)) 		; apply the rest
-    ((_ () (var ...) body) 		; just lambda, no application
-      (lambda@ (var ...) body))
-    ((_ (e1 . erest) (var . vrest) body) ; do the macroexpand-time beta
-      (let-syntax
-	((beta 
-	   (syntax-rules ()
-	     ((_ var _erest)
-	       (partially-reduce _erest vrest body)))))
-	(beta e1 erest)))))
-
-(pretty-print (expand '(partially-reduce () (sk fk) (list sk fk))))
-(pretty-print (expand '(partially-reduce (e1) (sk fk) (list sk fk))))
-(pretty-print (expand '(partially-reduce (e1 e2) (sk fk) (list sk fk))))
-(pretty-print (expand '(partially-reduce (e1 e2) (sk) sk)))
-
-
-(define-syntax ==/args
-  (syntax-rules ()
-    [(_ args t u)
-     (partially-reduce args (sk fk subst)
-       (cond
-         [(unify t u subst)
-          => (lambda (s)
-               (@ sk fk s))]
-         [else (lambda (cutk-ign) (fk))]))]))
-
-(define-syntax ==
-  (syntax-rules ()
-    [(_ t u) (==/args () t u)]))
-
-      
-
 ;(load "plprelims.ss")
 
 ;  Fk  = () -> Ans
@@ -476,103 +406,13 @@
 		     ;(pretty-print subst)
 		     (cons (cons subst cutk) fk)))
 
-(define-syntax all!
-  (syntax-rules ()
-    ((_ . args) (all!* . args))))
-
-(define-syntax all
-  (syntax-rules ()
-    [(_) (lambda (sk) sk)]
-    [(_ ant) ant]
-    [(_ ant0 ant1 ant2 ...)
-     (lambda@ (sk)
-       (ant0 (splice-in-ants/all sk ant1 ant2 ...)))]))
-
-(define-syntax splice-in-ants/all
-  (syntax-rules ()
-    [(_ sk ant) (ant sk)]
-    [(_ sk ant0 ant1 ...)
-     (ant0 (splice-in-ants/all sk ant1 ...))]))
-
-(define-syntax all/args
-  (syntax-rules ()
-    ((_ args) (partially-reduce args (sk) sk))
-    ((_ args ant) (partially-reduce args () ant))
-    ((_ args ant0 ant1 ant2 ...)
-      (partially-reduce args (sk)
-	(ant0 (splice-in-ants/all sk ant1 ant2 ...))))))
-
-
-(define-syntax @    
-  (syntax-rules (== all all!)
-    [(@ (== args ...) rand ...)
-      ;it-happens
-      (==/args (rand ...) args ...)
-      ]
-    [(@ (all! args ...) rand ...)
-      ;it-happens
-      (all!/args (rand ...) args ...)
-      ]
-    [(@ (all ant) rand ...)
-      ;it-happens
-      (@ ant rand ...)
-      ]
-;     [(@ (all! ant) rand ...)
-;       it-happens
-;       ;(@ ant rand ...)
-;       ]
-    [(@ (all args ...) rand ...)
-      ;it-happens
-      (all/args (rand ...) args ...)
-      ]
-    [(_ rator rand) (rator rand)]
-    [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
-
-; redefine in the scope of the redefined @
-(define-syntax exists
-  (syntax-rules ()
-    [(_ () ant0 ant1 ...)
-     (all ant0 ant1 ...)]
-    [(_ (id ...) ant0 ant1 ...)
-     (let-lv (id ...)
-       (lambda@ (sk fk in-subst)
-	 (@ (all ant0 ant1 ...)
-            (lambda@ (fk out-subst)
-              (@ sk fk (prune-subst (list id ...) in-subst out-subst)))
-            fk in-subst)))]))
-
-(define-syntax all!*
-  (syntax-rules ()
-    [(_) (lambda (sk) sk)]
-    [(_ ant) ant]
-    [(_ ant0 ant1 ant2 ...)
-     (lambda@ (sk fk)
-       (@ ant0 (splice-in-ants/all! sk fk ant1 ant2 ...) fk))]))
-
-(define-syntax all!/args
-  (syntax-rules ()
-    ((_ args) (partially-reduce args (sk) sk))
-    ((_ args ant) (partially-reduce args () ant))
-    ((_ args ant0 ant1 ant2 ...)
-      (partially-reduce args (sk fk)
-	(@ ant0 (splice-in-ants/all! sk fk ant1 ant2 ...) fk)))))
-
-(define-syntax splice-in-ants/all!
-  (syntax-rules ()
-    [(_ sk fk ant)
-     (lambda (ign-fk)
-       (@ ant sk fk))]
-    [(_ sk fk ant0 ant1 ...)
-     (lambda (ign-fk)
-       (@ ant0 (splice-in-ants/all! sk fk ant1 ...) fk))]))
-
-(define-syntax extend-ant/bound
+(define-syntax splice-in-ants/any
   (syntax-rules ()
     [(_ (sk fk subst cutk) ant1) (@ ant1 sk fk subst cutk)]
     [(_ (sk fk subst cutk) ant1 ant2 ...)
       (@ ant1
 	sk
-	(lambda () (extend-ant/bound (sk fk subst cutk) ant2 ...))
+	(lambda () (splice-in-ants/any (sk fk subst cutk) ant2 ...))
 	subst
 	cutk)]))
 
@@ -657,18 +497,46 @@
     [(_ ids rel-exp0 rel-exp1 ...)
       (extend-relation-aux ids () rel-exp0 rel-exp1 ...)]))
 
-
 (define-syntax extend-relation-aux
   (syntax-rules ()
     [(_ (id ...) (rel-var ...))
       (lambda (id ...)
-	(lambda@ (sk fk subst cutk)
-	  (extend-ant/bound (sk fk subst cutk) 
-	    (rel-var id ...) ...)))]
+	(any (rel-var id ...) ...))]
     [(_ ids (var ...) rel-exp0 rel-exp1 ...)
       (let ((rel-var rel-exp0))
 	(extend-relation-aux ids (var ... rel-var) rel-exp1 ...))]))
 
+(define-syntax all
+  (syntax-rules ()
+    [(_) (lambda (sk) sk)]
+    [(_ ant) ant]
+    [(_ ant0 ant1 ant2 ...)
+     (lambda@ (sk)
+       (ant0 (splice-in-ants/all sk ant1 ant2 ...)))]))
+
+(define-syntax splice-in-ants/all
+  (syntax-rules ()
+    [(_ sk ant) (ant sk)]
+    [(_ sk ant0 ant1 ...)
+     (ant0 (splice-in-ants/all sk ant1 ...))]))
+
+(define-syntax all!
+  (syntax-rules ()
+    [(_) (lambda (sk) sk)]
+    [(_ ant) ant]
+    [(_ ant0 ant1 ant2 ...)
+     (lambda@ (sk fk)
+       (@ ant0 (splice-in-ants/all! sk fk ant1 ant2 ...) fk))]))
+
+
+(define-syntax splice-in-ants/all!
+  (syntax-rules ()
+    [(_ sk fk ant)
+     (lambda (ign-fk)
+       (@ ant sk fk))]
+    [(_ sk fk ant0 ant1 ...)
+     (lambda (ign-fk)
+       (@ ant0 (splice-in-ants/all! sk fk ant1 ...) fk))]))
 
 (define-syntax relation
   (syntax-rules (to-show)
@@ -680,10 +548,14 @@
      (lambda (g ...)
        (exists (ex-id ...)
 	 (all! (== g x) ...)))]
-    [(_ (ex-id ...) (g ...) () (x ...) ant ...)
+    [(_ (ex-id ...) (g ...) () (x ...) ant)
      (lambda (g ...)
        (exists (ex-id ...)
-	 (all! (== g x) ... (all ant ...))))]))
+	 (all! (== g x) ... ant)))]
+    [(_ (ex-id ...) (g ...) () (x ...) ant ...)
+      (lambda (g ...)
+	(exists (ex-id ...)
+	  (all! (== g x) ... (all ant ...))))]))
 
 (define-syntax relation/cut
   (syntax-rules (to-show)
@@ -708,6 +580,34 @@
   (lambda (exiting-fk)
     (lambda@ (sk fk)
       (@ sk exiting-fk))))
+
+(define-syntax any
+  (syntax-rules ()
+    [(_) (lambda@ (sk fk subst cutk) (fk))]
+    [(_ ant) ant]
+    [(_ ant0 ant1 ...)
+     (lambda@ (sk fk subst cutk)
+       (letrec-syntax
+         ([splice-in-ants 
+            (syntax-rules ()
+              [(_) fk]
+              [(_ ant . other-ants)
+               (lambda ()
+                 (@ ant sk (splice-in-ants . other-ants) subst cutk))])])
+         (@ ant0 sk (splice-in-ants ant1 ...) subst cutk)))]))
+
+'(define-syntax any
+  (syntax-rules ()
+    [(_ ant ...)
+     ((extend-relation () (relation () (to-show) ant) ...))]))
+
+(define-syntax any
+  (syntax-rules ()
+    [(_) fail]
+    [(_ ant) ant]
+    [(_ ant ...)
+      (lambda@ (sk fk subst cutk)
+	(splice-in-ants/any (sk fk subst cutk) ant ...))]))
 
 ; (define initial-fk (lambda () '()))
 ; (define initial-sk
@@ -983,33 +883,6 @@
   (solve 6 (y) (grandpa-sam y))
   '(((y.0 sal)) ((y.0 pat))))
 
-(define-syntax any
-  (syntax-rules ()
-    [(_) (lambda@ (sk fk subst cutk) (fk))]
-    [(_ ant) ant]
-    [(_ ant0 ant1 ...)
-     (lambda@ (sk fk subst cutk)
-       (letrec-syntax
-         ([splice-in-ants 
-            (syntax-rules ()
-              [(_) fk]
-              [(_ ant . other-ants)
-               (lambda ()
-                 (@ ant sk (splice-in-ants . other-ants) subst cutk))])])
-         (@ ant0 sk (splice-in-ants ant1 ...) subst cutk)))]))
-
-'(define-syntax any
-  (syntax-rules ()
-    [(_ ant ...)
-     ((extend-relation () (relation () (to-show) ant) ...))]))
-
-(define-syntax any
-  (syntax-rules ()
-    [(_) fail]
-    [(_ ant) ant]
-    [(_ ant ...)
-      (lambda@ (sk fk subst cutk)
-	(extend-ant/bound (sk fk subst cutk) ant ...))]))
 
 (define child
   (relation (child dad)
@@ -1439,10 +1312,6 @@
     (extend-relation (a1 a2) (fact () 'john 'harry)
       (extend-relation (a1 a2) (fact () 'harry 'carl) (fact () 'sam 'ed)))))
 
-'(pretty-print (expand '(extend-relation (a1 a2) father
-    (extend-relation (a1 a2) (fact () 'john 'harry)
-      (extend-relation (a1 a2) (fact () 'harry 'carl) (fact () 'sam 'ed))))))
-
 (define ancestor
   (extend-relation (a1 a2)
     (relation (old young)
@@ -1749,13 +1618,6 @@
             (any
               (fails (move n 'l 'm 'r))
               (== path (reverse steps)))))))))
-
-'(pretty-print (expand 
-		'(relation (n path)
-          (to-show n path)
-            (any
-              (fails (move n 'l 'm 'r))
-              (== path (reverse steps))))))
 
 (test-check 'test-towers-of-hanoi-path
   (solution (path) (towers-of-hanoi-path 3 path))
@@ -2405,7 +2267,7 @@
       (let-values (ct env) (instantiate-term t '())
         ct))))
 
-(define env (let ((env env)) (extend-relation (a1 a2 a3) env generic-env)))
+(define env (extend-relation (a1 a2 a3) env generic-env))
 
 ;;;; This starts the rules
 
@@ -4211,4 +4073,4 @@
       (let ((kb1 (goal-fwd kb)))
 	(kb1 '(goal (root t1 t2)))))))
 
-;(exit 0)
+(exit 0)
