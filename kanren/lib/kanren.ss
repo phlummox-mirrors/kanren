@@ -203,7 +203,6 @@
       [else #f])))
 
 
-
 (define compose-subst/own-survivors
   (lambda (base refining survivors)
     (let refine ([b* base])
@@ -236,6 +235,46 @@
                   (commitment v (eigen-variable (logical-variable-id v))))
                 fv)])
         (subst-in term subst)))))
+
+; Similar to universalize: makes nicer symbols for variables that look
+; nicer when printed. The 'reverse' in (reverse (free-vars t))
+; just makes the output look as it used to look before. Consider it
+; a historical accident.
+(define concretize
+  (lambda (t)
+    (subst-in-deep t
+      (let loop ([fv (reverse (free-vars t))] [env '()])
+	(cond
+	  [(null? fv) empty-subst]
+	  [else (let ([id (logical-variable-id (car fv))])
+		  (let ([num (let*-and 0 ([pr (assq id env)]) (+ (cdr pr) 1))])
+		    (cons (commitment (car fv) (artificial-id id num))
+		      (loop (cdr fv) (cons (cons id num) env)))))])))))
+
+(define subst-in-deep ; it will later become just subst-in...
+  (lambda (t subst)
+    (cond
+      [(var? t)
+       (let ([c (assq t subst)])
+         (if c (subst-in-deep (commitment->term c) subst) t))]
+      [(pair? t)
+       (cons
+         (subst-in-deep (car t) subst)
+         (subst-in-deep (cdr t) subst))]
+      [else t])))
+
+(define artificial-id
+  (lambda (t-id num)
+    (string->symbol
+      (string-append
+        (symbol->string t-id) "." (number->string num)))))
+
+(define-syntax concretize-subst/vars
+  (syntax-rules ()
+    [(_ subst) '()]
+    [(_ subst x ... )
+      (concretize (list (list x (subst-in x subst)) ...))]))
+
 
 (define subst-in  ;;; This definition will change several times.
   (lambda (t subst)
@@ -296,49 +335,7 @@
   #t)
 
 
-(define concretize-var    ;;; returns two values
-  (lambda (var env)
-    (cond
-      [(assq var env)
-       => (lambda (var-c)
-            (values (artificial-id var-c) env))]
-      [else
-	(let ([var-c `(,var . ,(cond
-				 [(assq/var-id (logical-variable-id var) env)
-				   => (lambda (var-c) (+ (cdr var-c) 1))]
-				 [else 0]))])
-	  (values (artificial-id var-c) (cons var-c env)))])))
-
-(define concretize-term ;;; assumes no pairs; returns two values.
-  (lambda (t env)
-    (cond
-      [(var? t) (concretize-var t env)]
-      [else (values t env)])))
-
-(define concretize-subst  ;;; returns a single value.
-  (letrec
-      ([cs (lambda (subst env)
-             (cond
-               [(null? subst) '()]
-               [else
-		 (let*-values
-		   ([(comm) (car subst)]
-		    [(cv new-env)
-		      (concretize-var (commitment->var comm) env)]
-		    [(ct newer-env)
-		      (concretize-term (commitment->term comm) new-env)])
-		   (cons
-		     (commitment cv ct)
-		     (cs (cdr subst) newer-env)))]))])
-    (lambda (subst)
-      (cs subst '()))))
-
-(define artificial-id
-  (lambda (var-c)
-    (string->symbol
-      (string-append
-        (symbol->string (logical-variable-id (car var-c)))
-	"." (number->string (cdr var-c))))))
+(define concretize-subst concretize)
 
 (define assq/var-id
   (lambda (id env)
@@ -1420,7 +1417,6 @@
       (equal? ((cdr result)) '())))
   #t)
 
-;;; Now we need concretize-subst about here.
 
 (define child-of-male
   (relation (child dad)
@@ -1494,30 +1490,6 @@
     (list (equal? (car subst) (commitment x 'sal)) (redo-k)))
   '(#t ()))
 
-(define concretize
-  (lambda (t)
-    (let*-values ([(ct new-env) (concretize-term t '())])
-      ct)))
-
-(define-syntax concretize-subst/vars
-  (syntax-rules ()
-    [(_ subst) '()]
-    [(_ subst x0 x1 ...)
-     (let*-values
-       ([(cx env) (concretize-var x0 '())]
-	[(ct env) (concretize-term (subst-in x0 subst) env)])
-       (cons (list cx ct)
-	 (concretize-subst/vars/env subst env x1 ...)))]))
-
-(define-syntax concretize-subst/vars/env
-  (syntax-rules ()
-    [(_ subst env) '()]
-    [(_ subst env x0 x1 ...)
-     (let*-values
-       ([(cv env) (concretize-var x0 env)]
-	[(ct env) (concretize-term (subst-in x0 subst) env)])
-       (cons (list cv ct)
-	 (concretize-subst/vars/env subst env x1 ...)))]))
 
 (test-check 'test-father-3
   (query (_ subst x)
@@ -1553,11 +1525,6 @@
       (cons (car strm)
         (if (zero? n) '()
           (stream-prefix (- n 1) ((cdr strm))))))))
-
-(define concretize
-  (lambda (t)
-    (let*-values ([(ct new-env) (concretize-term t '())])
-      ct)))
 
 ; A simple version of query: useful as an illustration
 ; It returns a stream of concretized substitutions
@@ -2293,17 +2260,6 @@
   (solution () (towers-of-hanoi 3))
   nl nl
   )
-
-(define concretize-term
-  (lambda (t env)
-    (cond
-      [(var? t) (concretize-var t env)]
-      [(pair? t)
-       (let*-values
-	 ([(carct env) (concretize-term (car t) env)]
-	  [(cdrct env) (concretize-term (cdr t) env)])
-	 (values (cons carct cdrct) env))]
-      [else (values t env)])))
 
 (define subst-in
   (lambda (t subst)

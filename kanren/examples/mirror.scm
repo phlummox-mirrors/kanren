@@ -218,7 +218,7 @@
 
 ; extend the kb with the list of assumptions
 ; this is just like 'any' only it's a procedure rather than a syntax
-; Why we need concretize*?
+; Why we need universalize?
 ; Suppose, the list of facts includes
 ;	(fact (x) (foo x)) and (fact (x) (bar x))
 ; definitely, we do not want to imply that facts foo and bar _share_
