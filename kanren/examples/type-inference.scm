@@ -56,7 +56,8 @@
 (define non-generic-recursive-env
   (relation (g v t)
     (to-show `(non-generic ,_ ,_ ,g) v t)
-    (all!! (instantiated g) (env g v t))))
+    (all!! (env g v t))))
+    ;(all!! (instantiated g) (env g v t))))
 
 (define env (extend-relation (a1 a2 a3)
               non-generic-match-env non-generic-recursive-env))
@@ -170,39 +171,39 @@
 (test-check 'test-!-1
   (and
     (equal?
-      (solution () (exists (g) (!- g '(intc 17) int)))
+      (solution () (exists (g) (!- '() '(intc 17) int)))
       '())
     (equal?
-      (solution (?) (exists (g) (!- g '(intc 17) ?)))
+      (solution (?) (exists (g) (!- '() '(intc 17) ?)))
       '((?.0 int))))
   #t)
 
 (test-check 'arithmetic-primitives
-  (solution (?) (exists (g)  (!- g '(zero? (intc 24)) ?)))
+  (solution (?) (exists (g)  (!- '() '(zero? (intc 24)) ?)))
   '((?.0 bool)))
 
 (test-check 'test-!-sub1
-  (solution (?) (exists (g) (!- g '(zero? (sub1 (intc 24))) ?)))
+  (solution (?) (exists (g) (!- '() '(zero? (sub1 (intc 24))) ?)))
   '((?.0 bool)))
 
 (test-check 'test-!-+
   (solution (?)
     (exists (g)
-      (!- g '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
+      (!- '() '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
   '((?.0 bool)))
 
 (test-check 'test-!-2
   (and
     (equal?
-      (solution (?) (exists (g) (!- g '(zero? (intc 24)) ?)))
+      (solution (?) (exists (g) (!- '() '(zero? (intc 24)) ?)))
       '((?.0 bool)))
     (equal?
-      (solution (?) (exists (g) (!- g '(zero? (+ (intc 24) (intc 50))) ?)))
+      (solution (?) (exists (g) (!- '() '(zero? (+ (intc 24) (intc 50))) ?)))
       '((?.0 bool)))
     (equal?
       (solution (?)
         (exists (g)
-          (!- g '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
+          (!- '() '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
       '((?.0 bool))))
   #t)
 
@@ -212,7 +213,7 @@
 
 (test-check 'if-expressions
   (solution (?)
-    (exists (g) (!- g '(if (zero? (intc 24)) (zero? (intc 3)) (zero? (intc 4))) ?)))
+    (exists (g) (!- '() '(if (zero? (intc 24)) (zero? (intc 3)) (zero? (intc 4))) ?)))
   '((?.0 bool)))
 
 (test-check 'variables
@@ -261,19 +262,19 @@
 (test-check 'everything-but-polymorphic-let
   (solution (?)
     (exists (g)
-      (!- g (parse
+      (!- '() (parse
               '(lambda (f)
                  (lambda (x)
                    ((f x) x))))
         ?)))
   '((?.0 (-->
-           (--> type-v.0 (--> type-v.0 t.0))
-           (--> type-v.0 t.0)))))
+           (--> t.0 (--> t.0 t.1))
+           (--> t.0 t.1)))))
 
 (test-check 'everything-but-polymorphic-let
   (solution (?)
     (exists (g)
-      (!- g
+      (!- '()
         (parse
           '((fix (lambda (sum)
                    (lambda (n)
@@ -287,7 +288,7 @@
 (test-check 'everything-but-polymorphic-let
   (solution (?)
     (exists (g)
-      (!- g
+      (!- '()
         (parse
           '((fix (lambda (sum)
                    (lambda (n)
@@ -299,7 +300,7 @@
 (test-check 'everything-but-polymorphic-let
   (solution (?)
     (exists (g)
-      (!- g
+      (!- '()
         (parse '((lambda (f)
                    (if (f (zero? 5))
                        (+ (f 4) 8)
@@ -311,7 +312,7 @@
 (test-check 'polymorphic-let
   (solution (?)
     (exists (g)
-      (!- g
+      (!- '()
         (parse
           '(let ([f (lambda (x) x)])
              (if (f (zero? 5))
@@ -323,7 +324,7 @@
 (test-check 'with-robust-syntax
   (solution (?)
     (exists (g)
-      (!- g
+      (!- '()
         '(app
            (fix
              (lambda (sum)
@@ -338,7 +339,7 @@
 (test-check 'with-robust-syntax-but-long-jumps/poly-let
   (solution (?)
     (exists (g)
-      (!- g
+      (!- '()
         '(let ([f (lambda (x) (var x))])
            (if (app (var f) (zero? (intc 5)))
                (+ (app (var f) (intc 4)) (intc 8))
@@ -546,7 +547,7 @@
 (test-check 'with-robust-syntax-but-long-jumps/poly-let
   (solution (?)
     (exists (g)
-      (!- g
+      (!- '()
         '(let ([f (lambda (x) (var x))])
            (if (app (var f) (zero? (intc 5)))
                (+ (app (var f) (intc 4)) (intc 8))
