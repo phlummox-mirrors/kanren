@@ -1,4 +1,3 @@
-;Soon to create two load-alls.
 ;(load "plshared.ss")
 
 ; $Id$
@@ -1610,61 +1609,70 @@
 
 (define-syntax let-inject/everything
   (syntax-rules ()
-    [(_ ([t ([var bool] ...) scheme-expression] ...) body ...)
+    [(_ ([t ([var0 bool] ...) scheme-expression] ...) body ...)
      (lambda@ (sk fk subst)
        (@ (exists (t ...)
 	    (all
 	      (all!! (promise-one-answer
-		       (== t (let ([var (let ([x (subst-in var subst)])
-                                     (if/bc bool (nonvar! x) x))]
-			      ...)
-			  scheme-expression)))
+		       (== t (let ([var0 (let ([x (subst-in var0 subst)])
+					  (if/bc bool (nonvar! x) x))]
+				   ...)
+			       scheme-expression)))
 		...)
 	      body ...))
-          sk fk subst))]))
+	 sk fk subst))]))
 
 (define-syntax let*-inject/everything
   (syntax-rules ()
     [(_ () body0 body1 ...) (all body0 body1 ...)]
     [(_ ([t0 ([var0 bool0] ...) scheme-expression0]
          [t1 ([var1 bool1] ...) scheme-expression1]
-         ...)
-       body0 body1 ...)
+         ...) body0 body1 ...)
      (let-inject/everything ([t0 ([var0 bool0] ...) scheme-expression0])
        (let*-inject/everything ([t1 ([var1 bool1] ...) scheme-expression1] ...)
          body0 body1 ...))]))
 
 (define-syntax let-inject
   (syntax-rules ()
-    [(_ ([t (var ...) exp] ...) body ...)
-     (let-inject/everything ([t ([var #t] ...) exp] ...) body ...)]))
+    [(_ ([t (var0 ...) exp] ...) body ...)
+     (let-inject/everything ([t ([var0 #t] ...) exp] ...) body ...)]))
 
 (define-syntax let-inject/no-check
   (syntax-rules ()
-    [(_ ([t (var ...) exp] ...) body ...)
-     (let-inject/everything ([t ([var #f] ...) exp] ...) body ...)]))
+    [(_ ([t (var0 ...) exp] ...) body ...)
+     (let-inject/everything ([t ([var0 #f] ...) exp] ...) body ...)]))
 
 (define-syntax let*-inject
   (syntax-rules ()
-    [(_ ([t (var ...) exp] ...) body ...)
-     (let*-inject/everything ([t ([var #t] ...) exp] ...) body ...)]))
+    [(_ ([t (var0 ...) exp] ...) body ...)
+     (let*-inject/everything ([t ([var0 #t] ...) exp] ...) body ...)]))
 
 (define-syntax let*-inject/no-check
   (syntax-rules ()
-    [(_ ([t (var ...) exp] ...) body ...)
-     (let*-inject/everything ([t ([var #f] ...) exp] ...) body ...)]))
+    [(_ ([t (var0 ...) exp] ...) body ...)
+     (let*-inject/everything ([t ([var0 #f] ...) exp] ...) body ...)]))
 
 (define-syntax predicate
   (syntax-rules ()
-    [(_ (var ...) scheme-expression)
-     (let-inject ([t (var ...) (not scheme-expression)])
-       (== t #f))]))
+    [(_ (var0 ...) scheme-expression)
+     (lambda@ (sk fk subst)
+       (let ([var0 (nonvar! (subst-in var0 subst))] ...)
+         (cond
+           [(unify (not scheme-expression) #f subst)
+	    => (lambda (ign-subst)
+		 (@ sk fk subst))]
+           [else (fk)])))]))
 
 (define-syntax predicate/no-check
   (syntax-rules ()
-    [(_ (var ...) scheme-expression)
-     (let*-inject/no-check ([t (var ...) (not scheme-expression)])
-       (== t #f))]))
+    [(_ (var0 ...) scheme-expression)
+     (lambda@ (sk fk subst)
+       (let ([var0 (subst-in var0 subst)] ...)
+         (cond
+           [(unify (not scheme-expression) #f subst)
+	    => (lambda (ign-subst)
+		 (@ sk fk subst))]
+           [else (fk)])))]))
 
 (define nonvar!
   (lambda (t)
@@ -2768,7 +2776,7 @@
 ; Using the properties of the unifier to do the proper garbage
 ; collection of logical vars
 
-(test-check 'prune-subst-1
+'(test-check 'prune-subst-1
   (concretize
     (let-lv (x z dummy)
       (@ 
