@@ -29,6 +29,14 @@
 (display "Inductive proof of the Deduction Theorem for Hilbert Prop Calc")
 (newline)
 
+; The following runs the trace of the proof -- or does not run,
+; depending which clause of the macro is commented out
+(define-syntax deduction-trace
+  (syntax-rules ()
+    ;((_ body) body)
+    ((_ body) #f)
+    ))
+
 ; Well-formed formulas (WFF), see p. 2 of the paper
 
 (define wff
@@ -253,7 +261,7 @@
 ; Relation 'justifies?'
 ; Checking if a proof justifies a sequent, see p. 3 of the paper
 
-(define a-wff 'a-wff)			; An eigen-variable!
+(define a-wff '!a-wff)			; An eigen-variable!
 (define full-kb
   (Y
     (lambda (kb)
@@ -304,7 +312,7 @@
 
 (pretty-print
   (solve 1 (p) ((justifies? full-kb) 
-		 `(justifies? ,(reflex a-wff) () (-> a-wff a-wff)))))
+		 `(justifies? ,(reflex a-wff) () (-> !a-wff !a-wff)))))
 
 
 (printf "~nDeduction Theorem~n")
@@ -330,11 +338,8 @@
 	  (kb `(prf ,p ,_ ,cp))
 	  (kb `(prf ,q ,_ (-> ,_ ,rcq)))
 	  (kb `(ded ,h ,p ,hp))
-	  (kb `(ded ,h ,q ,hq))
-	  ))
-      (relation (h)
-	(to-show `(ded ,h (Hyp ,h)
-		    ,(reflex h))))
+	  (kb `(ded ,h ,q ,hq))))
+      (fact (h) `(ded ,h (Hyp ,h) ,(reflex h)))
       (relation (h p cp)
 	(to-show `(ded ,h ,p (MP ,p (K ,cp ,h))))
 	(kb `(prf ,p ,_ ,cp))))))
@@ -403,64 +408,64 @@
     (let ((kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
-		   (fact () '(wff x))
-		   (fact () '(wff y))
-		   (fact () '(wff h))
+		   (fact () '(wff !x))
+		   (fact () '(wff !y))
+		   (fact () '(wff !h))
 		   (sets kb)
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
 		   (justifies? kb))))))
       (let ((kb1 (goal-fwd kb0)))
-	(kb1 '(goal h (K x y))))))) ; note, x is an eigenvariable!
+	(kb1 '(goal !h (K !x !y))))))) ; note, !x is an eigenvariable!
 
 (printf "~%First check the base case: S, using goal-fwd ~a~n"
   (solution (foo)
     (let ([kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
-		   (fact () '(wff x))
-		   (fact () '(wff y))
-		   (fact () '(wff z))
-		   (fact () '(wff h))
+		   (fact () '(wff !x))
+		   (fact () '(wff !y))
+		   (fact () '(wff !z))
+		   (fact () '(wff !h))
 		   (sets kb)
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
 		   (justifies? kb))))])
       (let ([kb1 (goal-fwd kb0)])
-	(kb1 '(goal h (S x y z))))))) ; note, x is an eigenvariable!
+	(kb1 '(goal !h (S !x !y !z))))))) ; note, !x is an eigenvariable!
 
 (printf "~%First check the base case: Cp, using goal-fwd ~a~n"
   (solution (foo)
     (let ([kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
-		   (fact () '(wff x))
-		   (fact () '(wff y))
-		   (fact () '(wff h))
+		   (fact () '(wff !x))
+		   (fact () '(wff !y))
+		   (fact () '(wff !h))
 		   (sets kb)
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
 		   (justifies? kb))))])
       (let ([kb1 (goal-fwd kb0)])
-	(kb1 '(goal h (Cp x y)))))))
+	(kb1 '(goal !h (Cp !x !y)))))))
 
 (printf "~%First check the base case: Hyp, using goal-fwd ~a~n"
   (solution (foo)
     (let ([kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
-		   (fact () '(wff x))
-		   (fact () '(wff h))
+		   (fact () '(wff !x))
+		   (fact () '(wff !h))
 		   (sets kb)
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
 		   (justifies? kb))))])
       (let ([kb1 (goal-fwd kb0)])
-	(kb1 '(goal h (Hyp x)))))))
+	(kb1 '(goal !h (Hyp !x)))))))
 
 (printf "~%Some preliminary checks, using goal-rev ~s~%"
 ; (goal h p) => (MP p q) is a proof
@@ -468,17 +473,17 @@
     (let ([kb
 	    (Y (lambda (kb)
 		 (extend-relation (t)
-		   (fact () '(wff x))
-		   (fact () '(wff h))
-		   (fact () '(union p-hs q-hs pq-hs))
-		   (goal-rev 'p-h 'p 'p-hs 'p-c 'p-q 'p-hs1 'p-hsq)
-		   (goal-rev 'q-h 'q 'q-hs '(-> p-c q-c) 'q-q 'q-hs1 'q-hsq)
+		   (fact () '(wff !x))
+		   (fact () '(wff !h))
+		   (fact () '(union !p-hs !q-hs !pq-hs))
+		   (goal-rev '!p-h '!p '!p-hs '!p-c '!p-q '!p-hs1 '!p-hsq)
+		   (goal-rev '!q-h '!q '!q-hs '(-> !p-c !q-c) '!q-q '!q-hs1 '!q-hsq)
 		   (sets kb)
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
 		   (justifies? kb))))])
-      (kb `(prf (MP p q) ,hs ,c)))))
+      (kb `(prf (MP !p !q) ,hs ,c)))))
 
 (printf "~%Some preliminary checks, using goal-rev ~s~%"
 ; (goal h p) => (ded h p _c)
@@ -486,31 +491,86 @@
     (let ([kb
 	    (Y (lambda (kb)
 		 (extend-relation (t)
-		   (fact () '(wff x))
-		   (fact () '(wff h))
-		   (fact () '(union p-hs q-hs pq-hs))
-		   (goal-rev 'h 'p 'p-hs 'p-c 'p-q 'p-hs1 'p-hsq)
-		   (goal-rev 'h 'q 'q-hs '(-> p-c q-c) 'q-q 'q-hs1 'q-hsq)
+		   (fact () '(wff !x))
+		   (fact () '(wff !h))
+		   (fact () '(union !p-hs !q-hs !pq-hs))
+		   (goal-rev '!h '!p '!p-hs '!p-c '!p-q '!p-hs1 '!p-hsq)
+		   (goal-rev '!h '!q '!q-hs '(-> !p-c !q-c) '!q-q '!q-hs1 '!q-hsq)
 		   (sets kb)
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
 		   (justifies? kb))))])
-      (kb `(ded h p ,c)))))
+      (kb `(ded !h !p ,c)))))
+
+(deduction-trace
+  (begin
+    (define cu 0)
+
+    (define concretize-subst*  ;;; returns a single value.
+      (letrec
+	([cs (lambda (subst env)
+	       (cond
+		 [(null? subst) '()]
+		 [else
+		   (let ([comm (car subst)])
+		     (let-values (cv new-env)
+		       (concretize-var (commitment->var comm) env)
+		       (let-values (ct newer-env)
+			 (concretize-term (commitment->term comm) new-env)
+			 (cons
+			   (list cv ct)
+			   (cs (cdr subst) newer-env)))))]))])
+	(lambda (subst)
+	  (cs (flatten-subst subst) '()))))
+    
+    (define flatten-subst
+      (let ([a*? (lambda (var)
+		   (let ([str (symbol->string (logical-variable-id var))])
+		     (let ([slen (string-length str)])
+		       (if (> slen 1)
+			 (char=? (string-ref str 1) #\*)
+			 #f))))])
+	(lambda (subst)
+	  (let ([s (map (lambda (c)
+			  (commitment (commitment->var c) 
+			    (subst-in (commitment->term c) subst)))
+		     subst)])
+	    (let loop ([s s])
+	      (cond
+		[(null? s) '()]
+		[else (let ([c (car s)])
+			(if (a*? (commitment->var c))
+			  (loop (cdr s))
+			  (cons c (loop (cdr s)))))]))))))
+    (define-syntax ==
+      (syntax-rules ()
+	[(_ t u)
+	  (lambda@ (sk fk subst)
+	    (cond
+	      [(unify t u subst)
+		=> (lambda (subst)
+		     (set! cu (add1 cu))
+		     (pretty-print (concretize t))
+		     (pretty-print (concretize u))
+		     (pretty-print (concretize-subst* subst))
+		     (@ sk fk subst))]
+	      [else (fk)]))]))
+    ))
 
  (printf "~%Check the inductive  case: MP, using goal-fwd ~a~n"
   (solution (foo)
     (let ([kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t)
-		   (fact () '(wff x)) ; inductive hypotheses ...
-		   (fact () '(wff h))
-		   (fact () '(wff p-c))
-		   (fact () '(wff q-c))
-		   (fact () '(union p-hs q-hs pq-hs))
-		   (fact () '(union p-hsq q-hsq pq-hsq))
-		   (fact () '(without h pq-hs pq-hs-h))
-		   ;(fact () '(subset pq-hsq pq-hs-h))
+		   (fact () '(wff !x)) ; inductive hypotheses ...
+		   (fact () '(wff !h))
+		   (fact () '(wff !p-c))
+		   (fact () '(wff !q-c))
+		   (fact () '(union !p-hs !q-hs !pq-hs))
+		   (fact () '(union !p-hsq !q-hsq !pq-hsq))
+		   (fact () '(without !h !pq-hs !pq-hs-h))
+		   ;(fact () '(subset !pq-hsq !pq-hs-h))
 		   ; an interesting property of sets
 		   ; a1 <= (b1-h)
 		   ; a2 <= (b2-h)
@@ -530,12 +590,22 @@
 		       (kb `(without ,h ,b2 ,a2l))
 		       (kb `(union ,b1 ,b2 ,bl))
 		       (kb `(without ,h ,bl ,b))))
-		   (goal-rev 'h 'p 'p-hs 'p-c 'p-q 'p-hs1 'p-hsq)
-		   (goal-rev 'h 'q 'q-hs '(-> p-c q-c) 'q-q 'q-hs1 'q-hsq)
+		   (goal-rev '!h '!p '!p-hs '!p-c '!p-q '!p-hs1 '!p-hsq)
+		   (goal-rev '!h '!q '!q-hs '(-> !p-c !q-c) '!q-q '!q-hs1 '!q-hsq)
 		   (sets kb)
 		   (wff kb)
 		   (prf kb)
 		   (ded kb)
 		   (justifies? kb))))])
       (let ([kb1 (goal-fwd kb0)])
-	(kb1 '(goal h (MP p q)))))))
+	(kb1 '(goal !h (MP !p !q)))))))
+
+; Restore the changed ==
+(deduction-trace
+  (define-syntax ==
+    (syntax-rules ()
+      [(_ t u)
+	(lambda@ (sk fk subst)
+	  (let ([subst (unify t u subst)])
+	    (if subst (@ sk fk subst) (fk))))]))
+)

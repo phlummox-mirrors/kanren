@@ -8,5 +8,4 @@
 (load "examples/mirror.scm")
 (load "examples/mirror-equ.scm")
 (load "examples/deduction.scm")
-(load "examples/deduction1.scm")
-(load "benchmarks/alg-complexity.scm") ; must be last
+;(load "benchmarks/alg-complexity.scm") ; must be last
