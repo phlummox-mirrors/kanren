@@ -66,7 +66,7 @@
       (concatenate
 	(relation (head-let a l2 c)
 	  (exists (x l1 l3) ; replacing that with let-lv increases timing
-	    (if-all! ((== a `(,x . ,l1)) (== c `(,x . ,l3)))
+	    (if-only (all! (== a `(,x . ,l1)) (== c `(,x . ,l3)))
 	      (concatenate l1 l2 l3)
 	      (all!! (== a '()) (== l2 c))))))
       )
@@ -106,10 +106,11 @@
   '(((out.0 (30 29 28 27 26 25 24 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1)))))
 
 ; Evaluate the following to see the resulting substitutions
-'(query (benchmark data _))
+(write (concretize-subst (car (query (benchmark data _)))))
+(newline)
 
 (display "Timing per iterations: ") (display benchmark_count) (newline)
-'(time (do ((i 0 (+ 1 i))) ((>= i benchmark_count))
+(time (do ((i 0 (+ 1 i))) ((>= i benchmark_count))
 	(query (benchmark data _))))
 
 ; kanren.ss version 3.45
