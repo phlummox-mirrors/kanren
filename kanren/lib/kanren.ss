@@ -644,9 +644,18 @@
     [(_ (id ...) rel-exp) rel-exp]
     [(_ (id ...) rel-exp0 rel-exp1 ...)
       (lambda (id ...)
-	(lambda@ (sk fk subst cutk)
-	  (extend-ant/bound (sk fk subst cutk)
-	    (rel-exp0 id ...) (rel-exp1 id ...) ...)))]))
+	(extend-relation-aux (id ...) () rel-exp0 rel-exp1 ...))]))
+
+
+(define-syntax extend-relation-aux
+  (syntax-rules ()
+    [(_ ids (rel-var ...))
+      (lambda@ (sk fk subst cutk)
+	  (extend-ant/bound (sk fk subst cutk) rel-var ...))]
+    [(_ (id ...) (var ...) rel-exp0 rel-exp1 ...)
+      (let ((rel-var (rel-exp0 id ...)))
+	(extend-relation-aux (id ...) (var ... rel-var) rel-exp1 ...))]))
+
 
 (define-syntax relation
   (syntax-rules (to-show)
@@ -1412,10 +1421,9 @@
       ((x.0 sam) (y.0 pat)))))
 
 (define father
-  (let ((father father))
-    (extend-relation (a1 a2) father
-      (extend-relation (a1 a2) (fact () 'john 'harry)
-	(extend-relation (a1 a2) (fact () 'harry 'carl) (fact () 'sam 'ed))))))
+  (extend-relation (a1 a2) father
+    (extend-relation (a1 a2) (fact () 'john 'harry)
+      (extend-relation (a1 a2) (fact () 'harry 'carl) (fact () 'sam 'ed)))))
 
 '(pretty-print (expand '(extend-relation (a1 a2) father
     (extend-relation (a1 a2) (fact () 'john 'harry)
@@ -2806,20 +2814,18 @@
       (== child 'sam))))
 
 (define father
-  (let ((father father))
-    (extend-relation (a1 a2) father
-      (lambda (dad child)
-	(all! 
-	  (== dad 'sam)
-	  (== child 'pete))))))
+  (extend-relation (a1 a2) father
+    (lambda (dad child)
+      (all! 
+	(== dad 'sam)
+	(== child 'pete)))))
 
 (define father
-  (let ((father father))
-    (extend-relation (a1 a2) father
-      (lambda (dad child)
-	(all!
-	  (== dad 'pete)
-	  (== child 'sal))))))
+  (extend-relation (a1 a2) father
+    (lambda (dad child)
+      (all!
+	(== dad 'pete)
+	(== child 'sal)))))
 
 (define grandpa
   (lambda (grandfather child)
@@ -4191,4 +4197,4 @@
       (let ((kb1 (goal-fwd kb)))
 	(kb1 '(goal (root t1 t2)))))))
 
-;(exit 0)
+(exit 0)
