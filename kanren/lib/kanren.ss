@@ -26,41 +26,17 @@
     [(_ rator rand) (rator rand)]
     [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
 
-;      AND-LET* -- an AND with local bindings, a guarded LET* special form
-;
-; AND-LET* is a generalized AND: it evaluates
-; a sequence of forms one after another till the first one that yields
-; #f; the non-#f result of a form can be bound to a fresh variable and
-; used in the subsequent forms.
-; It is defined in SRFI-2 <http://srfi.schemers.org/srfi-2/>
-; This macro re-writes the and-let* form into a combination of
-; 'and' and 'let'.
+; LET*-AND: a simplified and streamlined AND-LET*.
+; The latter is defined in SRFI-2 <http://srfi.schemers.org/srfi-2/>
 
-(define-syntax and-let*
+(define-syntax let*-and
   (syntax-rules ()
-    ((_ ()) #t)
-    ((_ claws)    ; no body
-       ; re-write (and-let* ((claw ... last-claw)) ) into
-       ; (and-let* ((claw ...)) body) with 'body' derived from the last-claw
-     (and-let* "search-last-claw" () claws))
-    ((_ "search-last-claw" first-claws ((exp)))
-     (and-let* first-claws exp))	; (and-let* (... (exp)) )
-    ((_ "search-last-claw" first-claws ((var exp)))
-     (and-let* first-claws exp))	; (and-let* (... (var exp)) )
-    ((_ "search-last-claw" first-claws (var))
-     (and-let* first-claws var))	; (and-let* (... var) )
-    ((_ "search-last-claw" (first-claw ...) (claw . rest))
-     (and-let* "search-last-claw" (first-claw ... claw) rest))
-    
-    ; now 'body' is present
-    ((_ () . body) (begin . body))	; (and-let* () form ...)
-    ((_ ((exp) . claws) . body)		; (and-let* ( (exp) claw... ) body ...)
-     (and exp (and-let* claws . body)))
-    ((_ ((var exp) . claws) . body)	; (and-let* ((var exp) claw...)body...)
-     (let ((var exp)) (and var (and-let* claws . body))))
-    ((_ (var . claws) . body)		; (and-let* ( var claw... ) body ...)
-     (and var (and-let* claws . body)))
-))
+    [(_ false-exp () body0 body1 ...) (begin body0 body1 ...)]
+    [(_ false-exp ([var0 exp0] [var1 exp1] ...) body0 body1 ...)
+     (let ([var0 exp0])
+       (if var0
+         (let*-and false-exp ([var1 exp1] ...) body0 body1 ...)
+         false-exp))]))
 
 ; Regression testing framework
 ; test-check TITLE TESTED-EXPRESSION EXPECTED-RESULT 
@@ -934,43 +910,36 @@
 
 (define-syntax relation-head-let
   (syntax-rules ()
-    ((_ (head-term ...) . ants)
-      (relation-head-let "g" () (head-term ...) (head-term ...) . ants))
+    [(_ (head-term ...) . ants)
+     (relation-head-let "g" () (head-term ...) (head-term ...) . ants)]
     ; generate names of formal parameters
-    ((_ "g" (genvar ...)  (head-term . ht-rest) head-terms . ants)
-      (relation-head-let "g" (genvar ... g) ht-rest head-terms . ants))
-    ((_ "g" genvars  () head-terms . ants)
-      (relation-head-let "d" () () genvars head-terms genvars . ants))
+    [(_ "g" (genvar ...)  (head-term . ht-rest) head-terms . ants)
+     (relation-head-let "g" (genvar ... g) ht-rest head-terms . ants)]
+    [(_ "g" genvars  () head-terms . ants)
+     (relation-head-let "d" () () genvars head-terms genvars . ants)]
     ; partition head-terms into vars and others
-    ((_ "d" vars others (gv . gv-rest) ((hth . htt) . ht-rest) gvs . ants)
-      (relation-head-let "d" vars ((gv (hth . htt)) . others)
-	gv-rest ht-rest gvs . ants))
-    ((_ "d" vars others (gv . gv-rest) (htv . ht-rest) gvs . ants)
-      (relation-head-let "d" ((gv htv) . vars) others
-	gv-rest ht-rest gvs . ants))
-    ((_ "d" vars others () () gvs . ants)
-      (relation-head-let "f" vars others gvs . ants))
+    [(_ "d" vars others (gv . gv-rest) ((hth . htt) . ht-rest) gvs . ants)
+     (relation-head-let "d" vars ((gv (hth . htt)) . others)
+       gv-rest ht-rest gvs . ants)]
+    [(_ "d" vars others (gv . gv-rest) (htv . ht-rest) gvs . ants)
+     (relation-head-let "d" ((gv htv) . vars) others
+       gv-rest ht-rest gvs . ants)]
+    [(_ "d" vars others () () gvs . ants)
+     (relation-head-let "f" vars others gvs . ants)]
 
     ; final generation
-    ((relation-head-let "f" vars ((gv term) ...) gvs) ; no body
-      (lambda gvs                                     ; don't bother bind vars
-	(lambda@ (sk fk subst)
-	  (let ((subst
-		  (and-let*
-		    ((subst (unify gv term subst)) ...) subst)))
-	    (if subst (@ sk fk subst) (fk))))))
+    [(_ "f" vars ((gv term) ...) gvs) ; no body
+     (lambda gvs                                     ; don't bother bind vars
+       (lambda@ (sk fk subst)
+	 (let*-and (fk) ([subst (unify gv term subst)] ...)
+	   (@ sk fk subst))))]
 
-    ((relation-head-let "f" ((gvv var) ...) ((gvo term) ...) gvs ant)
-      (lambda gvs
-	(lambda@ (sk fk subst)
-	  (let ((subst				; first unify the constants
-		  (and-let*
-		    ((subst (unify gvo term subst)) ...) subst)))
-	    (if subst
-	      (let ((var (if (eq? gvv _) (var '?) gvv)) ...)
-		(@ ant sk fk subst))
-	      (fk))))))
-    ))
+    [(_ "f" ((gvv var) ...) ((gvo term) ...) gvs ant)
+     (lambda gvs
+       (lambda@ (sk fk subst)			; first unify the constants
+	 (let*-and (fk) ([subst (unify gvo term subst)] ...)
+	   (let ([var (if (eq? gvv _) (var '?) gvv)] ...)
+	     (@ ant sk fk subst)))))]))
 
 ; (define-syntax relation/cut
 ;   (syntax-rules (to-show)
