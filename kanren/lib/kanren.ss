@@ -1,3 +1,32 @@
+(module aaa)
+(define (printf . args) (apply print args))
+(define-record-type *var* (make-var name) var? (name var-name))
+(define (print-gensym flag) #f)
+(define (remv el lst)
+  (let loop ((lst lst))
+    (cond
+      ((null? lst) lst)
+      ((eqv? el (car lst)) (loop (cdr lst)))
+      (else (cons (car lst) (loop (cdr lst)))))))
+(define pretty-print pp)
+(define (time . args) #f)
+
+(define-syntax trace-lambda
+  (syntax-rules ()
+    [(_ name (formal0 formal1 ...) body0 body1 ...)
+      (lambda (formal0 formal1 ...)
+	(print "\nTrace-lambda: " 'name)
+	(begin  body0 body1 ...))]))
+
+(define (OS:time::double)
+  (pragma::double "time(0)"))
+
+(define (statistics)
+  (vector
+    #f
+    (OS:time::double) ; CPU-time
+    ))
+
 ;(load "plshared.ss")
 
 (define-syntax exists ;;; can never change this to a lets
@@ -25,7 +54,7 @@
 
 (printf "~s ~s~%" 'test-@-lambda@ (test-@-lambda@))
 
-(define-record var (name) ())
+;(define-record var (name) ())
 (define var make-var)
 
 (print-gensym #f)
@@ -165,36 +194,36 @@
 ;(load "expand-only.ss")
 
 ;;;; quasiquote has been coded by Oscar Waddell.
-(define-syntax quasiquote
-  (let ([tmplid #'barney-the-purple-dinosaur])
-    (lambda (x)
-      (import scheme)
-      (define lexical?
-        (lambda (id)
-          (not
-            (free-identifier=? id
-              (datum->syntax-object tmplid
-                (syntax-object->datum id))))))
-      (define check
-        (lambda (x)
-          (syntax-case x (unquote unquote-splicing)
-            [(unquote e) (void)]
-            [(unquote-splicing e) (void)]
-            [(,e . rest) (check #'rest)]
-            [(,@e . rest) (check #'rest)]
-            [(car . cdr) (begin (check #'car) (check #'cdr))]
-            [id
-             (identifier? #'id)
-             (when (lexical? #'id)
-               (parameterize ([error-handler (warning-handler)]
-                              [reset-handler values])
-                 (syntax-error #'id "looks like you're missing , or ,@ on")))]
-            [other (void)])))
-      (syntax-case x ()
-        [(_ . whatever)
-         (begin
-           (check #'whatever)
-           #'(quasiquote . whatever))]))))
+; (define-syntax quasiquote
+;   (let ([tmplid #'barney-the-purple-dinosaur])
+;     (lambda (x)
+;       (import scheme)
+;       (define lexical?
+;         (lambda (id)
+;           (not
+;             (free-identifier=? id
+;               (datum->syntax-object tmplid
+;                 (syntax-object->datum id))))))
+;       (define check
+;         (lambda (x)
+;           (syntax-case x (unquote unquote-splicing)
+;             [(unquote e) (void)]
+;             [(unquote-splicing e) (void)]
+;             [(,e . rest) (check #'rest)]
+;             [(,@e . rest) (check #'rest)]
+;             [(car . cdr) (begin (check #'car) (check #'cdr))]
+;             [id
+;              (identifier? #'id)
+;              (when (lexical? #'id)
+;                (parameterize ([error-handler (warning-handler)]
+;                               [reset-handler values])
+;                  (syntax-error #'id "looks like you're missing , or ,@ on")))]
+;             [other (void)])))
+;       (syntax-case x ()
+;         [(_ . whatever)
+;          (begin
+;            (check #'whatever)
+;            #'(quasiquote . whatever))]))))
 
 '(define write
   (lambda (x . p)
@@ -485,10 +514,10 @@
     (lambda@ (sk fk)
       (@ sk exiting-fk))))
 
-(define initial-fk (lambda () '()))
-(define initial-sk
-  (lambda@ (fk subst cutk)
-    (cons (cons subst cutk) fk)))
+; (define initial-fk (lambda () '()))
+; (define initial-sk
+;   (lambda@ (fk subst cutk)
+;     (cons (cons subst cutk) fk)))
 
 ;;;;; Starts the real work of the system.
 
@@ -1723,8 +1752,8 @@
             (let ([t-term (commitment->term ct)]) 
               (unify t-term u-value s)))]
       [(pair? u-value)
-       (let ([car-var (var ':a)]
-             [cdr-var (var ':d)])
+       (let ([car-var (var '*a)]
+             [cdr-var (var '*d)])
          (cond
            [(unify car-var (car u-value)
               (extend-subst t-var (cons car-var cdr-var) s))
@@ -1826,12 +1855,12 @@
                   (map commitment
                     var
                     (subst-vars-recursively var s)))))
-            `(,(commitment ':d.0 '())
-              ,(commitment ':a.0 '(f :a.0))
-              ,(commitment ':d.1 '((f . :d.1)))
-              ,(commitment ':a.1 'f)
-              ,(commitment 'y.0  '(f (f . :d.1)))
-              ,(commitment 'x.0  '(f (f . :d.1)))))
+            `(,(commitment '*d.0 '())
+              ,(commitment '*a.0 '(f *a.0))
+              ,(commitment '*d.1 '((f . *d.1)))
+              ,(commitment '*a.1 'f)
+              ,(commitment 'y.0  '(f (f . *d.1)))
+              ,(commitment 'x.0  '(f (f . *d.1)))))
           #t)))))
           
 (printf "~s ~s~%" 'test-unify/pairs-oleg (test-unify/pairs-oleg))
@@ -2936,7 +2965,7 @@
       (to-show count time lips 'msecs)
       (exists (t1 t2)
         (all
-          (fun-call * t1 496 count 1000)
+          (fun-call * t1 496 count)
           (fun-call + t2 time 0.0)
           (fun-call / lips t1 t2))))))
 
