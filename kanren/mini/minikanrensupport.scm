@@ -1,4 +1,4 @@
-(define-syntax def-syntax
+'(define-syntax def-syntax
   (syntax-rules ()
     [(_ (name . lhs) rhs)
      (define-syntax name
@@ -6,13 +6,6 @@
          [(_ . lhs) rhs]))]))
 
 (print-gensym #f)
-
-(define-syntax let*-values
-  (syntax-rules ()
-    [(_ () body bodies ...) (begin body bodies ...)]
-    ((_ ([(var ...) rhs-exp] [vars* rhs-exp*] ...) bodies ...)
-     (call-with-values (lambda () rhs-exp)
-       (lambda (var ...) (let*-values ([vars* rhs-exp*] ...) bodies ...))))))
 
 (define-syntax lambda@
   (syntax-rules ()
@@ -27,41 +20,6 @@
     [(_ rator) (rator)]
     [(_ rator rand) (rator rand)]
     [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
-
-(define-syntax let*-and
-  (syntax-rules ()
-    [(_ false-exp () body0 body1 ...) (begin body0 body1 ...)]
-    [(_ false-exp ([var0 exp0] [var1 exp1] ...) body0 body1 ...)
-     (let ([var0 exp0])
-       (if var0
-         (let*-and false-exp ([var1 exp1] ...) body0 body1 ...)
-         false-exp))]))
-
-(define prefix
-  (lambda (n strm)
-    (prefix-aux (- n 1) strm)))
-
-(define prefix-aux
-  (lambda (n strm)
-    (cond
-      [(null? strm) '()]
-      [else
-        (cons (reify-answer (car strm))
-          (cond
-            [(zero? n) '()]
-            [else (prefix-aux (- n 1) (@ (cdr strm)))]))])))
-
-(define prefix*
-  (lambda (strm)
-    (cond
-      [(null? strm) '()]
-      [else
-        (cons (reify-answer (car strm))
-          (prefix* (@ (cdr strm))))])))
-
-(define reify-answer
-  (lambda (answer)
-    (reify (car answer) (cdr answer))))
 
 (define reify
   (lambda (v s)
@@ -114,17 +72,13 @@
        (and (ground? (car v)) (ground? (cdr v))))
       (else #t))))
 
-(define association
-  (lambda (x s)
-    (assq x s)))
-
 (define rhs
   (lambda (b)
     (cdr b)))
 
 (define reify-nonfresh
   (lambda (v s)
-    (r-nf (walk v s) s)))
+    (r-nf (walk-var v s) s)))
 
 (define r-nf
   (lambda (v s)
@@ -135,27 +89,19 @@
          (r-nf (walk (cdr v) s) s))]
       [else v])))
 
+(define walk-var
+  (lambda (x s)
+    (cond
+      [(assq x s) =>
+       (lambda (pr)
+         (walk (cdr pr) s))]
+      [else x])))
+
 (define walk
   (lambda (v s)
     (cond
-      [(var? v)
-       (cond
-         [(association v s) =>
-          (lambda (pr)
-            (rhs (walk-pr pr s)))]
-         [else v])]
+      [(var? v) (walk-var v s)]
       [else v])))
-
-(define walk-pr
-  (lambda (pr s)
-    (cond
-      [(var? (rhs pr))
-       (cond
-         [(association (rhs pr) s) =>
-          (lambda (pr)
-            (walk-pr pr s))]
-         [else pr])]
-      [else pr])))
 
 (define ext-s
   (lambda (x v s)
@@ -296,54 +242,6 @@
        (or (occurs? x (walk (car v) s) s)
            (occurs? x (walk (cdr v) s) s))]
       [else #f])))
-
-;;; empty-s, pointer to reify-nonfresh, var-id,
-;;; reify-var, r-f, walk, string->symbol,
-;;; number->string, string-append, symbol->string
-;;; string, ext-s, assq.
-
-(define _ (var '_))
-
-(define unify_
-  (lambda (v w s)
-    (let ((v (walk v s))
-          (w (walk w s)))
-      (cond
-        ((eq? v w) s)
-        ((var? v) (ext-s_ v w s))
-        ((var? w) (ext-s_ w v s))
-        ((and (pair? v) (pair? w))
-         (cond
-           ((unify_ (car v) (car w) s) =>
-            (lambda (s)
-              (unify_ (cdr v) (cdr w) s)))
-           (else #f)))
-        ((or (pair? v) (pair? w)) #f)
-        ((equal? v w) s)
-        (else #f)))))
-
-(define ext-s_
-  (lambda (v w s)
-    (cond
-      [(eq? v _) s]
-      [(eq? w _) s]
-      [(has_ w) (ext-s v (no-anons w) s)]
-      [else (ext-s v w s)])))
-
-(define no-anons
-  (lambda (v)
-    (cond
-      [(pair? v)
-       (cons (no-anons (car v)) (no-anons (cdr v)))]
-      [(eq? v _) (var '_)]
-      [else v])))
-
-(define has_
-  (lambda (v)
-    (cond
-      [(pair? v)
-       (or (has_ (car v)) (has_ (cdr v)))]
-      [else (eq? v _)])))
 
 (define count-cons 0)
 
