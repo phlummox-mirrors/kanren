@@ -836,26 +836,24 @@
 
 (define-syntax relation
   (syntax-rules (to-show)
-    [(_ (ex-id ...) (to-show x ...) ant ...)     
-     (relation (ex-id ...) () (x ...) (x ...) ant ...)]
-    [(_ (ex-id ...) (var ...) (x0 x1 ...) xs ant ...)
+    [(_ (ex-id ...) (to-show x ...) ant)  ; body present
+     (relation (ex-id ...) () (x ...) (x ...) ant)]
+    [(_ (ex-id ...) (to-show x ...))      ; no body
+     (relation (ex-id ...) () (x ...) (x ...))] 
+    [(_ (ex-id ...) (var ...) (x0 x1 ...) xs ant ...) 
      (relation (ex-id ...) (var ... g) (x1 ...) xs ant ...)]
-    [(_ (ex-id ...) () () () ant ...)
-     (lambda ()
-       (exists (ex-id ...)
-         (all ant ...)))]
-    [(_ (ex-id ...) (g ...) () (x ...))
+    [(_ (ex-id ...) () () () ant)	; no arguments (no head-tests)
+      (lambda ()
+	(exists (ex-id ...) ant))]
+    [(_ (ex-id ...) (g ...) () (x ...)) ; no body
      (lambda (g ...)
        (exists (ex-id ...)
  	 (all!! (promise-one-answer (== g x)) ...)))]
-    [(_ (ex-id ...) (g ...) () (x ...) ant)
+    [(_ (ex-id ...) (g ...) () (x ...) ant) ; the most general
      (lambda (g ...)
        (exists (ex-id ...)
  	 (if-all! ((promise-one-answer (== g x)) ...) ant)))]
-    [(_ (ex-id ...) (g ...) () (x ...) ant ...)
-     (lambda (g ...)
-       (exists (ex-id ...)
-         (all (all!! (promise-one-answer (== g x)) ...) ant ...)))]))
+    ))
 
 ; (define-syntax relation/cut
 ;   (syntax-rules (to-show)
@@ -3339,9 +3337,10 @@
     (fact () 'z 'z)
     (relation (x y t1 t2)
       (to-show t1 t2)
-      (== t1 `(s ,x))
-      (== t2 `(s ,y))
-      (Rinf x y))))
+      (all
+	(== t1 `(s ,x))
+	(== t2 `(s ,y))
+	(Rinf x y)))))
 (printf "~%Rinf:~%")
 (time (pretty-print (solve 5 (x y) (Rinf x y))))
 (printf "~%Rinf+R1: Rinf starves R1:~%")
@@ -3465,9 +3464,10 @@
     (fact () 'z 'z)
     (relation (x y t1 t2)
       (to-show t1 t2)
-      (== t1 `(s (s ,x)))
-      (== t2 `(s (s ,y)))
-      (Rinf2 x y))))
+      (all
+	(== t1 `(s (s ,x)))
+	(== t2 `(s (s ,y)))
+	(Rinf2 x y)))))
 
 (test-check "Rinf2"
   (solve 5 (x y) (Rinf2 x y))
@@ -3589,22 +3589,24 @@
   (extend-relation (a1)
     (relation (count)
       (to-show count)
-      (repeat count)
-      (nrev '(1 2 3 4 5 6 7 8 9
-               10 11 12 13 14 15 16 17 18
-               19 20 21 22 23 24 25 26 27
-               28 29 30)
-        _)
-      fail)
+      (all
+	(repeat count)
+	(nrev '(1 2 3 4 5 6 7 8 9
+		 10 11 12 13 14 15 16 17 18
+		 19 20 21 22 23 24 25 26 27
+		 28 29 30)
+	  _)
+	fail))
     (fact () _)))
 
 (define dodummy
   (extend-relation (a1)
     (relation (count)
       (to-show count)
-      (repeat count)
-      (dummy _)
-      fail)
+      (all
+	(repeat count)
+	(dummy _)
+	fail))
     (fact () _)))
 
 (define dummy
@@ -3637,11 +3639,11 @@
   (extend-relation (a1 a2 a3 a4)
     (relation (count time lips)
       (to-show count time lips 'msecs)
-      (if-only (== time 0) (== lips 0))
-      (let*-inject ([t1 (count) (* 496 count 1000)]
-                    [t2 (time) (+ time 0.0)]
-                    [lips^ () (/ t1 t2)])
-        (== lips lips^)))))
+      (if-only (== time 0) (== lips 0)
+	(let*-inject ([t1 (count) (* 496 count 1000)]
+		       [t2 (time) (+ time 0.0)]
+		       [lips^ () (/ t1 t2)])
+	  (== lips lips^))))))
 
 ;(test-lots)
 
@@ -3977,9 +3979,10 @@
       (fact (val) `(btree (leaf ,val)))
       (relation (t1 t2)
 	(to-show `(btree (root ,t1 ,t2)))
-	(predicate (t1 t2) (printf "btree ~s ~s ~n" t1 t2))
-	(kb `(btree ,t1))
-	(kb `(btree ,t2))))))
+	(all
+	  (predicate (t1 t2) (printf "btree ~s ~s ~n" t1 t2))
+	  (kb `(btree ,t1))
+	  (kb `(btree ,t2)))))))
 
 ;%> (declare mirror ((S) -> ((BTree S)) (BTree S)))
 
@@ -4029,8 +4032,9 @@
   (lambda (kb)
     (relation  (a b t1 t2)
       (to-show `(myeq (root ,b ,a) (mirror (root ,t1 ,t2))))
-      (kb `(myeq ,a (mirror ,t1)))
-      (kb `(myeq ,b (mirror ,t2))))))
+      (all
+	(kb `(myeq ,a (mirror ,t1)))
+	(kb `(myeq ,b (mirror ,t2)))))))
 
 ; we could also add reflexivity and transitivity and symmetry axioms
 ; and with-depth to keep them from diverging.
@@ -4066,9 +4070,10 @@
   (lambda (kb)
     (relation (t t1)
       (to-show `(goal ,t))
-      (kb `(btree ,t))
-      (kb `(myeq ,t  (mirror ,t1)))
-      (kb `(myeq ,t1 (mirror ,t))))))
+      (all
+	(kb `(btree ,t))
+	(kb `(myeq ,t  (mirror ,t1)))
+	(kb `(myeq ,t1 (mirror ,t)))))))
 
 ; The reverse relation for the goal:
 ; (goal t) implies (btree t), (myeq t (mirror t1)) and 
@@ -4422,8 +4427,9 @@
       (fact (val) `(myeq ,val ,val)) ; reflexivity
       (relation (a b)
 	(to-show `(myeq ,a ,b))		; symmetry
-	(predicate/no-check (a b) (printf "symmetry: ~a ~a ~n" a b))
-	(kb `(myeq ,b ,a)))
+	(all
+	  (predicate/no-check (a b) (printf "symmetry: ~a ~a ~n" a b))
+	  (kb `(myeq ,b ,a))))
       (relation (a b)			; transitivity
 	(to-show `(myeq ,a ,b))
 	(exists (c)
@@ -4434,9 +4440,9 @@
 
 (define myeq-axioms-trees		; equational theory of trees
   (lambda (kb)				; equality commutes with root
-    (extend-relation (t)
-      (relation (a b c d)
-	(to-show `(myeq (root ,a ,b) (root ,c ,d)))
+    (relation (a b c d)
+      (to-show `(myeq (root ,a ,b) (root ,c ,d)))
+      (all
 	(predicate/no-check (a b) (printf "trees: ~a ~a ~a ~a ~n" a b c d))
 	(kb `(myeq ,a ,c))
 	(kb `(myeq ,b ,d))))))
@@ -4448,10 +4454,11 @@
     (extend-relation (t)
       (relation (a b)
 	(to-show `(myeq (mirror ,a) ,b))
-	(predicate/no-check (a b) (printf "mirror: ~a ~a~n" a b))
-	(exists (c)
-	  (all (kb `(myeq ,b (mirror ,c)))
-	       (kb `(myeq ,a ,c))))))))
+	(all
+	  (predicate/no-check (a b) (printf "mirror: ~a ~a~n" a b))
+	  (exists (c)
+	    (all (kb `(myeq ,b (mirror ,c)))
+	         (kb `(myeq ,a ,c)))))))))
  
 ; The second axiom
 ; In Athena:
@@ -4488,8 +4495,9 @@
   (lambda (kb)
     (relation (t)
       (to-show `(goal ,t))
-      (kb `(btree ,t))
-      (kb `(myeq (mirror (mirror ,t)) ,t)))))
+      (all
+	(kb `(btree ,t))
+	(kb `(myeq (mirror (mirror ,t)) ,t))))))
 
 (define goal-rev
   (lambda (kb)
