@@ -1,7 +1,4 @@
-(load "book-s4.scm")
-
-;;; a stream is either empty or a pair whose cdr is 
-                ;;; a function of no arguments that returns a stream.
+(load "book-s3.scm")
 
 (define once
   (lambda (g)
@@ -2121,17 +2118,17 @@
         (number->string index)))))
 
 (define toggle
-    (let ((tex (lambda (id index)
+    (let ((tex (lambda (s index)
                  (string->symbol
                   (string-append
-                   (symbol->string id)
+                   s
                    "$_{_{"
                    (number->string index)
                    "}}$"))))
-          (no-tex (lambda (id index)
+          (no-tex (lambda (s index)
                     (string->symbol
                      (string-append
-                      (symbol->string id)
+                      s
                       (string #\.)
                       (number->string index)))))
           (switch #t))
@@ -2630,3 +2627,4 @@
 
 (pretty-print  ;;; in prolog this should diverge
   (run 10 (q) (fresh (a b c) (append_2 a b c) (== `(,a ,b ,c) q))))
+
