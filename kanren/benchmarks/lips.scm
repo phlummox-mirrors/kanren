@@ -71,11 +71,11 @@
 (define bench
   (relation (count)
     (to-show count)
-    (let-inject ([t0 () (get_cpu_time)])
+    (let ([t0 (get_cpu_time)])
       (dodummy count)
-      (let-inject ([t1 () (get_cpu_time)])
+      (let ([t1 (get_cpu_time)])
         (dobench count)
-        (let-inject ([t2 () (get_cpu_time)])
+        (let ([t2 (get_cpu_time)])
           (report count t0 t1 t2))))))
 
 (define dobench
@@ -113,29 +113,31 @@
       (to-show n)
       (all
         (predicate (n) (> n 1))
-        (let-inject ([n1 (n) (- n 1)])
-          (repeat n1))))))
+        (project (n)
+          (repeat (- n 1)))))))
 
 (define report
   (relation (count t0 t1 t2)
     (to-show count t0 t1 t2)
     (exists (lips units)
-      (let*-inject ([time1 (t0 t1) (- t1 t0)]
-                    [time2 (t1 t2) (- t2 t1)]
-                    [time () (- time2 time1)])
-        (calculate_lips count time lips units)
-        (predicate (lips count) (printf "~n~s lips for ~s" lips count))
-        (predicate (time units)
-          (printf " Iterations taking ~s  ~s ( ~s )~n " time units time))))))
+      (project (t0 t1 t2)
+        (let ([time1 (- t1 t0)]
+              [time2 (- t2 t1)])
+          (let ([time (- time2 time1)])
+            (all
+              (calculate_lips count time lips units)
+              (predicate (lips count) (printf "~n~s lips for ~s" lips count))
+              (predicate (units)
+                (printf " Iterations taking ~s  ~s ( ~s )~n " time units time)))))))))
 
 (define calculate_lips
   (extend-relation (a1 a2 a3 a4)
     (relation (count time lips)
       (to-show count time lips 'msecs)
       (if-only (== time 0) (== lips 0)
-	(let*-inject ([t1 (count) (* 496 count 1000)]
-		       [t2 (time) (+ time 0.0)]
-		       [lips^ () (/ t1 t2)])
-	  (== lips lips^))))))
+        (project (count time)
+          (let ([t1 (* 496 count 1000)]
+		[t2 (+ time 0.0)])
+            (== lips (/ t1 t2))))))))
 
 ;(test-lots)

@@ -12,7 +12,7 @@
 ; 35,020,001 inferences in 36.78 seconds (952116 Lips)
 
 
-(define benchmark_count 10000)
+(define benchmark_count 100)
 
 
 ; query(quad(C1, D1, C2, D2)) :- 
@@ -45,37 +45,37 @@
 	(relation (head-let c d)
 	  (exists (p)
 	    (all
-	      (pop  c p)
+	      (pop c p)
 	      (exists (a)
 		(all!!
 		  (area c a)
-		  (let-inject ((d1 (p a) (* p (/ 100.0 a))))
-		    (== d1 d)))))))))
+                  (project (p a)
+                    (== d (* p (/ 100.0 a)))))))))))
     (lambda (out)
       (bquery out))))
 
 (define benchmark
   (letrec
-    ((bquery
-      (relation (c1 d1 c2 d2)
-	(to-show `(quad ,c1 ,d1 ,c2 ,d2))
-	(all
-	  (density c1 d1)
-	  (density c2 d2)
-	  (predicate (d1 d2)
-	    (and (> d1 d2)
-	      (let ((t1 (* 20 d1))
-		    (t2 (* 21 d2)))
-		(< t1 t2)))))))
-      (density
-	(relation (head-let c d)
-	  (exists (p)
-	    (all
-	      (pop  c p)
-	      (let-inject ((d1 (c p) 
-			     (let ((a (cadr (assoc c area-lst))))
-			       (* p (/ 100.0 a)))))
-		    (== d1 d)))))))
+      ((bquery
+         (relation (c1 d1 c2 d2)
+           (to-show `(quad ,c1 ,d1 ,c2 ,d2))
+           (all
+             (density c1 d1)
+             (density c2 d2)
+             (predicate (d1 d2)
+               (and (> d1 d2)
+                    (let ((t1 (* 20 d1))
+                          (t2 (* 21 d2)))
+                      (< t1 t2)))))))
+       (density
+         (relation (head-let c d)
+           (exists (p)
+             (all
+               (pop c p)
+               (project (c p)
+                 (== d
+                   (let ((a (cadr (assoc c area-lst))))
+                     (* p (/ 100.0 a))))))))))
     (lambda (out)
       (bquery out))))
 
