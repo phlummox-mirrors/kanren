@@ -12,10 +12,6 @@
 ; whose house number is less than 4, lives 4 doors from his
 ; teammate, Don.  Who lives in each house?
 
-(define pos
-  (relation (head-let name address)
-    (pump address)))
-
 (define pump
   (extend-relation (a1)
     (fact () 1)
@@ -31,11 +27,11 @@
   (relation (head-let n1 n2 n3 n4 n5 n6 n7 n8)
     (let ([nlist '()])
       (all!
-	(pos 'allison n1)
+	(pump n1)
 	(project (n1)
 	  (all!
 	    (inject (> n1 2))
-	    (pos 'adrienne n2)
+	    (pump n2)
 	    (project (n2)
 	      (let ([nlist (cons n1 nlist)])
 		(all!
@@ -43,13 +39,13 @@
 		  (any
 		    (inject (= n2 (+ n1 1)))
 		    (inject (= n2 (- n1 1))))
-		  (pos 'belinda n3)
+		  (pump n3)
 		  (project (n3)
 		    (let ([nlist (cons n2 nlist)])		
 		      (all!
 			(inject (not (memv n3 nlist)))
 			(inject (> n3 5))
-			(pos 'benito n4)
+			(pump n4)
 			(project (n4)
 			  (let ([nlist (cons n3 nlist)])
 			    (all!
@@ -57,13 +53,13 @@
 			      (any
 				(inject (= n4 (+ n3 2)))
 				(inject (= n4 (- n3 2))))
-			      (pos 'cheri n5)
+			      (pump n5)
 			      (project (n5)
 				(let ([nlist (cons n4 nlist)])
 				  (all!
 				    (inject (not (memv n5 nlist)))
 				    (inject (> n5 n4))
-				    (pos 'crawford n6)
+				    (pump n6)
 				    (project (n6)
 				      (let ([nlist (cons n5 nlist)])
 					(all!
@@ -71,13 +67,13 @@
 					  (any
 					    (inject (= n6 (+ n5 3)))
 					    (inject (= n6 (- n5 3))))
-					  (pos 'daryl n7)
+					  (pump n7)
 					  (project (n7)
 					    (let ([nlist (cons n6 nlist)])
 					      (all!
 						(inject (not (memv n7 nlist)))
 						(inject (< n7 4))
-						(pos 'don n8)
+						(pump n8)
 						(project (n8)
 						  (let ([nlist (cons n7 nlist)])
 						    (all!!
@@ -89,8 +85,8 @@
 
 (define houses-test
   (lambda ()
-    (solution (n1 n2 n3 n4 n5 n6 n7 n8)
-      (mapping n1 n2 n3 n4 n5 n6 n7 n8))))
+    (solution (allison adrienne belinda benito cheri crawford daryl don)
+      (mapping allison adrienne belinda benito cheri crawford daryl don))))
 
 (define benchmark_count 1000)
 
