@@ -2279,25 +2279,27 @@
       [else #t])))
 
 ; t-var is a free variable, u-value is not a variable
+; Later on, instead of just checking if u-value is a pair,
+; check if (cdr u-value) is a pair etc. So, if u-value is a list,
+; we should replace all non-ground components with fresh variables,
+; extend subst of t-var to the replaced list and then unify
+; the fresh variables with the corresponding components.
 (define unify-free/value
   (lambda (t-var u-value subst)
-    (cond
-      [(ground? u-value) (extend-subst t-var u-value subst)]
-      [(pair? u-value)
-       (let ([car-val (car u-value)]
-             [cdr-val (cdr u-value)])
-         (cond
-           [(ground? car-val)
+    (if (pair? u-value)
+      (let ([car-val (car u-value)]
+            [cdr-val (cdr u-value)])
+	(cond
+	  [(ground? car-val)
             (cond
-              [(ground? cdr-val)
-               (extend-subst t-var (cons car-val cdr-val) subst)]
+              [(ground? cdr-val)	; it means u-value is totally ground...
+               (extend-subst t-var u-value subst)]
               [else (let ([d-var (var 'd*)])
                       (unify-free/any d-var cdr-val
                         (extend-subst t-var
                           (cons car-val d-var) subst)))])]
            [else
-             (let ([a-var (var 'a*)]
-		   [cdr-val (cdr u-value)])
+             (let ([a-var (var 'a*)])
                (cond
                  [(ground? cdr-val)
                   (unify-free/any a-var car-val
@@ -2309,8 +2311,10 @@
                             => (lambda (subst)
 				 ; d-var might become bound! Do full checks!
                                  (unify d-var cdr-val subst))]
-                           [else #f]))]))]))]
-      [else (extend-subst t-var u-value subst)])))
+                           [else #f]))]))]))
+      ; u-value is not a var and is not a pair: it's atomic
+      (extend-subst t-var u-value subst))))
+
 
 ;------------------------------------------------------------------------
 (test-check 'test-unify/pairs-oleg1
