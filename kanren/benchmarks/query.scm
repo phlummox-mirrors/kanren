@@ -183,6 +183,13 @@
 '(time (do ((i 0 (+ 1 i))) ((>= i benchmark_count))
 	(solve 5 (out) (benchmark out))))
 
+; kanren.ss version 3.45
+; (time (do ((...)) ...))
+;     52 collections
+;     1275 ms elapsed cpu time, including 9 ms collecting
+;     1312 ms elapsed real time, including 7 ms collecting
+;     57261352 bytes allocated, including 56455376 bytes reclaimed
+
 ; dobench(Count) :-
 ; 	data(Data),
 ; 	repeat(Count),
