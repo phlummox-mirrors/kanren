@@ -36,14 +36,14 @@
 (define-syntax test-check
   (syntax-rules ()
     ((_ title tested-expression expected-result)
-      (begin
-	(printf "Testing ~s~%" title)
-	(let* ((expected expected-result)
-		(produced tested-expression))
-	  (or (equal? expected produced)
-	    (error 'test-check
-	      "Failed: ~s~%Expected: ~s~%Computed: ~s~%"
-	      'tested-expression expected produced)))))))
+     (begin
+       (printf "Testing ~s~%" title)
+       (let* ([expected expected-result]
+              [produced tested-expression])
+         (or (equal? expected produced)
+             (error 'test-check
+               "Failed: ~s~%Expected: ~s~%Computed: ~s~%"
+               'tested-expression expected produced)))))))
 
 (test-check 'test-@-lambda@
   (@ (lambda@ (x y z) (+ x (+ y z))) 1 2 3)
@@ -53,8 +53,6 @@
   (@ (lambda@ (x y z) (+ x (+ y z))) 1 2 3)
   42)
    
-
-
 (define-record var (id) ())
 (define var make-var)
 
@@ -75,10 +73,11 @@
     [(_ () body0 body1 body2 ...)
      (all body0 body1 body2 ...)]
     [(_ (id ...) body0 body1 ...)
-     (let ([id (var 'id)] ...)
+     (exists (id ...)
        (lambda@ (sk fk in-subst)
 	 (@ (all body0 body1 ...)
-            (lambda@ (fk subst) (@ sk fk (prune in-subst subst id ...)))
+            (lambda@ (fk subst)
+              (@ sk fk (prune in-subst subst id ...)))
 	   fk in-subst)))]))
 
 ; check if any of vars occur in a term
@@ -111,7 +110,7 @@
     [(_ in-subst subst) subst]
     [(_ in-subst subst id0 id1 ...)
      (if (eq? subst in-subst)
-         subst
+         (begin (printf "it happens~n") subst)
          (prune-proc (list id0 id1 ...) in-subst '() '() '() subst))]))
 
 (define prune-proc
@@ -549,8 +548,14 @@
 
 (define-syntax relation
   (syntax-rules (to-show _ cut) ;;; _ and cut disappear when semester is over.
-    [(_  (ex-id ...) (to-show x ...) ant ...)     
+    [(_ (ex-id ...) (to-show x ...) ant ...)     
      (relation (ex-id ...) () (x ...) (x ...) ant ...)]
+    [(_ _ (ex-id ...) (to-show x ...) ant ...) ;;; disappears when semester is over.
+     (relation (ex-id ...) (to-show x ...) ant ...)]
+    [(_ cut (ex-id ...) (to-show x ...) ant ...) ;;; disappears when semester is over.
+     (relation/cut cut (ex-id ...) (to-show x ...) ant ...)]
+    [(_ (ex-id ...) (var ...) (x0 x1 ...) xs ant ...)
+     (relation (ex-id ...) (var ... g) (x1 ...) xs ant ...)]
     [(_ (ex-id ...) (g ...) () (x ...))
      (lambda (g ...)
        (introduce-vars (ex-id ...)
@@ -558,13 +563,7 @@
     [(_ (ex-id ...) (g ...) () (x ...) ant ...)
      (lambda (g ...)
        (introduce-vars (ex-id ...)
-	 (all! (== g x) ... (all ant ...))))]
-    [(_ ex-ids (var ...) (x0 x1 ...) xs ant ...)
-     (relation ex-ids (var ... g) (x1 ...) xs ant ...)]
-        [(_ _ (ex-id ...) (to-show x ...) ant ...) ;;; disappears when semester is over.
-     (relation (ex-id ...) () (x ...) (x ...) ant ...)]
-    [(_ cut (ex-id ...) (to-show x ...) ant ...) ;;; disappears when semester is over.
-     (relation/cut cut (ex-id ...) () (x ...) (x ...) ant ...)]))
+	 (all! (== g x) ... (all ant ...))))]))
 
 (define-syntax relation/cut
   (syntax-rules (to-show)
@@ -2138,19 +2137,10 @@
 (define non-generic-recursive-env
   (relation (g v t w type-w)
     (to-show `(non-generic ,w ,type-w ,g) v t)
-    (all! (unequal? w v) (instantiated g) (env g v t))))
+    (all! (instantiated g) (env g v t))))
 
 (define env (extend-relation (a1 a2 a3)
               non-generic-match-env non-generic-recursive-env))
-
-(define unequal?
-  (extend-relation (a1 a2)
-    (relation/cut cut (a)
-      (to-show a a)
-      (all cut fail))
-    (relation (a b)
-      (to-show a b)
-      (fails fail))))
 
 (define fix  ;;; this is so that students can see what happens
   (lambda (e)
