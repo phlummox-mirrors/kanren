@@ -496,7 +496,7 @@
 
 (define cu 0)
 
-(define concretize-subst  ;;; returns a single value.
+(define concretize-subst*  ;;; returns a single value.
   (letrec
       ([cs (lambda (subst env)
              (cond
@@ -542,7 +542,7 @@
 	       (set! cu (add1 cu))
 	       (pretty-print (concretize t))
 	       (pretty-print (concretize u))
-	       (pretty-print (concretize-subst subst))
+	       (pretty-print (concretize-subst* subst))
 	       (@ sk fk subst))]
 	 [else (fk)]))]))
 
@@ -587,3 +587,10 @@
 		   (justifies? kb))))])
       (let ([kb1 (goal-fwd kb0)])
 	(kb1 '(goal !h (MP !p !q)))))))
+
+(define-syntax ==
+  (syntax-rules ()
+    [(_ t u)
+     (lambda@ (sk fk subst)
+       (let ([subst (unify t u subst)])
+         (if subst (@ sk fk subst) (fk))))]))
