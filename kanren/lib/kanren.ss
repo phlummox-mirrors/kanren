@@ -122,6 +122,42 @@
 ;   (lambda (x)
 ;     (and (native-pair? x) (not (eq? (car x) logical-var-tag)))))
 
+
+; Eigen-variables -- unique symbols that represent universally-quantified
+; variables in a term
+; For identification, we prefix the name of the eigen-variable with
+; the exclamation mark. The mark makes sure the symbol stands out when
+; printed.
+
+(define eigen-variable
+  (lambda (id)
+    (symbol-append '! id '_ (gensym))))
+
+(define eigen-var?
+  (lambda (x)
+    (and (symbol? x)
+      (let ((str (symbol->string x)))
+	(> (string-length str) 2)
+	(char=? (string-ref str 0) #\!)))))
+
+
+; (eigen (id ...) body) -- evaluate body in the environment
+; extended with the bindings of id ... to the corresponding
+; eigen-variables
+(define-syntax eigen
+  (syntax-rules ()
+    ((_ (id ...) body)
+      (let ((id (eigen-variable 'id)) ...) body))))
+
+(test-check 'eigen
+  (and
+    (eigen () #t)
+    (eigen (x) (eigen-var? x))
+    (eigen (x y)
+      (begin (display "eigens: ") (display (list x y))
+	(newline) #t)))
+  #t)
+
 ;;; ------------------------------------------------------
 
 (define commitment cons)             ;;; change to list
@@ -185,6 +221,17 @@
               [(null? r*) '()]
               [(assq (commitment->var (car r*)) base) (survive (cdr r*))]
               [else (cons (car r*) (survive (cdr r*)))])))])))
+
+; Replace a logical variable with the corresponding eigen-variable
+(define universalize
+  (lambda (term)
+    (let ([fv (free-vars term)])
+      (let ([subst
+              (map
+                (lambda (v)
+                  (commitment v (eigen-variable (logical-variable-id v))))
+                fv)])
+        (subst-in term subst)))))
 
 (define subst-in  ;;; This definition will change several times.
   (lambda (t subst)

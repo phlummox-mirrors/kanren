@@ -216,21 +216,6 @@
               (kb (car preds))
               (verify-goal (cdr preds) kb))])))
 
-; A better version of concretize that replaces each variable
-; with a _unique_! symbol. The unique symbol symbolizes universal
-; quantification, as usual.
-
-(define concretize*
-  (lambda (term)
-    (let ([fv (free-vars term)])
-      (let ([subst
-              (map
-                (lambda (v)
-                  (commitment v
-                    (symbol-append (logical-variable-id v) ': (gensym))))
-                fv)])
-        (subst-in term subst)))))
-
 ; extend the kb with the list of assumptions
 ; this is just like 'any' only it's a procedure rather than a syntax
 ; Why we need concretize*?
@@ -250,7 +235,7 @@
 
 (define extend-kb
   (lambda (facts kb)
-    (let ([facts (concretize* facts)])
+    (let ([facts (universalize facts)])
       (printf "Extending KB with ~s~%" facts)
       (let loop ([facts facts])
         (if (null? facts) kb

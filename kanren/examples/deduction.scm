@@ -116,34 +116,13 @@
 ; relation 'prf' in a very special knowledge database. The knowledge base
 ; assumes reports the success of every relation in it. It also
 ; binds all the free variables in the asked relation to some distinguished
-; symbols (we chose the exclamation mark to distinguish such names).
-; Thus we replace free variables with eigen-variables.
+; symbols: we replace free variables with eigen-variables.
 ; We thus generate _universal_ induction hypotheses.
 ; Note that this special 'kb' is only used inductively in prf.
 ; So, the (pretty-print indc1) in ind-kb-gen below
 ; will print out all assumptions that 'prf' makes.
 ; We can manually examine those assumptions to see if they look OK.
 
-; get the free vars of term
-(define free-vars
-  (lambda (term)
-    (let loop ([term term] [fv '()])
-      (cond
-        [(var? term) (if (memq term fv) fv (cons term fv))]
-        [(pair? term) (loop (cdr term) (loop (car term) fv))]
-        [else fv]))))
-
-; Replace a logical variable with an eigen-variable
-(define universalize
-  (lambda (term)
-    (let ([fv (free-vars term)])
-      (let ([subst
-              (map
-                (lambda (v)
-                  (commitment v
-                    (symbol-append '! (logical-variable-id v) ': (gensym))))
-                fv)])
-        (subst-in term subst)))))
 
 (define ind-kb-gen
   (lambda (t)
@@ -176,9 +155,7 @@
 (define eigenvar?
   (lambda (x)
     (project (x)
-      (predicate
-        (and (symbol? x)
-             (eqv? #\! (string-ref (symbol->string x) 0)))))))
+      (predicate (eigen-var? x)))))
 
 (define ind-kb-test
   (extend-relation (t)

@@ -171,39 +171,39 @@
 (test-check 'test-!-1
   (and
     (equal?
-      (solution () (exists (g) (!- '() '(intc 17) int)))
+      (solution () (eigen (g) (!- g '(intc 17) int)))
       '())
     (equal?
-      (solution (?) (exists (g) (!- '() '(intc 17) ?)))
+      (solution (?) (eigen (g) (!- g '(intc 17) ?)))
       '((?.0 int))))
   #t)
 
 (test-check 'arithmetic-primitives
-  (solution (?) (exists (g)  (!- '() '(zero? (intc 24)) ?)))
+  (solution (?) (eigen (g)  (!- g '(zero? (intc 24)) ?)))
   '((?.0 bool)))
 
 (test-check 'test-!-sub1
-  (solution (?) (exists (g) (!- '() '(zero? (sub1 (intc 24))) ?)))
+  (solution (?) (eigen (g) (!- g '(zero? (sub1 (intc 24))) ?)))
   '((?.0 bool)))
 
 (test-check 'test-!-+
   (solution (?)
-    (exists (g)
-      (!- '() '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
+    (eigen (g)
+      (!- g '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
   '((?.0 bool)))
 
 (test-check 'test-!-2
   (and
     (equal?
-      (solution (?) (exists (g) (!- '() '(zero? (intc 24)) ?)))
+      (solution (?) (eigen (g) (!- g '(zero? (intc 24)) ?)))
       '((?.0 bool)))
     (equal?
-      (solution (?) (exists (g) (!- '() '(zero? (+ (intc 24) (intc 50))) ?)))
+      (solution (?) (eigen (g) (!- g '(zero? (+ (intc 24) (intc 50))) ?)))
       '((?.0 bool)))
     (equal?
       (solution (?)
-        (exists (g)
-          (!- '() '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
+        (eigen (g)
+          (!- g '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
       '((?.0 bool))))
   #t)
 
@@ -213,24 +213,24 @@
 
 (test-check 'if-expressions
   (solution (?)
-    (exists (g) (!- '() '(if (zero? (intc 24)) (zero? (intc 3)) (zero? (intc 4))) ?)))
+    (eigen (g) (!- g '(if (zero? (intc 24)) (zero? (intc 3)) (zero? (intc 4))) ?)))
   '((?.0 bool)))
 
 (test-check 'variables
   (and
     (equal?
       (solution (?)
-        (exists (g)
+        (eigen (g)
           (env `(non-generic b int (non-generic a bool ,g)) 'a ?)))
       '((?.0 bool)))
     (equal?
       (solution (?)
-        (exists (g)
+        (eigen (g)
           (!- `(non-generic a int ,g) '(zero? (var a)) ?)))
       '((?.0 bool)))
     (equal?
       (solution (?)
-        (exists (g)
+        (eigen (g)
           (!- `(non-generic b bool (non-generic a int ,g))
             '(zero? (var a))
             ?)))
@@ -239,7 +239,7 @@
 
 (test-check 'variables-4a
   (solution (?)
-    (exists (g)
+    (eigen (g)
       (!- `(non-generic b bool (non-generic a int ,g))
         '(lambda (x) (+ (var x) (intc 5)))
         ?)))
@@ -247,7 +247,7 @@
 
 (test-check 'variables-4b
   (solution (?)
-    (exists (g)
+    (eigen (g)
       (!- `(non-generic b bool (non-generic a int ,g))
         '(lambda (x) (+ (var x) (var a)))
         ?)))
@@ -255,14 +255,14 @@
 
 (test-check 'variables-4c
   (solution (?)
-    (exists (g) 
+    (eigen (g) 
       (!- g '(lambda (a) (lambda (x) (+ (var x) (var a)))) ?)))
   '((?.0 (--> int (--> int int)))))
 
 (test-check 'everything-but-polymorphic-let
   (solution (?)
-    (exists (g)
-      (!- '() (parse
+    (eigen (g)
+      (!- g (parse
               '(lambda (f)
                  (lambda (x)
                    ((f x) x))))
@@ -273,8 +273,8 @@
 
 (test-check 'everything-but-polymorphic-let
   (solution (?)
-    (exists (g)
-      (!- '()
+    (eigen (g)
+      (!- g
         (parse
           '((fix (lambda (sum)
                    (lambda (n)
@@ -287,8 +287,8 @@
 
 (test-check 'everything-but-polymorphic-let
   (solution (?)
-    (exists (g)
-      (!- '()
+    (eigen (g)
+      (!- g
         (parse
           '((fix (lambda (sum)
                    (lambda (n)
@@ -299,8 +299,8 @@
 
 (test-check 'everything-but-polymorphic-let
   (solution (?)
-    (exists (g)
-      (!- '()
+    (eigen (g)
+      (!- g
         (parse '((lambda (f)
                    (if (f (zero? 5))
                        (+ (f 4) 8)
@@ -311,8 +311,8 @@
 
 (test-check 'polymorphic-let
   (solution (?)
-    (exists (g)
-      (!- '()
+    (eigen (g)
+      (!- g
         (parse
           '(let ([f (lambda (x) x)])
              (if (f (zero? 5))
@@ -323,8 +323,8 @@
 
 (test-check 'with-robust-syntax
   (solution (?)
-    (exists (g)
-      (!- '()
+    (eigen (g)
+      (!- g
         '(app
            (fix
              (lambda (sum)
@@ -338,8 +338,8 @@
 
 (test-check 'with-robust-syntax-but-long-jumps/poly-let
   (solution (?)
-    (exists (g)
-      (!- '()
+    (eigen (g)
+      (!- g
         '(let ([f (lambda (x) (var x))])
            (if (app (var f) (zero? (intc 5)))
                (+ (app (var f) (intc 4)) (intc 8))
@@ -355,7 +355,7 @@
       '((g.0 (non-generic v.0 (--> int int) g.1)) (?.0 (var v.0))))
     (equal?
       (solution (la f b)
-        (exists (g)
+        (eigen (g)
           (!- g `(,la (,f) ,b) '(--> int int))))
       '((la.0 lambda) (f.0 v.0) (b.0 (var v.0))))
     (equal?
@@ -370,7 +370,7 @@
         (t.0 int)))
     (equal?
       (solution (h r q z y t u v)
-        (exists (g)
+        (eigen (g)
           (!- g `(,h ,r (,q ,z ,y)) `(,t ,u ,v))))
       '((h.0 lambda)
         (r.0 (v.0))
@@ -546,8 +546,8 @@
 
 (test-check 'with-robust-syntax-but-long-jumps/poly-let
   (solution (?)
-    (exists (g)
-      (!- '()
+    (eigen (g)
+      (!- g
         '(let ([f (lambda (x) (var x))])
            (if (app (var f) (zero? (intc 5)))
                (+ (app (var f) (intc 4)) (intc 8))
