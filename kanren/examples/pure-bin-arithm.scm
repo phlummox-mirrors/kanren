@@ -774,8 +774,8 @@
     (any-interleave
       (all (== n '(1)) (pos b) (== q '()) (== r '())) ; 1 = b^0 + 0, b >0
       ; in the rest, b > 1
-      (all (<o n b) (== q '()) (++o r '(1) n)) ; n = b^0 + (n-1)
-      (all (=ol n b) (== q '(1)) (++o r b n)) ; n = b + r, n and b the same sz
+      (all (== q '())  (<o n b)  (++o r '(1) n)) ; n = b^0 + (n-1)
+      (all (== q '(1)) (=ol n b) (++o r b n)) ; n = b + r, n and b the same sz
       ; in the rest, n is longer than b
       (all (== b '(0 1))		; b = 2
 	   (exists (n1)
@@ -788,25 +788,37 @@
       (all
 	(any (== b '(1 1)) (== b `(,_ ,_ ,_ . ,_))) ; b >= 3
 	(<ol b n)			; b becomes L-instantiated
+	                                ; If b was L-instantiated, the previous
+					; ant had only *one* answer
 	(exists (bw nw nw1 bw1 ql1 ql qh qdh qd bql bqd bq bq1)
 	 (all
 	  (exp2 b '() bw1)
-	  (exp2 n '() nw1)		; n becomes L-instantiated
 	  (++o bw1 '(1) bw)
+	  (<ol q n)			; A _very_ lose bound, but makes
+					; sure q will be L-instatiated
+					; Now, we can use b and q to bound n
+					; |n|-1 < |b|*(q+1)
+	  (exists (q1 bwq1)
+	    (all
+	      (++o q '(1) q1)
+	      (**o bw q1 bwq1)		; |b|*(q+1)
+	      (<o nw1 bwq1)))
+	  (exp2 n '() nw1)		; n becomes L-instantiated
+					; Now we have only finite number of ans
 	  (++o nw1 '(1) nw)
 	  (divo nw bw ql1 _)		; low boundary on q:
 	  (++o ql '(1) ql1)		; |n| = |b|(ql+1) + c
+	  (any (== q ql) (<ol ql q))	; Tighten the estimate for q
 	  (repeated-mul b ql bql)	; bql = b^ql
 	  (divo nw bw1 qh _)		; upper boundary on q-1
 	  (++o ql qdh qh)
-	  (trace-vars 1 (n bw nw ql qh))
+	  (++o ql qd q)
 	  (any (== qd qdh) (<o qd qdh)) ; qd is bounded
 	  (repeated-mul b qd bqd)	; b^qd
 	  (**o bql bqd bq)		; b^q
 	  (**o b   bq  bq1)		; b^(q+1)
 	  (++o bq r n)
 	  (<o n bq1)			; check the r condition
-	  (++o ql qd q)
 	  ))))))
 
 	
@@ -1273,10 +1285,35 @@
   (solve 10 (b r) (expo (build 33) b (build 5) r))
   '(((b.0 (0 1)) (r.0 (1)))))
 
-'(test-check 'expo-2-5
+(test-check 'expo-2-5
   (solve 10 (n) (expo n (build 2) (build 5) '(1)))
   '(((n.0 (1 0 0 0 0 1)))))
 
-'(test-check 'expo-3-2
+(test-check 'expo-3-2
   (solve 10 (n) (expo n (build 3) (build 2) '(1)))
-  '(((n.0 (1 0 0 0 0 1)))))
+  '(((n.0 (0 1 0 1)))))
+
+(test-check 'expo-3-3
+  (solve 10 (n) (expo n (build 3) (build 3) '(1)))
+  '(((n.0 (0 0 1 1 1)))))
+
+(test-check 'powers-of-3
+  (solve 10 (n q r) (expo n (build 3) q r))
+  '(((n.0 (1)) (q.0 ()) (r.0 ()))
+    ((n.0 (0 1)) (q.0 ()) (r.0 (1)))
+    ((n.0 (1 1)) (q.0 (1)) (r.0 ()))
+    ((n.0 (0 0 1)) (q.0 (1)) (r.0 (1)))
+    ((n.0 (1)) (q.0 ()) (r.0 ()))
+    ((n.0 (0 0 0 1)) (q.0 (1)) (r.0 (1 0 1)))
+    ((n.0 (1 0 1)) (q.0 (1)) (r.0 (0 1)))
+    ((n.0 (1 1 1)) (q.0 (1)) (r.0 (0 0 1)))
+    ((n.0 (0 1 1)) (q.0 (1)) (r.0 (1 1)))
+    ((n.0 (0 0 0 0 1)) (q.0 (0 1)) (r.0 (1 1 1))))
+)
+
+(test-check 'powers-of-exp-3
+  (solve 3 (n b r) (expo n b (build 3) r))
+  '(((n.0 (0 0 0 1)) (b.0 (0 1)) (r.0 ()))
+    ((n.0 (1 1 0 1 1)) (b.0 (1 1)) (r.0 ()))
+    ((n.0 (1 0 0 1)) (b.0 (0 1)) (r.0 (1))))
+)
