@@ -144,15 +144,6 @@
   (syntax-rules ()
     ((_ body args ...) (app-tagged (sk fk answer) body args ...))))
 
-(define-syntax lambdau@
-  (syntax-rules ()
-    ((_ args body) (lambda-tagged (fk answer) args body))))
-
-(define-syntax u@ 
-  (syntax-rules ()
-    ((_ body args ...) (app-tagged (fk answer) body args ...))))
-
-
 (define-syntax lambdak@
   (syntax-rules ()
     ((_ args body) (lambda-tagged (subst fk answer) args body))))
@@ -196,10 +187,15 @@
   (syntax-rules ()
     ((_ (x) g0 g ...)
      (let ((x (var 'x)))
-       (g@ (all g0 g ...) empty-s
-         (lambdak@ (s f)
-           (cons (reify x s) (lambda () (ff@ f))))
-         (lambdaf@ () '()))))))
+       (rn x (g@ (all g0 g ...) empty-s))))))
+
+(define rn
+  (lambda (x r)
+    (p@ (r@ r metak metaf)
+      (lambdaj@ (s r)
+        (cons (reify x s)
+	  (lambda () (rn x r))))
+      (lambdaf@ () '()))))
 
 (define-syntax all
   (syntax-rules ()
@@ -241,26 +237,32 @@
   (syntax-rules ()
     ((_ c0 c ...) 
      (lambdag@ (s k f)
-       (co s k f c0 c ...)))))
+       (co s k f (lambda (r k f) (r@ r k f)) c0 c ...)))))
+
+(define-syntax cond1
+  (syntax-rules ()
+    ((_ c0 c ...) 
+     (lambdag@ (s k f)
+       (co s k f (lambda (r k f) (ff@ f)) c0 c ...)))))
 
 (define-syntax co
   (syntax-rules (else)
-    ((_ s k f (else g ...)) (g@ (all g ...) s k f))
-    ((_ s k f (g ...)) (g@ (all g ...) s k f))
-    ((_ s k f (g0 g ...) c0 c ...)
-     (let ((f (lambdaf@ () (co s k f c0 c ...))))
-       (p@ (r@ (g@ g0 s) anyki anyfi)
+    ((_ s k f l (else g ...)) (g@ (all g ...) s k f))
+    ((_ s k f l (g ...)) (g@ (all g ...) s k f))
+    ((_ s k f l (g0 g ...) c0 c ...)
+     (let ((f (lambdaf@ () (co s k f l c0 c ...))))
+       (p@ (r@ (g@ g0 s) metak metaf)
          (lambdaj@ (s r)
 	   (k@ (lambdak@ (s) (g@ (all g ...) s k))
 	     s
-	     (lambdaf@ () (r@ r k f))))
+	     (lambdaf@ () (l r k f))))
          f)))))
 
-(define-syntax once
-  (syntax-rules ()
-    ((_ g)
-     (lambdag@ (s k f)
-       (g@ g s (lambdak@ (s _f) (k@ k s f)) f)))))
+(define once
+  (lambda (g)
+    (cond1
+      [g]
+      [else fail])))
 
 (define-syntax cond@
   (syntax-rules ()
@@ -288,14 +290,14 @@
 (define interleave
   (lambda (r r^)
     (lambdar@ (k f)
-      (p@ (r@ r anyki anyfi)
+      (p@ (r@ r metak metaf)
         (lambdaj@ (s r)
           (k@ k s
             (lambdaf@ ()
               (r@ (interleave r^ r) k f))))
         (lambdaf@ () (r@ r^ k f))))))
 
-(define anyki
+(define metak
   (lambdak@ (s f)
     (lambdap@ (j _f)
       (j@ j s
@@ -305,7 +307,7 @@
               (k@ k^ s (lambdaf@ () (r@ r k^ f^))))
             f^))))))
 
-(define anyfi 
+(define metaf 
   (lambdaf@ ()
     (lambdap@ (_j f)
       (ff@ f))))
@@ -320,7 +322,7 @@
 (define ai
   (lambda (r g)
     (lambdar@ (k f)
-      (p@ (r@ r anyki anyfi)
+      (p@ (r@ r metak metaf)
         (lambdaj@ (s r)
           (r@ (interleave (g@ g s) (ai r g))
             k f))
@@ -346,3 +348,9 @@
     ((_ fn) 
      (lambdag@ (s k f)
        (g@ (fn (wc (lambdag@ (_s _k _f) (ff@ f)))) s k f)))))
+
+(define wc
+  (lambda (g)
+    (cond@
+      (succeed)
+      (g))))
