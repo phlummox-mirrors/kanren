@@ -497,11 +497,11 @@
 
 (define-syntax all
   (syntax-rules (all all! any)
-    [(_ ant ... (any)) (all ant ...)]
-    [(_ ant ... (all)) (all ant ...)]
-    [(_ ant ... (all!)) (all ant ...)]
     [(_) (lambda (sk) sk)]
     [(_ ant) ant]
+    [(_ ant (any)) ant]
+    [(_ ant (all)) ant]
+    [(_ ant (all!)) ant]
     [(_ ant0 ant1 ant2 ...)
      (lambda@ (sk)
        (ant0 (splice-in-ants/all sk ant1 ant2 ...)))]))
@@ -514,14 +514,15 @@
 
 (define-syntax all!
   (syntax-rules (all any)
-    [(_ ant ... (all)) (all! ant ...)]
-    [(_ ant ... (any)) (all! ant ...)]
-    [(_ ant ... (all)) (all! ant ...)]
     [(_) (lambda (sk) sk)]
     [(_ ant) ant]
+    [(_ ant (any)) ant]
+    [(_ ant (all)) ant]
+    [(_ ant (all!)) ant]
     [(_ ant0 ant1 ant2 ...)
      (lambda@ (sk fk)
        (@ ant0 (splice-in-ants/all! sk fk ant1 ant2 ...) fk))]))
+
 
 (define-syntax splice-in-ants/all!
   (syntax-rules ()
@@ -648,6 +649,11 @@
 	(equal? (caar result) `(,(commitment x 'sal)))
 	(equal? ((cdr result)) '()))))
   #t)
+
+(define concretize
+  (lambda (t)
+    (let-values (ct new-env) (concretize-term t '())
+      ct)))
 
 (test-check 'test-father-3
   (naive-exists (x)
