@@ -42,7 +42,7 @@
               [produced tested-expression])
          (or (equal? expected produced)
              (error 'test-check
-               "Failed: ~s~%Expected: ~s~%Computed: ~s~%"
+               "Failed: ~a~%Expected: ~a~%Computed: ~a~%"
                'tested-expression expected produced)))))))
 
 (test-check 'test-@-lambda@
@@ -408,83 +408,14 @@
 
 (define-syntax splice-in-ants/any
   (syntax-rules ()
-    [(_ (sk fk subst cutk) ant1) (@ ant1 sk fk subst cutk)]
-    [(_ (sk fk subst cutk) ant1 ant2 ...)
+    [(_ sk fk subst cutk ant1) (@ ant1 sk fk subst cutk)]
+    [(_ sk fk subst cutk ant1 ant2 ...)
       (@ ant1
 	sk
-	(lambda () (splice-in-ants/any (sk fk subst cutk) ant2 ...))
+	(lambda () (splice-in-ants/any sk fk subst cutk ant2 ...))
 	subst
 	cutk)]))
 
-(define-syntax binary-extend-relation-interleave
-  (syntax-rules ()
-    [(_ (id ...) rel-exp1 rel-exp2)
-     (let ([rel1 rel-exp1] [rel2 rel-exp2])
-       (lambda (id ...)
-         (lambda@ (sk fk subst cutk)
-           ((interleave sk fk (finish-interleave sk fk))
-            (@ (rel1 id ...) initial-sk initial-fk subst cutk)
-            (@ (rel2 id ...) initial-sk initial-fk subst cutk)))))]))
-
-(define finish-interleave
-  (lambda (sk fk)
-    (letrec
-      ([finish
-         (lambda (q)
-           (cond
-             [(null? q) (fk)]
-             [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
-                     (@ sk (lambda () (finish (fk))) subst cutk))]))])
-      finish)))
-
-(define interleave
-  (lambda (sk fk finish)
-    (letrec
-      ([interleave
-         (lambda (q1 q2)
-           (cond
-             [(null? q1) (if (null? q2) (fk) (finish q2))]
-             [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
-                     (@ sk (lambda () (interleave q2 (fk))) subst cutk))]))])
-      interleave)))
-
-(define-syntax binary-extend-relation-interleave-non-overlap
-  (syntax-rules ()
-    [(_ (id ...) rel-exp1 rel-exp2)
-     (let ([rel1 rel-exp1] [rel2 rel-exp2])
-       (lambda (id ...)
-         (lambda@ (sk fk subst cutk)
-           (let ([ant2 (rel2 id ...)])
-             ((interleave-non-overlap sk fk)
-              (@ (rel1 id ...) initial-sk initial-fk subst cutk)
-              (@ ant2 initial-sk initial-fk subst cutk)
-              ; means in case of overlap, prefer (rel2 ...) over (rel1 ...)
-              fail
-              ant2)))))]))
-
-(define interleave-non-overlap
-  (lambda (sk fk)
-    (letrec
-      ([finish
-         (lambda (q)
-           (cond
-             [(null? q) (fk)]
-             [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
-                     (@ sk (lambda () (finish (fk))) subst cutk))]))]
-       [interleave
-         (lambda (q1 q2 ant1 ant2)
-           (cond
-             [(null? q1) (if (null? q2) (fk) (finish q2))]
-             [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
-		(if (satisfied? ant2 subst) ; the solution of q1
-   					    ; satisfies ant2. Skip it
-		  (interleave q2 (fk) ant2 ant1)
-		  (@ sk (lambda () (interleave q2 (fk) ant2 ant1)) subst cutk)))]))])
-      interleave)))
-
-(define satisfied?
-  (lambda (ant subst)
-    (not (null? (@ ant initial-sk initial-fk subst initial-fk)))))
 
 ; make extend-relation behave as a CBV function, that is,
 ; evaluate rel-exp early.
@@ -607,7 +538,147 @@
     [(_ ant) ant]
     [(_ ant ...)
       (lambda@ (sk fk subst cutk)
-	(splice-in-ants/any (sk fk subst cutk) ant ...))]))
+	(splice-in-ants/any sk fk subst cutk ant ...))]))
+
+; partially-eval-sant: Partially evaluate a semi-antecedent
+; An semi-antecedent is an expression that, when applied to
+; two arguments, sk fk, can produce zero, one, or
+; more answers.
+; Any antecedent can be turned into a semi-antecedent if partially applied
+; to subst and cutk.
+; The following higher-order semi-antecedent takes an
+; antecedent and yields the first answer and another, residual
+; antecedent. The latter, when evaluated, will give the rest
+; of the answers of the original semi-antecedent.
+; partially-eval-sant could be implemented with streams (lazy
+; lists). The following is a purely combinational implementation.
+;
+; (@ partially-eval-sant sant a b) =>
+;   (b) if sant has no answers
+;   (a s residial-sant) if sant has a answer. That answer is delivered
+;                       in s. 
+; The residial semi-antecedent can be passed to partially-eval-sant
+; again, and so on, to obtain all answers from an antecedent one by one.
+
+; The following definition is eta-reduced.
+
+(define (partially-eval-sant sant)
+  (@ sant
+    (lambda@ (fk subst cutk a b)
+      (@ a subst 
+	(lambda@ (sk1 fk1)
+	  (@
+	    (fk) 
+	    ; new a
+	    (lambda@ (sub11 x) (@ sk1 (lambda () (@ x sk1 fk1)) sub11 cutk))
+	    ; new b
+	    fk1))))
+    (lambda () (lambda@ (a b) (b)))))
+
+(define (ant->sant ant subst cutk)
+  (lambda@ (sk fk)
+    (@ ant sk fk subst cutk)))
+
+
+(define fathers-of-cubscouts
+  (extend-relation (a1 a2)
+    (fact () 'sam 'bob)
+    (fact () 'tom 'adam)
+    (fact () 'tad 'carl)))
+
+(test-check 'test-partially-eval-sant
+  (let-lv (p1 p2)
+    (let* ((fathers-of-cubscouts-sant
+	     (ant->sant (fathers-of-cubscouts p1 p2) empty-subst
+	       initial-fk))
+	    (cons@ (lambda@ (x y) (cons x y)))
+	    (split1 (@ 
+		      partially-eval-sant fathers-of-cubscouts-sant
+		      cons@ (lambda () '())))
+	    (a1 (car split1))
+	    (split2 (@ partially-eval-sant (cdr split1) cons@
+		      (lambda () '())))
+	    (a2 (car split2))
+	    (split3 (@ partially-eval-sant (cdr split2) cons@
+		      (lambda () '())))
+	    (a3 (car split3))
+	    )
+      (map (lambda (subst) (list (subst-in p1 subst) (subst-in p2 subst)))
+	(list a1 a2 a3))
+      ))
+  '((sam bob) (tom adam) (tad carl))
+)
+
+
+(define-syntax any-interleave
+  (syntax-rules ()
+    [(_) fail]
+    [(_ ant) ant]
+    [(_ ant ...)
+      (lambda@ (sk fk subst cutk)
+	(interleave sk fk cutk
+	  (list (ant->sant ant subst cutk) ...)))]))
+
+; we treat sants as a sort of a circular list
+(define (interleave sk fk cutk sants)
+  (cond
+    ((null? sants) (fk))		; all of the sants are finished
+    ((null? (cdr sants))
+      ; only one sants left -- run it through the end
+      (@ (car sants) sk fk))
+    (else
+      (let loop ((curr sants) (residuals '()))
+	; check if the current round is finished
+	(if (null? curr) (interleave sk fk cutk (reverse residuals))
+	  (@
+	    partially-eval-sant (car curr)
+	    ; (car curr) had an answer
+	    (lambda@ (subst residual)
+	      (@ sk
+	        ; re-entrance cont
+		(lambda () (loop (cdr curr) (cons residual residuals)))
+		subst cutk))
+	  ; (car curr) is finished - drop it, and try next
+	  (lambda () (loop (cdr curr) residuals))))))))
+
+
+(define-syntax binary-extend-relation-interleave-non-overlap
+  (syntax-rules ()
+    [(_ (id ...) rel-exp1 rel-exp2)
+     (let ([rel1 rel-exp1] [rel2 rel-exp2])
+       (lambda (id ...)
+         (lambda@ (sk fk subst cutk)
+           (let ([ant2 (rel2 id ...)])
+             ((interleave-non-overlap sk fk)
+              (@ (rel1 id ...) initial-sk initial-fk subst cutk)
+              (@ ant2 initial-sk initial-fk subst cutk)
+              ; means in case of overlap, prefer (rel2 ...) over (rel1 ...)
+              fail
+              ant2)))))]))
+
+(define interleave-non-overlap
+  (lambda (sk fk)
+    (letrec
+      ([finish
+         (lambda (q)
+           (cond
+             [(null? q) (fk)]
+             [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
+                     (@ sk (lambda () (finish (fk))) subst cutk))]))]
+       [interleave
+         (lambda (q1 q2 ant1 ant2)
+           (cond
+             [(null? q1) (if (null? q2) (fk) (finish q2))]
+             [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
+		(if (satisfied? ant2 subst) ; the solution of q1
+   					    ; satisfies ant2. Skip it
+		  (interleave q2 (fk) ant2 ant1)
+		  (@ sk (lambda () (interleave q2 (fk) ant2 ant1)) subst cutk)))]))])
+      interleave)))
+
+(define satisfied?
+  (lambda (ant subst)
+    (not (null? (@ ant initial-sk initial-fk subst initial-fk)))))
 
 ; (define initial-fk (lambda () '()))
 ; (define initial-sk
@@ -2844,27 +2915,54 @@
 ; Or a second-level shift/reset!
 
 (printf "~%binary-extend-relation-interleave~%")
-(printf "~%Rinf+R1:~%")
-(time (pretty-print 
-        (solve 7 (x y)
-          ((binary-extend-relation-interleave (a1 a2) Rinf R1) x y))))
-(printf "~%R1+RInf:~%")
-(time (pretty-print 
-        (solve 7 (x y)
-          ((binary-extend-relation-interleave (a1 a2) R1 Rinf) x y))))
+(test-check "Rinf+R1"
+  (time 
+    (solve 7 (x y)
+      (any-interleave (Rinf x y) (R1 x y))))
+  '(((x.0 z) (y.0 z))
+     ((x.0 x1) (y.0 y1))
+     ((x.0 (s z)) (y.0 (s z)))
+     ((x.0 x2) (y.0 y2))
+     ((x.0 (s (s z))) (y.0 (s (s z))))
+     ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
+     ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z)))))))
+  )
 
-(printf "~%R2+R1:~%")
-(time (pretty-print 
-        (solve 7 (x y)
-          ((binary-extend-relation-interleave (a1 a2) R2 R1) x y))))
-(printf "~%R1+fact3:~%")
-(time (pretty-print 
-        (solve 7 (x y)
-          ((binary-extend-relation-interleave (a1 a2) R1 fact3) x y))))
-(printf "~%fact3+R1:~%")
-(time (pretty-print 
-        (solve 7 (x y)
-          ((binary-extend-relation-interleave (a1 a2) fact3 R1) x y))))
+(test-check "R1+Rinf"
+  (time 
+    (solve 7 (x y)
+      (any-interleave (R1 x y) (Rinf x y))))
+  '(((x.0 x1) (y.0 y1))
+    ((x.0 z) (y.0 z))
+    ((x.0 x2) (y.0 y2))
+    ((x.0 (s z)) (y.0 (s z)))
+    ((x.0 (s (s z))) (y.0 (s (s z))))
+    ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
+    ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z)))))))
+)
+
+
+(test-check "R2+R1"
+  (solve 7 (x y)
+    (any-interleave (R2 x y) (R1 x y)))
+  '(((x.0 x1) (y.0 y1))
+    ((x.0 x1) (y.0 y1))
+    ((x.0 x3) (y.0 y3))
+    ((x.0 x2) (y.0 y2)))
+)
+
+(test-check "R1+fact3"
+  (solve 7 (x y)
+    (any-interleave (R1 x y) (fact3 x y)))
+    '(((x.0 x1) (y.0 y1)) ((x.0 x3) (y.0 y3)) ((x.0 x2) (y.0 y2)))
+)
+
+(test-check "fact3+R1"
+  (solve 7 (x y)
+    (any-interleave (fact3 x y) (R1 x y)))
+    '(((x.0 x3) (y.0 y3)) ((x.0 x1) (y.0 y1)) ((x.0 x2) (y.0 y2)))
+)
+
 
 ;;; Test for nonoverlapping.
 
