@@ -762,6 +762,23 @@
     [(_ ant ...)
      ((extend-relation () (relation _ () (to-show) ant) ...))]))
 
+; Compare with all!
+(define-syntax any
+  (syntax-rules ()
+    ((_) (lambda@ (sk fk subst cutk) (fk))) ; or fail
+    ((_ ant) ant)
+    ((_ ant0 ant1 ...)
+     (lambda@ (sk fk subst cutk)
+       (letrec-syntax
+	 ((splice-in-ants 
+	    (syntax-rules ()
+	      ((_) fk)
+	      ((_ ant . other-ants)
+	       (lambda ()
+		 (@ ant sk (splice-in-ants . other-ants) subst cutk))))
+	    ))
+	 (@ ant0 sk (splice-in-ants ant1 ...) subst cutk))))))
+
 (define child
   (relation _ (child dad)
     (to-show child dad)
