@@ -1236,7 +1236,6 @@
       always)
     (== 1 q))  
 
-
 ;;; Winners!!
 
 

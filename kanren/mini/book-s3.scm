@@ -152,7 +152,7 @@
   (syntax-rules ()
     ((_ (x ...) g0 g ...)  
      (lambda (s)
-       (let ((x (reify-nonfresh x s)) ...)
+       (let ((x (walk-strong x s)) ...)
          ((all g0 g ...) s))))))
 
 (define-syntax cond@
@@ -226,7 +226,7 @@
 (define ll
   (lambda (n x g)
     (lambdag@ (s)
-      (let ((v (walk-var x s)))
+      (let ((v (walk x s)))
         (cond
           ((var? v) (g (ext-s x 1 s)))
           ((< v n)  (g (ext-s x (+ v 1) s)))
