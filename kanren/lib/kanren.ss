@@ -535,10 +535,11 @@
 	  ; failure from cond
 	  fk)))
     ((_ condition then else)
-      (lambda@ (sk fk)
+      (lambda@ (sk fk subst)
 	(@ condition
 	  (lambda@ (fk-ign) (@ then sk fk))
-	  (lambda () (@ else sk fk)))))
+	  (lambda () (@ else sk fk subst))
+	  subst)))
 ))
 
 ; (if-all! (COND1 ... CONDN) THEN)
@@ -1427,6 +1428,10 @@
     ((x.0 jon) (y.0 roz))
     ((x.0 sam) (y.0 sal))
     ((x.0 sam) (y.0 pat))))
+
+(test-check 'test-grandpa-10-1
+  (solve 10 (x) (grandpa x 'sue))
+  '(((x.0 sam))))
 
 ; Now do it with soft-cuts
 (define grandpa
