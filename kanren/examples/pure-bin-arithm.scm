@@ -224,7 +224,7 @@
 	(all
 	  (== p1 `(,_ . ,p1r))
 	  (== p  `(,_ . ,pr))
-	  (any
+	  (any-interleave
 	    (exists (mr)
 	      (all (== n '()) (== m  `(,_ . ,mr)) 
 		(<ol3 p1r pr n mr)))
@@ -236,7 +236,7 @@
 ; n * m = p
 (define **o
   (relation (head-let n m p)
-    (any
+    (any-interleave
       (all (zeroo n) (== p '()))		; 0 * m = 0
       (all (zeroo m) (pos n) (== p '()))	; n * 0 = 0
       (all (== n '(1)) (pos m) (== m p))        ; 1 * m = m
@@ -397,7 +397,7 @@
   (solve 7 (w) 
     (exists (y z) (all (**o y z (build 6))
 		    (project (y z) (== `(,(trans y) ,(trans z)) w)))))
-  '(((w.0 (1 6))) ((w.0 (2 3))) ((w.0 (6 1)))  ((w.0 (3 2)))))
+  '(((w.0 (1 6))) ((w.0 (2 3))) ((w.0 (3 2)))  ((w.0 (6 1)))))
 
 ; Only one answer
 (test-check 'multiplication-all-2
@@ -420,9 +420,8 @@
 
 (test-check 'multiplication-all-4
   (solve 4 (x z) (**o x (build 3) z))
-  '(((x.0 ()) (z.0 ())) ((x.0 (1)) (z.0 (1 1)))
-    ((x.0 (0 1)) (z.0 (0 1 1)))
-    ((x.0 (0 0 1)) (z.0 (0 0 1 1))))
+  '(((x.0 ()) (z.0 ())) ((x.0 (1)) (z.0 (1 1))) 
+    ((x.0 (0 1)) (z.0 (0 1 1))) ((x.0 (1 1)) (z.0 (1 0 0 1))))
 )
 
 (test-check 'multiplication-all-5
@@ -433,8 +432,8 @@
     ((x.0 (1)) (y.0 (*anon.0 . *anon.1)) (z.0 (*anon.0 . *anon.1)))
      ; 2 * y = even positive number, for y > 0
     ((x.0 (0 1)) (y.0 (*anon.0 . *anon.1)) (z.0 (0 *anon.0 . *anon.1)))
-     ; 4 * y = double-even positive number, for y > 0
-    ((x.0 (0 0 1)) (y.0 (*anon.0 . *anon.1)) (z.0 (0 0 *anon.0 . *anon.1)))
+     ; 3 * 1 = 3
+     ((x.0 (1 1)) (y.0 (1)) (z.0 (1 1)))
     )
 )
 
@@ -444,6 +443,23 @@
      ; 2*y is an even number, for any y > 0!
     ((y.0 (*anon.0 . *anon.1)) (z.0 (0 *anon.0 . *anon.1))))
 )
+
+; check that mul(X,Y,Z) recursively enumerates all
+; numbers such as X*Y=Z
+;
+(cout "Test recursive enumerability" nl)
+(let ((n 7))
+  (do ((i 0 (+ 1 i))) ((> i n))
+    (do ((j 0 (+ 1 j))) ((> j n))
+      (let ((p (* i j)))
+	(test-check
+	  (string-append "enumerability: " (number->string i)
+	    "*" (number->string j) "=" (number->string p))
+	  (solve 1 (x y z) 
+	    (all (**o x y z)
+	      (== x (build i)) (== y (build j)) (== z (build p))))
+	  `(((x.0 ,(build i)) (y.0 ,(build j))
+	      (z.0 ,(build p)))))))))
 
 (cout nl "division, general" nl)
 
