@@ -1559,6 +1559,28 @@
     (let*-values ([(ct new-env) (concretize-term t '())])
       ct)))
 
+; A simple version of query: useful as an illustration
+; It returns a stream of concretized substitutions
+(define-syntax query-stream
+  (syntax-rules ()
+    ((_ (id ...) A)
+      (query (redo-k subst id ...) A (cons (concretize-subst subst) redo-k)))))
+
+(test-check 'test-father-4-1
+  (car (query-stream (x y)
+	 (new-father x y)))
+  '((y.0 . sam) (x.0 . jon)))
+
+(test-check 'test-father-5-1
+  (let* ((ans1
+	   (query-stream (x y)
+	     (newer-father 'rob x)))
+	  (ans2 ((cdr ans1)))
+	  (ans3 ((cdr ans2))))
+    (list (car ans1) (car ans2) ans3))
+  '(((x.0 . sal)) ((x.0 . pat)) ()))
+
+
 (define-syntax solve
   (syntax-rules ()
     [(_ n (var0 ...) ant)
@@ -2065,8 +2087,6 @@
   (lambda (x)
     (any (predicate (< 4 5))
       (== x (< 6 7)))))
-
-;;;; Here is the definition of concretize.
 
 (test-check 'test-test1
   (solution (x) (test1 x))
