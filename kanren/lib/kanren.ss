@@ -2208,6 +2208,8 @@
       [(assq u-var s) => (unbound/bound t-var s)]
       [else (extend-subst t-var u-var s)])))
 
+; On entrance; t-var is not bound.
+; we are trying to unify it with a bound variable (commitment->var cu)
 (define unbound/bound
   (lambda (t-var s)
     (lambda (cu)
@@ -2218,7 +2220,7 @@
             [(var? u-term)
              (cond
                [(assq u-term s) => loop]
-               [else (extend-subst t-var u-term s)])]
+               [else (extend-subst t-var u-term s)])] ; u-term is free here
             [else (extend-subst t-var u-term s)]))))))
   
 ; ((and (pattern-var? tree2) (assq tree2 env)) => ; tree2 is a bound var
