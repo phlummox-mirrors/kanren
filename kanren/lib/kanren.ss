@@ -2211,7 +2211,10 @@
 	(let ((cu (assq u subst)))
 	  (if cu
 	    (unify (commitment->term cu) t subst)
-	    (unify-free/value u t subst)))]
+	    (if (pair? t)
+	      (unify-free/list u t subst)
+              ; t is not a var and is not a pair: it's atomic
+	      (extend-subst u t subst))))]
       [(and (pair? t) (pair? u))
        (cond
          [(unify (car t) (car u) subst)
@@ -2230,7 +2233,10 @@
 	  (if cu (unify-free/bound t-var cu subst)
 	    (extend-subst t-var u subst))  ; t-var and u are both free
 	))
-      (else (unify-free/value t-var u subst)))))
+      ((pair? u)
+	(unify-free/list t-var u subst))
+      (else ; u is not a var and is not a pair: it's atomic
+	(extend-subst t-var u subst)))))
 
 ; ct is a commitment to a bound variable, u can be anything
 (define unify-bound/any
@@ -2308,71 +2314,61 @@
 ; mention t-var (and so, after the first unification, fresh variables
 ; may become ground).
 
-; (append (reverse lst) last-cell) where last-cell is not necessarily '()
-(define (im-reverse last-cell lst)
-  (if (null? last-cell) (reverse lst)	; fast path
-    (let loop ((last-cell last-cell) (lst lst))
-      (if (null? lst) last-cell
-	(loop (cons (car lst) last-cell) (cdr lst))))))
+    ; return the list of assoc of fresh variables with
+    ; non-ground cells of lst-src (which may be improper!)
+(define ufl-analyze-list
+  (lambda (lst-src)
+    (if (pair? lst-src)
+      (if (ground? (car lst-src))
+	(ufl-analyze-list (cdr lst-src))
+	(let ((fresh-var (var 'a*)))
+	  (cons (cons fresh-var (car lst-src))
+	    (ufl-analyze-list (cdr lst-src)))))
+      ; lst-src is either null? or the end of an improper list
+      (if (or (null? lst-src) (ground? lst-src))
+	'()
+	(cons (cons (var 'd*) lst-src) '())))))
 
-(test-check 'im-reverse-1
-  (im-reverse '() '(1 2 3))
-  '(3 2 1))
-(test-check 'im-reverse-2
-  (im-reverse 'x '(1 2 3))
-  '(3 2 1 . x))
+      ; Given a proper or improper list lst,
+      ; return a list in which some of the cells are replaced with
+      ; the corresponding variables
+      ; term-assoc is an assoc list of variables _to_ cells
+      ; (note the reverse association!).
+      ; We are guaranteed however that term-assoc is properly ordered.
+(define ufl-rebuild-with-vars
+  (lambda (term-assoc lst)
+    (cond
+      ((null? term-assoc) lst)
+      ((pair? lst)
+	(if (eq? (cdar term-assoc) (car lst))
+	  (cons (caar term-assoc)
+	    (ufl-rebuild-with-vars (cdr term-assoc) (cdr lst)))
+	  (cons (car lst)
+	    (ufl-rebuild-with-vars term-assoc (cdr lst)))))
+      (else (caar term-assoc)))))
 
 (define unify-free/list
- (lambda (t-var u-value subst)
-  (letrec
-    ((analyze-list
-       (lambda (to-unify lst-src lst-analyzed)
-	 (if (pair? lst-src)
-	   (if (ground? (car lst-src))
-	     (analyze-list to-unify (cdr lst-src) 
-	       (cons (car lst-src) lst-analyzed))
-	     (let ((fresh-var (var 'a*)))
-	       (analyze-list (cons (cons fresh-var (car lst-src)) to-unify)
-		 (cdr lst-src) (cons fresh-var lst-analyzed))))
-	   ; lst-src is either null? or the end of an improper list
-	   (if (ground? lst-src)
-	     (unify-result to-unify lst-src lst-analyzed)
-	     (let ((fresh-var (var 'd*)))
-	       (unify-result (cons (cons fresh-var lst-src) to-unify)
-		 fresh-var lst-analyzed))))))
-      (unify-result
-	(lambda (to-unify last-cell new-cells-rev)
-	  (cond 
-	    ((null? to-unify)		; u-value was totally ground
-	      (extend-subst t-var u-value subst))
-	    ((null? (cdr to-unify))	; only one non-ground component
-	      (unify-free/any (caar to-unify) (cdar to-unify)
-		(extend-subst t-var (im-reverse last-cell new-cells-rev)
-		  subst)))
-	    (else			; general case
-	      (let loop ((subst
-			   (unify-free/any (caar to-unify) (cdar to-unify)
-			     (extend-subst t-var 
-			       (im-reverse last-cell new-cells-rev) subst)))
-			  (to-unify (cdr to-unify)))
-		(and subst
-		  (if (null? to-unify) subst
-		    (loop (unify (caar to-unify) (cdar to-unify) subst)
-		      (cdr to-unify)))))))))
-      )
-    (analyze-list '() u-value '()))))
-
-		  
-	    
-
-; t-var is a free variable, u-value is not a variable
-(define unify-free/value
   (lambda (t-var u-value subst)
-    (if (pair? u-value)
-      (unify-free/list t-var u-value subst)
-      ; u-value is not a var and is not a pair: it's atomic
-      (extend-subst t-var u-value subst))))
-
+    (let ((to-unify (ufl-analyze-list u-value)))
+      (cond 
+	((null? to-unify)		; u-value was totally ground
+	  (extend-subst t-var u-value subst))
+	((null? (cdr to-unify))	; only one non-ground component
+	  (unify-free/any (caar to-unify) (cdar to-unify)
+	    (extend-subst t-var (ufl-rebuild-with-vars to-unify u-value)
+	      subst)))
+	(else			; general case
+	  (let loop ((subst
+		       (unify-free/any (caar to-unify) (cdar to-unify)
+			 (extend-subst t-var 
+			   (ufl-rebuild-with-vars to-unify u-value)
+			   subst)))
+		      (to-unify (cdr to-unify)))
+	    (and subst
+	      (if (null? to-unify) subst
+		(loop (unify (caar to-unify) (cdar to-unify) subst)
+		  (cdr to-unify)))))))))
+  )
 
 ;------------------------------------------------------------------------
 (test-check 'test-unify/pairs-oleg1
