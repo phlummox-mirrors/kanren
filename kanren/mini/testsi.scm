@@ -2687,17 +2687,32 @@
 (pretty-print  ;;; in prolog this should diverge
   (run 10 (q) (fresh (a b c) (append_2 a b c) (== `(,a ,b ,c) q))))
 
-; (define swappende
-;   (lambda (l1 l2 out)
-;     (condi
-;       (succeed
-;         (fresh (a d res)
-;           (conso a d l1)
-;           (conso a res out)
-;           (swappende d l2 res)))
-;       (else (nullo l1) (== l2 out)))))
+; Emulation of lambda-limited...
+(define-syntax condii
+  (syntax-rules ()
+    ((_ c ...) (c@i interleave c ...))))
 
-; (pretty-print
-;   (run 2 (q)
-;     (fresh (x y)
-;       (swappende x y q))))
+(define-syntax c@i
+  (syntax-rules (else)
+    ((_ combine) fail)
+    ((_ combine (else g ...)) (incomplete (all g ...)))
+    ((_ combine (g ...) c ...)
+     (let ((g^ (all g ...)))
+       (lambdag@ (s) (incomplete 
+		       (combine (g^ s) 
+			 (lambdaf@ () ((c@ combine c ...) s)))))))))
+
+(define swappende
+  (lambda (l1 l2 out)
+    (condii
+      (succeed
+        (fresh (a d res)
+          (conso a d l1)
+          (conso a res out)
+          (swappende d l2 res)))
+      (else (nullo l1) (== l2 out)))))
+
+(pretty-print
+  (run 3 (q)
+    (fresh (x y)
+      (swappende x y q))))

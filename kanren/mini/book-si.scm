@@ -377,7 +377,7 @@
     ((_ g0 g1 g2 ...) (allw (allw g0 g1) g2 ...))))
 
 (define allw-1
-  (lambda (g1 g2)                                                               
+  (lambda (g1 g2)
     (fresh (choice failed)                                                   
       (all
         (oracle g1 g2 failed choice)
@@ -398,7 +398,7 @@
         ((terminates failed (alli g1 g2)) (== #t choice))              
         ((terminates failed (alli g2 g1)) (== #f choice))))))
 
-(define terminates                                                              
+(define terminates
   (lambda (failed g)
     (condu
       ((succeeds
@@ -408,19 +408,15 @@
        (== #f failed))
       (else (== #t failed)))))
 
-(define succeeds                                                                
-  (lambda (g)                                                                   
-    (fails (fails g))))                                                         
-                                                                                
-(define fails                                                                   
-  (lambda (g)                                                                   
-    (condu                                                                      
-      [g fail]                                                                  
-      [else succeed])))  
+(define succeeds
+  (lambda (g)
+    (fails (fails g))))
 
-(define once                                                                    
-  (lambda (g)                                                                   
-    (condu                                                                      
-      [g succeed]                                                               
-      [else fail]))) 
+(define fails
+  (lambda (g)
+    (condu [g fail] [else succeed])))
+
+(define once
+  (lambda (g)
+    (condu [g succeed] [else fail])))
 
