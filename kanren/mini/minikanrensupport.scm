@@ -1,4 +1,4 @@
-;; minikanrensupport.scm
+;; minikanrensupport7.scm
 
 (define-syntax def-syntax
   (syntax-rules ()
@@ -14,10 +14,12 @@
     [(_ () body bodies ...) (begin body bodies ...)]
     ((_ ([(var ...) rhs-exp] [vars* rhs-exp*] ...) bodies ...)
      (call-with-values (lambda () rhs-exp)
-       (lambda (var ...) (let*-values ([vars* rhs-exp*] ...) bodies ...))))))
+       (lambda (var ...) (let*-values ([vars* rhs-exp*] ...) bodies
+  ...))))))
 
 (define-syntax lambda@
   (syntax-rules ()
+    [(_ () body0 body1 ...) (lambda () body0 body1 ...)]
     [(_ (formal) body0 body1 ...) (lambda (formal) body0 body1 ...)]
     [(_ (formal0 formal1 formal2 ...) body0 body1 ...)
      (lambda (formal0)
@@ -25,8 +27,10 @@
 
 (define-syntax @  
   (syntax-rules ()
+    [(_ rator) (rator)]
     [(_ rator rand) (rator rand)]
-    [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
+    [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2
+  ...)]))
 
 (define-syntax let*-and
   (syntax-rules ()
@@ -36,6 +40,37 @@
        (if var0
          (let*-and false-exp ([var1 exp1] ...) body0 body1 ...)
          false-exp))]))
+
+(define prefix
+  (lambda (n strm)
+    (prefix-aux (- n 1) strm)))
+
+(define prefix-aux
+  (lambda (n strm)
+    (cond
+      [(null? strm) '()]
+      [else
+        (cons (reify-answer (car strm))
+          (cond
+            [(zero? n) '()]
+            [else (prefix-aux (- n 1) (@ (cdr strm)))]))])))
+
+(define prefix*
+  (lambda (strm)
+    (cond
+      [(null? strm) '()]
+      [else
+        (cons (reify-answer (car strm))
+          (prefix* (@ (cdr strm))))])))
+
+(define reify-answer
+  (lambda (answer)
+    (reify (car answer) (cdr answer))))
+
+(define reify
+  (lambda (v s)
+    (reify-fresh
+      (reify-nonfresh v s))))
 
 (define-syntax test-check
   (syntax-rules ()
@@ -56,137 +91,255 @@
               (if (procedure? x) (x) (display x)))
             args))
 
-(define-record logical-variable (id) ())
-(define logical-variable make-logical-variable)
-(define var? logical-variable?)
+; (define-record logical-variable (id) ())
+; (define var make-logical-variable)
+; (define var? logical-variable?)
+; (define var-id logical-variable-id)
 
-(define commitment cons)             ;;; change to list
-(define commitment->term cdr)        ;;; and change to cadr
-(define commitment->var car)
+(define empty-s '())
 
-(define empty-subst '())
+(define var-id
+  (lambda (x)
+    (vector-ref x 0)))
 
-(define _ (logical-variable '_))
+(define var
+  (lambda (id)
+    (vector id)))
 
-(define vars-of
-  (lambda (term)
-    (let loop ([term term] [fv '()])
-      (cond
-        [(var? term) (if (memq term fv) fv (cons term fv))]
-        [(pair? term) (loop (cdr term) (loop (car term) fv))]
-        [else fv]))))
+(define var?
+  (lambda (x)
+    (vector? x)))
 
-(define concretize
-  (lambda (t)
-    (subst-in t
-      (let loop ([fv (reverse (vars-of t))] [env '()])
-	(cond
-	  [(null? fv) empty-subst]
-	  [else (let ([id (logical-variable-id (car fv))])
-		  (let ([num (let*-and 0 ([pr (assq id env)]) (+ (cdr pr) 1))])
-		    (cons (commitment (car fv) (artificial-id id num))
-		      (loop (cdr fv) (cons (cons id num) env)))))])))))
+(define association
+  (lambda (x s)
+    (assq x s)))
 
-(define artificial-id
-  (lambda (t-id num)
+(define rhs
+  (lambda (b)
+    (cdr b)))
+
+(define reify-nonfresh
+  (lambda (v s)
+    (r-nf (walk v s) s)))
+
+(define r-nf
+  (lambda (v s)
+    (cond
+      [(pair? v)
+       (cons
+         (r-nf (walk (car v) s) s)
+         (r-nf (walk (cdr v) s) s))]
+      [else v])))
+
+(define walk
+  (lambda (v s)
+    (cond
+      [(var? v)
+       (cond
+         [(association v s) =>
+          (lambda (pr)
+            (rhs (walk-pr pr s)))]
+         [else v])]
+      [else v])))
+
+(define walk-pr
+  (lambda (pr s)
+    (cond
+      [(var? (rhs pr))
+       (cond
+         [(association (rhs pr) s) =>
+          (lambda (pr)
+            (walk-pr pr s))]
+         [else pr])]
+      [else pr])))
+
+(define ext-s
+  (lambda (x v s)
+    (cons (cons x v) s)))
+ 
+;;;; reify
+
+;;; Thoughts: reify should be the composition of
+;;; reify/non-fresh with reify/fresh.  reify/non-fresh
+;;; is also known as reify-nonfresh.  reify/fresh was also
+;;; knows as reify.
+
+;;;;; This is the code of reify
+
+(define reify-fresh
+  (lambda (v)
+    (r-f v '() empty-s
+      (lambda (p* s) (reify-nonfresh v s)))))
+
+(define r-f
+  (lambda (v p* s k)
+    (cond
+      ((var? v)
+       (let ((id (var-id v)))
+         (let ((n (index (var-id v) p*)))
+           (k (cons `(,id . ,n) p*)
+              (ext-s v (reify-id id n) s)))))
+      ((pair? v)
+       (r-f (walk (car v) s) p* s
+         (lambda (p* s)
+           (r-f (walk (cdr v) s) p* s k))))
+      (else (k p* s)))))
+
+(define index
+  (lambda (id p*)
+    (cond
+      [(assq id p*)
+       => (lambda (p)
+            (+ (cdr p) 1))]
+      (else 0))))
+
+(define reify-id
+  (lambda (id index)
     (string->symbol
       (string-append
-        (symbol->string t-id) "." (number->string num)))))
+        (symbol->string id)
+        "$_{_"
+        (number->string index)
+        "}$"))))
 
-(define subst-in
-  (lambda (t subst)
-    (cond
-      [(var? t)
-       (let*-and t ([ct (assq t subst)])
-         (subst-in (commitment->term ct) subst))]
-      [(pair? t) (cons (subst-in (car t) subst) (subst-in (cdr t) subst))]
-      [else t])))
+(define reify-id
+  (lambda (id index)
+    (string->symbol
+      (string-append
+        (symbol->string id)
+        (string #\.)
+        (number->string index)))))
+
+(define reify-test
+  (lambda ()
+    (reify-fresh
+      (let ([x (var 'x)]
+            [xx (var 'x)]
+            [xxx (var 'x)])
+        `(,x 3 ,xx 5 ,xxx ,xxx ,xx ,x)))))
+
+(define unify-check
+  (lambda (v w s)
+    (let ((v (walk v s))
+          (w (walk w s)))
+      (cond
+        ((eq? v w) s)
+        ((var? v)
+         (cond
+           ((occurs? v w s) #f)
+           (else (ext-s v w s))))
+        ((var? w)
+         (cond
+           ((occurs? w v s) #f)
+           (else (ext-s w v s))))
+        ((and (pair? v) (pair? w))
+         (cond
+           ((unify-check (car v) (car w) s) =>
+            (lambda (s)
+              (unify-check (cdr v) (cdr w) s)))
+           (else #f)))
+        ((or (pair? v) (pair? w)) #f)
+        ((equal? v w) s)
+        (else #f)))))
 
 (define unify
-  (lambda (t u subst)
-    (cond
-      [(or (eq? t u) (eq? t _) (eq? u _)) subst]
-      [(and (var? t) (var? u)) (unify-var/var t u subst)]
-      [(var? t) (unify-var/nonvar t u subst)]
-      [(var? u) (unify-var/nonvar u t subst)]
-      [else (unify-nonvar/nonvar t u subst)])))
-
-(define unify-var/nonvar
-  (lambda (t u subst)
-    (let ([ct (assq t subst)])
-      (if ct
-        (unify-nonvar/bound u ct subst)
-        (if (pair? u)
-          (unify-free/list t u subst)
-          (extend-subst t u subst))))))
-
-(define unify-var/var
-  (lambda (t u subst)
-    (let ([ct (assq t subst)]
-          [cu (assq u subst)])
+  (lambda (v w s)
+    (let ((v (walk v s))
+          (w (walk w s)))
       (cond
-        [(and ct cu)
-         (unify-i/i (commitment->term ct) (commitment->term cu) subst)]
-        [ct (unify-free/bound u ct subst)]
-        [cu (unify-free/bound t cu subst)]
-        [else (extend-subst t u subst)]))))
+        ((eq? v w) s)
+        ((var? v) (ext-s v w s))
+        ((var? w) (ext-s w v s))
+        ((and (pair? v) (pair? w))
+         (cond
+           ((unify (car v) (car w) s) =>
+            (lambda (s)
+              (unify (cdr v) (cdr w) s)))
+           (else #f)))
+        ((or (pair? v) (pair? w)) #f)
+        ((equal? v w) s)
+        (else #f)))))
 
-(define unify-i/i
-  (lambda (t u subst)
-    (unify t u subst)))
+(define unify-check
+  (lambda (v w s)
+    (let ((v (walk v s))
+          (w (walk w s)))
+      (cond
+        ((eq? v w) s)
+        ((var? v) (ext-s-check v w s))
+        ((var? w) (ext-s-check w v s))
+        ((and (pair? v) (pair? w))
+         (cond
+           ((unify (car v) (car w) s) =>
+            (lambda (s)
+              (unify (cdr v) (cdr w) s)))
+           (else #f)))
+        ((or (pair? v) (pair? w)) #f)
+        ((equal? v w) s)
+        (else #f)))))
 
-(define unify-free/bound
-  (lambda (t cu subst)
-    (let loop ([cu cu])
-      (let ([u (commitment->term cu)])
-        (cond
-          [(eq? u t) subst]
-          [(var? u)
-           (cond
-             [(assq u subst) => loop]
-             [else (extend-subst t u subst)])]
-          [else (extend-subst t u subst)])))))
-
-(define unify-nonvar/nonvar
-  (lambda (t u subst)
-    (if (and (pair? t) (pair? u))
-      (let*-and #f ([subst (unify (car t) (car u) subst)])
-        (unify (cdr t) (cdr u) subst))
-      (if (equal? t u) subst #f))))
-
-(define extend-subst
-  (lambda (var term subst)
-    (cons (commitment var term) subst)))
-
-(define unify-nonvar/bound
-  (lambda (t cu subst)
-    (let loop ([cu cu])
-      (let ([u (commitment->term cu)])
-        (cond                                
-          [(var? u)
-           (cond
-             [(assq u subst) => loop]
-             [(pair? t) (unify-free/list u t subst)]
-             [else (extend-subst u t subst)])]
-          [else (unify-nonvar/nonvar u t subst)])))))
-
-(define unify-free/list
-  (lambda (t u subst)
-    (extend-subst t (or (rebuild-without-anons u) u) subst)))
-
-(define rebuild-without-anons
-  (lambda (lst)
+(define ext-s-check
+  (lambda (v w s)
     (cond
-      [(eq? lst _) (logical-variable '*anon)]
-      [(not (pair? lst)) #f]
-      [(null? (cdr lst))
-       (let ([new-car (rebuild-without-anons (car lst))])
-         (and new-car (cons new-car '())))]
-      [else
-        (let ([new-car (rebuild-without-anons (car lst))]
-              [new-cdr (rebuild-without-anons (cdr lst))])
-          (if new-car
-            (cons new-car (or new-cdr (cdr lst)))
-            (and new-cdr (cons (car lst) new-cdr))))])))
+      [(occurs? v w) #f]
+      [else (ext-s v w s)])))
 
+(define occurs?
+  (lambda (x v s)
+    (cond
+      [(var? v) (eq? v x)]
+      [(pair? v)
+       (or (occurs? x (walk (car v) s) s)
+           (occurs? x (walk (cdr v) s) s))]
+      [else #f])))
+
+;;; empty-s, pointer to reify-nonfresh, var-id,
+;;; reify-var, r-f, walk, string->symbol,
+;;; number->string, string-append, symbol->string
+;;; string, ext-s, assq.
+
+(define _ (var '_))
+
+(define unify_
+  (lambda (v w s)
+    (let ((v (walk v s))
+          (w (walk w s)))
+      (cond
+        ((eq? v w) s)
+        ((var? v) (ext-s_ v w s))
+        ((var? w) (ext-s_ w v s))
+        ((and (pair? v) (pair? w))
+         (cond
+           ((unify_ (car v) (car w) s) =>
+            (lambda (s)
+              (unify_ (cdr v) (cdr w) s)))
+           (else #f)))
+        ((or (pair? v) (pair? w)) #f)
+        ((equal? v w) s)
+        (else #f)))))
+
+(define ext-s_
+  (lambda (v w s)
+    (cond
+      [(eq? v _) s]
+      [(eq? w _) s]
+      [(has_ w) (ext-s v (no-anons w) s)]
+      [else (ext-s v w s)])))
+
+(define no-anons
+  (lambda (v)
+    (cond
+      [(pair? v)
+       (cons (no-anons (car v)) (no-anons (cdr v)))]
+      [(eq? v _) (var '_)]
+      [else v])))
+
+(define has_
+  (lambda (v)
+    (cond
+      [(pair? v)
+       (or (has_ (car v)) (has_ (cdr v)))]
+      [else (eq? v _)])))
+
+(define count-cons 0)
 
