@@ -407,6 +407,11 @@
 ; If we locate IN-SUBST in SUBST, we know that everything below the
 ; mark can't possibly contain ID ...
 
+(define rev-append
+  (lambda (ls1 ls2)
+    (cond
+      [(null? ls1) ls2]
+      [else (rev-append (cdr ls1) (cons (car ls1) ls2))])))
 
 (define prune-subst
   (lambda (vars in-subst subst)
@@ -416,7 +421,7 @@
           (cond
             [(null? current) (compose-subst/own-survivors to-subst to-remove clean)]
             [(eq? current in-subst)
-             (compose-subst/own-survivors to-subst to-remove (append clean current))]
+             (compose-subst/own-survivors to-subst to-remove (rev-append clean current))]
             [(memq (commitment->var (car current)) vars)
              (loop (cdr current) (cons (car current) to-remove) clean to-subst)]
             [(relatively-ground? (commitment->term (car current)) vars)
@@ -2771,7 +2776,7 @@
 	(lambda@ (fk subst) subst)
 	initial-fk
 	(unit-subst dummy 'dummy))))
-  '((x.0 . 5) (z.0 . 9) (dummy.0 . dummy)))
+  '((z.0 . 9) (x.0 . 5) (dummy.0 . dummy)))
 
 (test-check 'prune-subst-2
   (concretize
@@ -3229,7 +3234,6 @@
     ((x.0 (succ (succ (succ (succ (succ zero)))))) (y.0 zero))))
 
 (newline)
-
 
 (define-syntax nabla
   (syntax-rules ()
