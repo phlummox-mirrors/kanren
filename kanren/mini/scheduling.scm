@@ -13,17 +13,17 @@
   (lambda (a b)
     (cons H-tag (cons a b))))
 
-; (define-syntax HV                        ; just the identity
-;   (syntax-rules ()
-;     ((HV v) v)))
+(define-syntax HV                        ; just the identity
+  (syntax-rules ()
+    ((HV v) v)))
 
-(define HV-tag (list 'HV-tag)) ; for better error checking
-(define HV
-  (lambda (a)
-    (cons HV-tag a)))
+; (define HV-tag (list 'HV-tag)) ; for better error checking
+; (define HV
+;   (lambda (a)
+;     (cons HV-tag a)))
 
 ; Deconstructor
-'(define-syntax case-H
+(define-syntax case-H
   (syntax-rules ()
     ((case-H e
        ((f x) on-h)
@@ -33,7 +33,7 @@
          (let ((f (cadr val)) (x (cddr val))) on-h)
          (let ((v val)) on-hv))))))
 
-(define-syntax case-H
+'(define-syntax case-H
   (syntax-rules ()
     ((case-H e
        ((f x) on-h)
@@ -579,17 +579,8 @@
   (syntax-rules ()
     ((_ c ...) (ce interleave c ...))))
 
+; just the regular lambda now
 (define-syntax lambda-limited 
   (syntax-rules ()
     ((_ n formals g)                                          
       (lambda formals g))))
-
-(define ll 
-  (lambda (n x g)
-    (lambdag@ (s)
-      (let ((v (walk x s)))
-        (cond
-          ((var? v) (g (ext-s x 1 s)))
-          ((< v n)  (g (ext-s x (+ v 1) s)))
-          (else (fail s)))))))
-
