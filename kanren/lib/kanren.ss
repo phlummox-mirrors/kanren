@@ -5,7 +5,7 @@
     [(_ (x ...) vs body0 body1 ...)
      (call-with-values (lambda () vs) (lambda (x ...) body0 body1 ...))]))
 
-(define-syntax naive-exists
+(define-syntax let-lv
   (syntax-rules ()
     [(_ () body) body]
     [(_ () body0 body1 body2 ...) (begin body0 body1 body2 ...)]
@@ -72,7 +72,7 @@
     [(_ () ant0 ant1 ...)
      (all ant0 ant1 ...)]
     [(_ (id ...) ant0 ant1 ...)
-     (naive-exists (id ...)
+     (let-lv (id ...)
        (lambda@ (sk fk in-subst)
 	 (@ (all ant0 ant1 ...)
             (lambda@ (fk out-subst)
@@ -203,10 +203,10 @@
         (eq? t _)
         (eq? u _))))
 
-(define _ (naive-exists (_) _))
+(define _ (let-lv (_) _))
 
 (test-check 'test-nonrecursive-unify
-  (naive-exists (x y)
+  (let-lv (x y)
     (and
       (equal?
 	(unify x 3 empty-subst)
@@ -429,21 +429,21 @@
 
 (define empty-subst? null?)
 
-(naive-exists (x y)
+(let-lv (x y)
   (test-check 'test-compose-subst-0
     (append (unit-subst x y) (unit-subst y 52))
     `(,(commitment x y) ,(commitment y 52))))
 
 
 (test-check 'test-compose-subst-1
-  (naive-exists (x y)
+  (let-lv (x y)
     (equal?
       (compose-subst (unit-subst x y) (unit-subst y 52))
       `(,(commitment x 52) ,(commitment y 52))))
   #t)
 
 (test-check 'test-compose-subst-2
-  (naive-exists (w x y)
+  (let-lv (w x y)
     (equal?
       (let ([s (compose-subst (unit-subst y w) (unit-subst w 52))])
 	(compose-subst (unit-subst x y) s))
@@ -451,7 +451,7 @@
   #t)
 
 (test-check 'test-compose-subst-3
-  (naive-exists (w x y)
+  (let-lv (w x y)
     (equal?
       (let ([s (compose-subst (unit-subst w 52) (unit-subst y w))])
 	(compose-subst (unit-subst x y) s))
@@ -459,7 +459,7 @@
   #t)
 
 (test-check 'test-compose-subst-4
-  (naive-exists (x y z)
+  (let-lv (x y z)
     (equal?
       (let ([s (compose-subst (unit-subst y z) (unit-subst x y))]
 	    [r (compose-subst
@@ -496,7 +496,7 @@
 
 (define-syntax all/args
   (syntax-rules ()
-    ((_ () ant) ant)
+    ((_ args) (partially-reduce args (sk) sk))
     ((_ args ant) (partially-reduce args () ant))
     ((_ args ant0 ant1 ant2 ...)
       (partially-reduce args (sk)
@@ -534,7 +534,7 @@
     [(_ () ant0 ant1 ...)
      (all ant0 ant1 ...)]
     [(_ (id ...) ant0 ant1 ...)
-     (naive-exists (id ...)
+     (let-lv (id ...)
        (lambda@ (sk fk in-subst)
 	 (@ (all ant0 ant1 ...)
             (lambda@ (fk out-subst)
@@ -551,6 +551,7 @@
 
 (define-syntax all!/args
   (syntax-rules ()
+    ((_ args) (partially-reduce args (sk) sk))
     ((_ args ant) (partially-reduce args () ant))
     ((_ args ant0 ant1 ant2 ...)
       (partially-reduce args (sk fk)
@@ -648,7 +649,7 @@
 ; make extend-relation behave as a CBV function, that is,
 ; evaluate rel-exp early.
 ; Otherwise, things like
-; (define father (extend-relation father xxx))
+; (define father (extend-relation father ...))
 ; loop.
 (define-syntax extend-relation
   (syntax-rules ()
@@ -779,7 +780,7 @@
       (@ antecedent initial-sk initial-fk empty-subst initial-fk))))
 
 (test-check 'test-father-2
-  (naive-exists (x)
+  (let-lv (x)
     (let ([result (query (new-father 'pete x))])
       (and
 	(equal? (caar result) `(,(commitment x 'sal)))
@@ -792,7 +793,7 @@
       ct)))
 
 (test-check 'test-father-3
-  (naive-exists (x)
+  (let-lv (x)
     (equal?
       (let ([answer (query (new-father 'pete x))])
 	(let ([subst (caar answer)])
@@ -802,7 +803,7 @@
   #t)
 
 (test-check 'test-father-4
-  (naive-exists (x y)
+  (let-lv (x y)
     (equal?
       (let ([answer (query (new-father x y))])
 	(let ([subst (caar answer)])
@@ -818,7 +819,7 @@
   (extend-relation (a1 a2) new-father pete/pat))
 
 (test-check 'test-father-5
-  (naive-exists (x)
+  (let-lv (x)
     (and
       (equal?
 	(let ([answer1 (query (newer-father 'pete x))])
@@ -870,7 +871,7 @@
 (define-syntax solve
   (syntax-rules ()
     [(_ n (var ...) ant)
-     (naive-exists (var ...)
+     (let-lv (var ...)
        (map (lambda (subst/cutk)
               (let ([subst (car subst/cutk)])
                 (map (lambda (v)
@@ -1004,6 +1005,7 @@
 
 (define-syntax any
   (syntax-rules ()
+    [(_) fail]
     [(_ ant) ant]
     [(_ ant ...)
       (lambda@ (sk fk subst cutk)
@@ -1585,7 +1587,7 @@
       [else t])))
 
 (test-check 'test-compose-subst-5
-  (naive-exists (x y z)
+  (let-lv (x y z)
     (equal?
       (let ([term `(p ,x ,y (g ,z))])
 	(let ([s (compose-subst (unit-subst y z) (unit-subst x `(f ,y)))]
@@ -1633,7 +1635,7 @@
       [else #f])))
 
 (test-check 'test-unify/pairs
-  (naive-exists (w x y z u)
+  (let-lv (w x y z u)
     (and
       (and
         (equal?
@@ -1684,7 +1686,7 @@
 ;Baader & Snyder
 (test-check 'test-pathological
   (list
-      (naive-exists (x0 x1 y0 y1)
+      (let-lv (x0 x1 y0 y1)
         (pretty-print
           (concretize-subst
             (unify
@@ -1693,7 +1695,7 @@
               empty-subst)))
         (newline))
 
-      (naive-exists (x0 x1 x2 y0 y1 y2)
+      (let-lv (x0 x1 x2 y0 y1 y2)
         (pretty-print
           (concretize-subst
             (unify
@@ -1702,7 +1704,7 @@
               empty-subst)))
         (newline))
 
-      (naive-exists (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
+      (let-lv (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
         (pretty-print
           (concretize-subst
             (unify
@@ -1781,7 +1783,7 @@
       [else (compose-subst subst (unit-subst t-var u))])))
 
 (test-check 'test-unify/pairs-lazy
-  (naive-exists (w x y z u)
+  (let-lv (w x y z u)
     (and
       (and
         (equal?
@@ -1843,7 +1845,7 @@
 
 (test-check 'test-pathological-lazy
   (list
-      (naive-exists (x0 x1 y0 y1)
+      (let-lv (x0 x1 y0 y1)
         (pretty-print
           (concretize-subst
             (unify
@@ -1852,7 +1854,7 @@
               empty-subst)))
         (newline))
 
-      (naive-exists (x0 x1 x2 y0 y1 y2)
+      (let-lv (x0 x1 x2 y0 y1 y2)
         (pretty-print
           (concretize-subst
             (unify
@@ -1861,7 +1863,7 @@
               empty-subst)))
         (newline))
 
-      (naive-exists (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
+      (let-lv (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
         (pretty-print
           (concretize-subst
             (unify
@@ -2041,26 +2043,26 @@
       [else (extend-subst t-var u-value subst)])))
 ;------------------------------------------------------------------------
 (test-check 'test-unify/pairs-oleg1
-  (naive-exists (x y)
+  (let-lv (x y)
     (unify `(,x ,4) `(3 ,x) empty-subst))
   #f)
 
 (test-check 'test-unify/pairs-oleg2
-  (naive-exists (x y)
+  (let-lv (x y)
     (unify `(,x ,x) '(3 4) empty-subst))
   #f)
 
-(naive-exists (x y)
+(let-lv (x y)
   (test-check 'test-unify/pairs-oleg3
     (unify `(,x ,y) '(3 4) empty-subst)
     `(,(commitment y 4) ,(commitment x 3))))
 
-(naive-exists (x y)
+(let-lv (x y)
   (test-check 'test-unify/pairs-oleg4
     (unify `(,x 4) `(3 ,y) empty-subst)
     `(,(commitment y 4) ,(commitment x 3))))
 
-(naive-exists (x y w z)
+(let-lv (x y w z)
   (test-check 'test-unify/pairs-oleg5
     (let ([s (normalize-subst
 	       (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst))])
@@ -2072,7 +2074,7 @@
        ,(commitment y 4)
        ,(commitment x 3))))
 
-(naive-exists (x y w z)
+(let-lv (x y w z)
   (test-check 'test-unify/pairs-oleg6
     (let ([s (normalize-subst
 	       (unify `(,x 4) `(,y ,y) empty-subst))])
@@ -2083,11 +2085,11 @@
     `(,(commitment y 4) ,(commitment x 4))))
 
 (test-check 'test-unify/pairs-oleg7
-  (naive-exists (x y)
+  (let-lv (x y)
     (unify `(,x 4 3) `(,y ,y ,x) empty-subst))
     #f)
 
-(naive-exists (x y w z u)
+(let-lv (x y w z u)
   (test-check 'test-unify/pairs-oleg8
     (let ([s (normalize-subst
 	       (unify
@@ -2103,7 +2105,7 @@
        ,(commitment y 'abc)
        ,(commitment x 8))))
 
-(naive-exists (x y w z u)
+(let-lv (x y w z u)
   (test-check 'test-unify/pairs-oleg8
     (let ([s (normalize-subst
 	       (unify `(p (f a) (g ,x)) `(p ,x ,y) empty-subst))])
@@ -2114,7 +2116,7 @@
     `(,(commitment y '(g (f a)))
        ,(commitment x '(f a)))))
 
-(naive-exists (x y w z u)
+(let-lv (x y w z u)
   (test-check 'test-unify/pairs-oleg10
     (let ([s (normalize-subst
 	       (unify `(p (g ,x) (f a)) `(p ,y ,x) empty-subst))])
@@ -2125,7 +2127,7 @@
     `(,(commitment x '(f a))
        ,(commitment y '(g (f a))))))
 
-(naive-exists (x y w z u)
+(let-lv (x y w z u)
   (test-check 'test-unify/pairs-oleg11
     (let ([s (normalize-subst
 	       (unify
@@ -2140,7 +2142,7 @@
        ,(commitment x '(h (g a)))
        ,(commitment z 'a))))
 
-; (naive-exists (x y w z u)
+; (let-lv (x y w z u)
 ;   (test-check 'test-unify/pairs-oleg12
 ;     (concretize-subst ;;; was #f
 ;       (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
@@ -2157,7 +2159,7 @@
 ;        ,(commitment 'y.0  '(f (f . *d.0)))
 ;        ,(commitment 'x.0  '(f (f . *d.0))))))
 
-; (naive-exists (x y w z u)
+; (let-lv (x y w z u)
 ;   (test-check 'test-unify/pairs-oleg13
 ;     (concretize-subst ;;; was #f
 ;       (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
@@ -2189,7 +2191,7 @@
 ;Baader & Snyder
 (test-check 'test-pathological-oleg
   (list
-    (naive-exists (x0 x1 y0 y1)
+    (let-lv (x0 x1 y0 y1)
       (pretty-print
 	(concretize-subst
 	  (let ([s (unify
@@ -2202,7 +2204,7 @@
 		(subst-vars-recursively vars s))))))
       (newline))
 
-    (naive-exists (x0 x1 x2 y0 y1 y2)
+    (let-lv (x0 x1 x2 y0 y1 y2)
       (pretty-print
 	(concretize-subst
 	  (let ([s (unify
@@ -2215,7 +2217,7 @@
 		(subst-vars-recursively vars s))))))
       (newline))
 
-    (naive-exists (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
+    (let-lv (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
       (pretty-print
 	(concretize-subst
 	  (let ([s (unify
@@ -2449,7 +2451,7 @@
 (define app-rel
   (relation (g t rand rator)
     (to-show g `(app ,rator ,rand) t)
-    (naive-exists (t-rand)
+    (let-lv (t-rand)
       (all! (!- g rator `(--> ,t-rand ,t)) (!- g rand t-rand)))))
 
 (define fix-rel
@@ -2460,7 +2462,7 @@
 (define polylet-rel
   (relation (g v rand body t)
     (to-show g `(let ([,v ,rand]) ,body) t)
-    (naive-exists (t-rand)
+    (let-lv (t-rand)
       (all!
         (!- g rand t-rand)
         (!- `(generic ,v ,t-rand ,g) body t)))))
@@ -2871,7 +2873,7 @@
     (lambda@ (sk fk subst cutk)
       (let ([next (!! fk)]
             [cut (!! cutk)])
-        (naive-exists (grandfather)
+        (let-lv (grandfather)
           (@ (all
                (all next (== grandfather 'sam))
                cut
@@ -3296,7 +3298,7 @@
   (solution (a b c1 c2)
     (typeclass-counter-example-query a b c1 c2)))
 
-(define depth-counter-var (naive-exists (*depth-counter-var*) *depth-counter-var*))
+(define depth-counter-var (let-lv (*depth-counter-var*) *depth-counter-var*))
 
 ; Run the antecedent no more than n times, recursively
 (define with-depth
@@ -3644,7 +3646,7 @@
 
 (define goal
   (lambda (t)
-    (naive-exists (t1)
+    (let-lv (t1)
       (list
 	`(btree ,t)
 	`(myeq ,t  (mirror ,t1))
@@ -3801,7 +3803,7 @@
 ; Note that we wrote
 ;    '(leaf x)
 ; rather than
-;    (naive-exists (x) `(leaf ,x))
+;    (let-lv (x) `(leaf ,x))
 ; because we want to prove that (goal '(leaf x)) holds for _all_ x
 ; rather than for some particular x.
 ;
@@ -4209,4 +4211,4 @@
       (let ((kb1 (goal-fwd kb)))
 	(kb1 '(goal (root t1 t2)))))))
 
-(exit 0)
+;(exit 0)
