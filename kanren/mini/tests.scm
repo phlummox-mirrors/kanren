@@ -1,5 +1,11 @@
 (load "book-s3.scm")
 
+(define errorf
+  (lambda (tag . args)
+    (printf "Failed: ~s: ~%" tag)
+    (apply printf args)))
+
+
 (define once
   (lambda (g)
     (cond1

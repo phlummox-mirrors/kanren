@@ -189,34 +189,6 @@
 
 
 
-; adds x xs l
-;  where l is an associative list
-; prepends an association (x . xs) to l if x does not occur in l
-; If l contains an association (x . xs1), return l with an association
-; (cons x (merge xs xs1)), preserving the order of the associations in l
-
-'(define adds
-  (lambda (x xs l)
-    (cond
-      ((assq x l) =>
-	(lambda (b)
-	  (repl b (cons x (merge xs (cdr b))) l)))
-      (else (cons (cons x xs) l)))))
-
-; merge two lists
-'(define merge
-  (lambda (l1 l2)
-    (cond
-      ((null? l1) l2)
-      ((memq (car l1) l2) (merge (cdr l1) l2))
-      (else (cons (car l1) (merge (cdr l1) l2))))))
-
-; replace the element b with b1 in l, preserving the order
-'(define repl
-  (lambda (b b1 l)
-    (if (eq? b (car l)) (cons b1 (cdr l))
-      (cons (car l) (repl b b1 (cdr l))))))
-
 ; Remove the element e from the list preserving the order
 (define rem
   (lambda (e l)
@@ -255,24 +227,24 @@
 (define reify-nonfresh
   (lambda (x s)
     (let* ((t (walk-strong x s))
-	   (idx (subst-to-inverse-index s))
-	   (fv (free-vars t '()))
-	   (pns
-	     (map 
-	       (lambda (v)
-		 (cons (find-pretty-rep-name v idx (var-id v) idx) v))
-	       ; this reverse is to produce results compatible with the
-	       ; previous versions of the code
-	       (reverse fv)))
+	   ; the reverse is here because free-vars computes the list
+	   ; of free vars in the _reverse_ of the depth-first order
+	   (fv (reverse (free-vars t '())))
+	   (pns (find-pretty-names fv 0))
 	    )
       ;(pretty-print pns)
-      (walk-strong t
-	(disambiguate pns empty-s)))))
+      (walk-strong t pns))))
 
-; Convert ((v . pretty-name) ...)
-; into a subst { v -> pretty-name-indexed }
-; where we add index .0, .1, etc. to disambiguate pretty-names,
-; some of which may be the same strings
+; Given the list of free variables and the initial index,
+; create a subst { v -> pretty-name-indexed }
+; where pretty-name-indexed is the combination of "_" (indicating
+; a free variable) and the index ".0", ".1", etc.
+(define find-pretty-names
+  (lambda (fv index)
+    (if (null? fv) empty-s
+      (ext-s (car fv) (reify-id "_" index)
+	(find-pretty-names (cdr fv) (+ 1 index))))))
+
 (define disambiguate
   (lambda (pns acc)
     (if (null? pns) acc
@@ -344,22 +316,9 @@
 ;          (== z b)
 ;          (== `(,w) r)))
 ; ; In all the cases, the result should be 
-; ((a.0))
+; ((_.0))
 
 
-;;;; reify
-
-;;; Thoughts: reify should be the composition of
-;;; reify/non-fresh with reify/fresh.  reify/non-fresh
-;;; is also known as reify-nonfresh.  reify/fresh was also
-;;; knows as reify.
-
-;;;;; This is the code of reify
-
-'(define reify-fresh
-  (lambda (v)
-    (r-f v '() empty-s
-      (lambda (p* s) (reify-nonfresh v s)))))
 
 (define reify-fresh (lambda (v) v))
 
@@ -378,13 +337,6 @@
            (r-f (walk (cdr v) s) p* s k))))
       (else (k p* s)))))
 
-'(define index
-  (lambda (id p*)
-    (cond
-      ((assq id p*)
-       => (lambda (p)
-            (+ (cdr p) 1)))
-      (else 0))))
 
 (define reify-id      ;;;;; NEW
   (lambda (name-str index)
@@ -400,13 +352,6 @@
     (string->symbol
       (string-append s (string #\.) (number->string index)))))
 
-'(define reify-test
-  (lambda ()
-    (reify-fresh
-      (let ((x (var 'x))
-            (xx (var 'x))
-            (xxx (var 'x)))
-        `(,x 3 ,xx 5 ,xxx ,xxx ,xx ,x)))))
 
 (define unify-check
   (lambda (v w s)
