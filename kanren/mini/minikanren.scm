@@ -1,5 +1,8 @@
-(def-syntax (exists (id ...) ant) (let ([id (logical-variable 'id)] ...) ant))
-(def-syntax (eigen (id ...) ant) (let ([id (gensym)] ...) ant))
+(def-syntax (exists (id ...) ant ant* ...)
+  (let ([id (logical-variable 'id)] ...) (all ant ant* ...)))
+
+(def-syntax (eigen (id ...) ant ant* ...)
+  (let ([id (gensym)] ...) (all ant ant* ...)))
 
 (def-syntax (run-raw (id ...) ant fk subst succeed-expr fail-expr)
   (exists (id ...)
@@ -16,9 +19,9 @@
 	  succeed-expr)))
     fail-expr))
     
-(def-syntax (project (id ...) ant)
+(def-syntax (project (id ...) ant ant* ...)
   (lambda@ (sk fk subst)
-    (project-host (id ...) subst (@ ant sk fk subst))))
+    (project-host (id ...) subst (@ (all ant ant* ...) sk fk subst))))
 
 (def-syntax (== t u)
   (lambda@ (sk fk subst)
