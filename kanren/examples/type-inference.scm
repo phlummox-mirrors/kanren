@@ -97,7 +97,7 @@
 (define generic-base-env
   (relation (g v targ tresult t)
     (to-show `(generic ,v (--> ,targ ,tresult) ,g) v t)
-    (copy-term-kanren `(--> ,targ ,tresult) t)))
+    (copy-term-logical `(--> ,targ ,tresult) t)))
 
 ; logical-assq VAR LST BINDING NEW-LST
 ; if VAR is found in LST, return its binding. NEW-LST would be the same
@@ -120,19 +120,19 @@
     (fact (var new-var) var '() new-var `((,var . ,new-var)))
     ))
 
-(define copy-term-kanren
-  (relation (x y varmap)
-    (to-show x y)
-    (copy-term-kanren-raw x y '() varmap)))
+(define copy-term-logical
+  (relation (head-let input-term output-term)
+    (exists (varmap)
+      (copy-term-logical-raw input-term output-term '() varmap))))
 
-(define copy-term-kanren-raw
+(define copy-term-logical-raw
   (relation (head-let t tnew lst new-lst)
     (exists (th tt)
       (if-only (all!! (instantiated t) (== t `(,th . ,tt)))
 	(exists (th-new tt-new new-lst1)
 	  (all!!
-	    (copy-term-kanren-raw th th-new lst new-lst1)
-	    (copy-term-kanren-raw tt tt-new new-lst1 new-lst)
+	    (copy-term-logical-raw th th-new lst new-lst1)
+	    (copy-term-logical-raw tt tt-new new-lst1 new-lst)
 	    (== tnew `(,th-new . ,tt-new))))
 	(logical-assq t lst tnew new-lst)))))
 
