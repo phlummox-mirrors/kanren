@@ -1,5 +1,4 @@
-(newline)
-(display "Structural Inductive proof with equational theory: mirror") (newline)
+(cout nl "Structural Inductive proof with equational theory: mirror" nl)
 
 ; $Id$
 
@@ -135,8 +134,8 @@
 	  ((myeq-axioms-trees kb) t)
 	)))))
 
-(printf "~%First check the base case, using goal-fwd ~s~%"
-  (query
+(test-check "First check the base case, using goal-fwd"
+  (query (_ subst)
     (let ((kb0
 	    (Y (lambda (kb)
 		 (extend-relation (t) 
@@ -144,12 +143,14 @@
 		   (init-kb-coll kb))))))
       (let ((kb1
 	      (extend-relation (t) (goal-fwd kb0) kb0)))
-	(kb1 '(goal (leaf x))))))) ; note, x is an eigenvariable!
+	(kb1 '(goal (leaf x))))) ; note, x is an eigenvariable!
+     ;(cout (concretize subst) nl)
+    #t)
+  #t)
 
-
-(printf "~%Some preliminary checks, using goal-rev ~s~%"
 ; (goal t2) => (btree t2)
-  (query
+(test-check "Some preliminary checks, using goal-rev"
+  (query (_ subst)
     (let ((kb
 	    (Y
 	      (lambda (kb)
@@ -158,11 +159,14 @@
 		  (goal-rev kb)
 		  (fact () '(goal t1))
 		  (fact () '(goal t2)))))))
-      (kb '(btree t2)))))
+      (kb '(btree t2)))
+     ;(cout (concretize subst) nl)
+    #t)
+  #t)
 
-(printf "~%Another check, using goal-rev ~s~%"
-  (query
+(test-check "Another check, using goal-rev"
 	;(goal t1), (goal t2) => (btree (root t1 t2))
+  (query (_ subst)
     (let ((kb
 	    (Y
 	      (lambda (kb)
@@ -172,7 +176,10 @@
 		  (mirror-axiom-eq-2 kb)
 		  (fact () '(goal t1))
 		  (fact () '(goal t2)))))))
-      (kb '(btree (root t1 t2))))))
+      (kb '(btree (root t1 t2))))
+    (cout (concretize subst) nl)
+    #t)
+  #t)
 
 '(printf "~%Check particulars of the inductive case, using goal-rev, goal-fwd ~s~%"
   (let ((kb
@@ -191,20 +198,18 @@
       )))
 
 (test-check "Check the inductive case, using goal-rev, goal-fwd"
- (let ((result
-	 (concretize
-	   (query
-	     (let ((kb
-		     (Y
-		       (lambda (kb)
-			 (extend-relation (t)
-			   (init-kb-coll kb)
-			   (fact () '(goal t1))
-			   (fact () '(goal t2))
-			   (mirror-axiom-eq-2 kb)
-			   (goal-rev kb))))))
-	       (let ((kb1 (goal-fwd kb)))
-		 (kb1 '(goal (root t1 t2)))))))))
-   (display result) (newline)
-   (not (null? result)))
+  (query (_ subst)
+    (let ((kb
+	    (Y
+	      (lambda (kb)
+		(extend-relation (t)
+		  (init-kb-coll kb)
+		  (fact () '(goal t1))
+		  (fact () '(goal t2))
+		  (mirror-axiom-eq-2 kb)
+		  (goal-rev kb))))))
+      (let ((kb1 (goal-fwd kb)))
+	(kb1 '(goal (root t1 t2)))))
+    (cout (concretize subst) nl)
+    #t)
   #t)

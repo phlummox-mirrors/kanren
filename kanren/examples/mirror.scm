@@ -1,4 +1,4 @@
-(display "Structural Inductive proof: mirror") (newline)
+(cout nl "Structural Inductive proof: mirror" nl)
 ;
 ; $Id$
 
@@ -254,22 +254,22 @@
 ; as follows.
 ; ?- goal(leaf(X),C),verify(C,[]).
 ; Here how it looks in our system:
-(printf "~%First check the base case ~s~%"
-  (concretize
-   (query
+(test-check "First check the base case"
+  (query (_ subst)
     (verify-goal (goal '(leaf x))
-      (extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb)))))
+      (extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb))
+    (concretize subst))
+  '((val.0 . x) (t1.0 leaf val.1) (val.1 . x) (val.2 . x)))
 
-
-(printf "~%First check the base case, using goal-fwd ~s~%"
-  (concretize
-   (query
+(test-check "Check the base case, using goal-fwd"
+  (query (_ subst)
     (let ((kb0
 	    (extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb)))
       (let ((kb1
 	      (extend-relation (t) (goal-fwd kb0) kb0)))
-	(kb1 '(goal (leaf x)))))))) ; note, x is an eigenvariable!
-
+	(kb1 '(goal (leaf x))))) ; note, x is an eigenvariable!
+    (concretize subst))
+  '((val.0 . x) (t1.0 leaf val.1) (val.1 . x) (val.2 . x) (t.0 leaf x)))
 
 ; that is, we obtain the list of subgoals to verify '(leaf x)
 ; by invoking the function 'goal'.
@@ -351,9 +351,8 @@
 ;	btree(root(T1,T2)) :- btree(T1),btree(T2).
 ; which is recursive.
 
-(printf "~%Check the inductive case ~s~%"
- (concretize
-  (query
+(test-check "Check the inductive case"
+  (query (_ subst)
     (verify-goal (goal '(root t1 t2))
       (let ((kb0
 	      (extend-kb (goal 't1) 
@@ -364,7 +363,9 @@
 	    (extend-relation (t)
 	      kb0
 	      (btree kb)
-	      (mirror-axiom-eq-2 kb)))))))))
+	      (mirror-axiom-eq-2 kb))))))
+    (cout (concretize subst) nl) #t)
+  #t)
 
 (printf "~%Check particulars of the inductive case, using goal-rev, goal-fwd ~s~%"
   (let ((kb
@@ -382,22 +383,19 @@
       (solve 1 (x) (kb `(myeq ,x (mirror (root t1 t2))))))))
 
 (test-check "Check the inductive case, using goal-rev, goal-fwd"
- (let ((result
-	 (concretize
-	   (query
-	     (let ((kb
-		     (Y
-		       (lambda (kb)
-			 (extend-relation (t)
-			   (btree kb)
-			   (fact () '(goal t1))
-			   (fact () '(goal t2))
-			   (mirror-axiom-eq-2 kb)
-			   (goal-rev kb))))))
-	       (let ((kb1 (goal-fwd kb)))
-		 (kb1 '(goal (root t1 t2)))))))))
-   (display result) (newline)
-   (not (null? result)))
+  (query (_ subst)
+    (let ((kb
+	    (Y
+	      (lambda (kb)
+		(extend-relation (t)
+		  (btree kb)
+		  (fact () '(goal t1))
+		  (fact () '(goal t2))
+		  (mirror-axiom-eq-2 kb)
+		  (goal-rev kb))))))
+      (let ((kb1 (goal-fwd kb)))
+	(kb1 '(goal (root t1 t2)))))
+    (cout (concretize subst) nl) #t)
   #t)
 
 

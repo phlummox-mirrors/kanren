@@ -1464,19 +1464,35 @@
   #t)
 
 
-(define query
-  (let ([initial-fk (lambda () '())]
-        [initial-sk (lambda@ (fk subst) (cons subst fk))])
-    (lambda (antecedent)
-      (@ antecedent initial-sk initial-fk empty-subst))))
+;	query (redo-k subst id ...) A SE ... -> result or #f
+; The macro 'query' runs the antecedent A in the empty
+; initial substitution, and reifies the resulting
+; answer: the substitution and the redo-continuation bound
+; to fresh variables with the names supplied by the user.
+; The substitution and the redo continuation can then be used
+; by Scheme expressions SE ...
+; Before running the antecedent, the macro creates logical variables
+; id ... for use in A and SE ...
+; If the antecedent fails, '() is returned and SE ... are not evaluated.
+; Note the similarity with shift/reset-based programming
+; where the immediate return signifies "failure" and the invocation
+; of the continuation a "success"
+; Returning '() on failure makes it easy to create the list of answers
+
+(define-syntax query
+  (syntax-rules ()
+    ((_ (redo-k subst id ...) A SE ...)
+      (let-lv (id ...)
+	(@ A
+	  (lambda@ (redo-k subst) SE ...)
+	  (lambda () '())
+	  empty-subst)))))
 
 (test-check 'test-father-2
-  (let-lv (x)
-    (let ([result (query (new-father 'rob x))])
-      (and
-	(equal? (car result) `(,(commitment x 'sal)))
-	(equal? ((cdr result)) '()))))
-  #t)
+  (query (redo-k subst x)
+    (new-father 'rob x)
+    (list (equal? (car subst) (commitment x 'sal)) (redo-k)))
+  '(#t ()))
 
 (define concretize
   (lambda (t)
@@ -1504,17 +1520,15 @@
 	 (concretize-subst/vars/env subst env x1 ...)))]))
 
 (test-check 'test-father-3
-  (let-lv (x)
-    (let ([answer (query (new-father 'rob x))])
-      (let ([subst (car answer)])
-        (concretize-subst/vars subst x))))
+  (query (_ subst x)
+    (new-father 'rob x)
+    (concretize-subst/vars subst x))
   '((x.0 sal)))
 
 (test-check 'test-father-4
-  (let-lv (x y)
-    (let ([answer (query (new-father x y))])
-      (let ([subst (car answer)])
-        (concretize-subst/vars subst x y))))
+  (query (_ subst x y)
+    (new-father x y)
+    (concretize-subst/vars subst x y))
   '((x.0 jon) (y.0 sam)))
 
 (define rob/pat
@@ -1525,37 +1539,13 @@
   (extend-relation (a1 a2) new-father rob/pat))
 
 (test-check 'test-father-5
-  (let-lv (x)
-    (and
-      (equal?
-	(let ([answer1 (query (newer-father 'rob x))])
-	  (pretty-print answer1)
-	  (let ([subst (car answer1)])
-            (list
-              (concretize-subst/vars subst x)
-              (let ([answer2 ((cdr answer1))])
-                (pretty-print answer2)
-                (let ([subst (car answer2)])
-                  (concretize-subst/vars subst x))))))
-	'(((x.0 sal)) ((x.0 pat))))
-      (equal?
-	(let ([answer1 (query (newer-father 'rob x))])
-	  (let ([subst (car answer1)])
-	    (cons
-              (concretize-subst/vars subst x)
-	      (let ([answer2 ((cdr answer1))])
-		(let ([subst (car answer2)])
-		  (cons
-                    (concretize-subst/vars subst x)
-		    (let ([answer3 ((cdr answer2))])
-		      (if (null? answer3)
-                          '()
-                          (let ([subst (car answer3)])
-                            (cons
-                              (concretize-subst/vars subst x)
-                              '()))))))))))
-        '(((x.0 sal)) ((x.0 pat))))))
-  #t)
+  (query (redok subst x)
+    (newer-father 'rob x)
+    (pretty-print subst)
+    (cons
+      (concretize-subst/vars subst x)
+      (redok)))
+  '(((x.0 sal)) ((x.0 pat))))
 
 (define stream-prefix
   (lambda (n strm)
@@ -1572,11 +1562,11 @@
 (define-syntax solve
   (syntax-rules ()
     [(_ n (var0 ...) ant)
-     (let-lv (var0 ...)
-       (map (lambda (subst)
-	      (concretize-subst/vars subst var0 ...))
-         (if (<= n 0) '()
-           (stream-prefix (- n 1) (query ant)))))]))
+      (if (<= n 0) '()
+	(stream-prefix (- n 1)
+	  (query (redo-k subst var0 ...)
+	    ant
+	    (cons (concretize-subst/vars subst var0 ...) redo-k))))]))
 
 (define sam/rob
   (relation ()
@@ -1596,7 +1586,6 @@
         ((x.0 rob) (y.0 pat))
         ((x.0 sam) (y.0 rob)))))
   #t)
-
 
 ; (define-syntax binary-intersect
 ;   (syntax-rules ()
