@@ -1,39 +1,40 @@
 ;	     Pure, declarative, and constructive binary arithmetics
 ;
-; aka: Addition, Multiplication, Division with remainder 
-; as sound and complete, pure and declarative relations that can be
-; used in any mode whatsoever and that recursively enumerate their domains.
-; The relations define arithmetics over base-2 non-negative numerals
-; of *arbitrary* size.
+; aka: Addition, Multiplication, Division with the remainder, Discrete
+; Logarithm as sound and complete, pure and declarative relations that
+; can be used in any mode whatsoever and that recursively enumerate
+; their domains.  The relations define arithmetics over base-2
+; non-negative numerals of *arbitrary* size.
 ;
-; aka: division as relation.
-; The function divo below is a KANREN relation between four binary numerals
-; n, m, q, and r such that the following holds
-;	exists r. 0<=r<m, n = q*m + r
+; In particular, we define the function divo such that (divo n m q r) 
+; succeeds if and only if n = m*q + r and 0<=r<m. We run the following
+; Kanren queries:
+;   -- (divo (build 1) (build 0) q _)
+;	It fails and does not try to enumerate all natural numbers.
+;   -- (divo (build 5) M (build 1) _)
+;	It finds all such M that divide (perhaps unevenly)
+;       5 with the quotient of 1. The answer is the set (5 4 3).
+; (divo (build 5) m (build 7) _) simply fails and does not loop forever.
+; We can use our (**o X Y Z) relation either to multiply two numbers
+; X and Y -- or to find all factorizations of Z. See the test below.
+; Furthermore, we can evaluate (++o X 1 Y) and get the stream
+; of answers, among which is ((0 _.0 . _.1) (1 _.0 . _.1))
+; which essentially says that 2*x and 2*x +1 are successors, for all x>0!
 ;
 ; The relation 'divo' encompasses all four operations of arithmetics:
 ; we can use (divo x y z zero) to multiply and divide and
 ; (divo x y one r) to add and subtract.
 ;
+; Our logo relation has the property that (logo n b q r) succeeds if
+; and only if n = b^q + r where 0 <= r and q is the largest such integer.
+; We can use logo to exponentiate, to find discrete logarithms, or
+; to find the logarithm base.
+;
 ; See pure-arithm.scm in this directory for Peano arithmetics.
-
-; The arithmetic relations possess interesting properties.
-; For example, given the relation (divo N M Q R) which holds
-; iff N = M*Q + R and 0<=R<M, we can try:
-;   -- (divo 1 0 Q _). It fails and does not try to enumerate
-;      all natural numbers.
-;   -- (divo 5 M 1 _). It finds all such M that divide (perhaps unevenly)
-;      5 with the quotient of 1. The answer is the set (5 4 3).
-; Again, (divo 5 M 7 _) simply fails and does not loop forever.
-; We can use the (**o X Y Z) relation either to multiply two numbers
-; X and Y -- or to find all factorizations of Z. See the test below.
-; Furthermore, we can try to evaluate (++o X 1 Y) and get the stream
-; of answers, among which is ((0 _.0 . _.1) (1 _.0 . _.1))
-; which essentially says that 2*x and 2*x +1 are successors, for all x>0!
 ;
 ; We give two implementations of addition and multiplication
 ; relations, `++o' and `**o'. Both versions have the properties of
-; soundness and nealy refutational completeness. The first version of `++o'
+; soundness and neatly refutational completeness. The first version of `++o'
 ; is faster, but it does not always recursively enumerate its domain
 ; if that domain is infinite.  This is the case when, e.g., (**o x y
 ; z) is invoked when all three x, y, and z are uninstantiated
@@ -595,7 +596,7 @@
 ; 	         (--o n r `(0 . ,p))))
 
 
-; A faster and more refutationally complete divo algorithm
+; A faster and a more refutationally complete divo algorithm
 ; Again, divo n m q r 
 ; holds iff n = m*q + r
 ; Let l be the bit-length of r (if r=0, l=0).
@@ -627,13 +628,15 @@
 ; Thus our division algorithm is recursive. On each stage we determine at
 ; least one bit of the quotient (if r=0, l=0 and q2 is either 0 or 1),
 ; in finite time.
+; Chung-chieh Shan has pointed out that the present algorithm is
+; akin to the elementary school long-division algorithm, only
+; done right-to-left.
 
 (define divo
   (relation (head-let n m q r)
     (any-interleave
-	; m has more digits than n: q=0,n=r
       (all (== r n) (== q '()) (<o n m)) ; if n < m, then q=0, n=r
-      ; n is at least m and has the same number of digits than m
+      ; n is at least m and has the same number of digits as m
       (all (== q '(1)) (=ol n m) (++o r m n) (<o r m))
       (all-interleave
 	(<ol m n)			; n has more digits than m
@@ -777,7 +780,7 @@
   (relation (head-let n b q r)
     (any-interleave
       (all (== n '(1)) (pos b) (== q '()) (== r '())) ; 1 = b^0 + 0, b >0
-      (all (== q '())  (<o n b)  (++o r '(1) n)) ; n = b^0 + (n-1)
+      (all (== q '())  (<o n b) (pos r) (++o r '(1) n)) ; n = b^0 + (n-1)
 	; n = b + r, n and b the same sz
       (all (== q '(1)) (gt1 b) (=ol n b) (++o r b n))
       (all (== b '(1)) (pos q) (++o r '(1) n))  ; n = 1^q + (n-1), q>0
@@ -1290,15 +1293,12 @@
   (solve 10 (q r) (logo (build 15) (build 16) q r))
   '(((q.0 ()) (r.0 (0 1 1 1)))))
 
+
 (test-check 'logo-15--3
   (solve 10 (b r) (logo (build 15) b (build 3) r))
   '(((b.0 (1)) (r.0 (0 1 1 1)))  ; 15 = 1^3 + 14
     ((b.0 ()) (r.0 (1 1 1 1)))   ; 15 = 0^3 + 15
     ((b.0 (0 1)) (r.0 (1 1 1))))) ; 15 = 2^3 + 7
-
-(test-check 'logo-15--3-1
-  (solve 10 (q) (logo q '(1) (build 2) '()))
-  '(((q.0 (1)))))
 
 (test-check 'logo-32--4
   (solve 10 (b r) (logo (build 32) b (build 4) r))
@@ -1309,6 +1309,11 @@
   '(((b.0 (1)) (r.0 (0 0 0 0 0 1)))
     ((b.0 ()) (r.0 (1 0 0 0 0 1)))
     ((b.0 (0 1)) (r.0 (1)))))
+
+
+(test-check 'logo-1-2
+  (solve 10 (n) (logo n '(1) (build 2) '()))
+  '(((n.0 (1)))))
 
 (test-check 'logo-2-5
   (solve 10 (n) (logo n (build 2) (build 5) '(1)))
@@ -1328,12 +1333,12 @@
     ((n.0 (0 1)) (q.0 ()) (r.0 (1)))
     ((n.0 (1 1)) (q.0 (1)) (r.0 ()))
     ((n.0 (0 0 1)) (q.0 (1)) (r.0 (1)))
-    ((n.0 (1)) (q.0 ()) (r.0 ()))
     ((n.0 (0 0 0 1)) (q.0 (1)) (r.0 (1 0 1)))
     ((n.0 (1 0 1)) (q.0 (1)) (r.0 (0 1)))
     ((n.0 (1 1 1)) (q.0 (1)) (r.0 (0 0 1)))
     ((n.0 (0 1 1)) (q.0 (1)) (r.0 (1 1)))
-    ((n.0 (0 0 0 0 1)) (q.0 (0 1)) (r.0 (1 1 1))))
+    ((n.0 (0 0 0 0 1)) (q.0 (0 1)) (r.0 (1 1 1)))
+    ((n.0 (1 0 0 0 1)) (q.0 (0 1)) (r.0 (0 0 0 1))))
 )
 
 (test-check 'powers-of-exp-3
