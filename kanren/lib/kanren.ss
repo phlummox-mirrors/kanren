@@ -1092,7 +1092,7 @@
     (solve 1 (no-grandma-grandpa 'polly x)))
   '())
 
-(define-syntax let-inject
+(define-syntax let*-inject
   (syntax-rules ()
     ((_ ([t (var ...) exp] ...) body ...)
      (lambda@ (sk fk subst)
@@ -1101,7 +1101,7 @@
 	      (all body ...)))
           sk fk subst)))))
 
-(define-syntax let-inject/no-check
+(define-syntax let*-inject/no-check
   (syntax-rules ()
     ((_ ([t (var ...) exp] ...) body ...)
      (lambda@ (sk fk subst)
@@ -1121,13 +1121,13 @@
 (define-syntax predicate
   (syntax-rules ()
     [(_ (var ...) (p u ...))
-     (let-inject ([res (var ...) (not (p u ...))])
+     (let*-inject ([res (var ...) (not (p u ...))])
        (== res #f))]))
 
 (define-syntax predicate/no-check
   (syntax-rules ()
     [(_ (var ...) (p u ...))
-     (let-inject/no-check ([res (var ...) (not (p u ...))])
+     (let*-inject/no-check ([res (var ...) (not (p u ...))])
        (== res #f))]))
 
 (define-syntax pred-call/no-check
@@ -1214,7 +1214,7 @@
 (define test1
   (lambda (x)
     (any (predicate () (< 4 5))
-      (let-inject ([x^ () (< 6 7)])
+      (let*-inject ([x^ () (< 6 7)])
         (== x x^)))))
 
 ;;;; Here is the definition of concretize.
@@ -1234,7 +1234,7 @@
 (define test2
   (lambda (x)
     (any (predicate () (< 5 4))
-      (let-inject ([x^ () (< 6 7)])
+      (let*-inject ([x^ () (< 6 7)])
         (== x x^)))))
 
 (test-check 'test-test2
@@ -1245,9 +1245,9 @@
 (define test3
   (lambda (x y)
     (any
-      (let-inject ([x^ () (< 5 4)])
+      (let*-inject ([x^ () (< 5 4)])
         (== x x^))
-      (let-inject ([y^ () (< 6 7)])
+      (let*-inject ([y^ () (< 6 7)])
         (== y y^)))))
 
 (test-check 'test-test3
@@ -1445,7 +1445,7 @@
              (to-show n a b c)
              (all
                (predicate (n) (positive? n))
-               (let-inject ([m (n) (- n 1)])
+               (let*-inject ([m (n) (- n 1)])
                  (move m a c b)
                  (predicate (a b) (printf "Move a disk from ~s to ~s~n" a b))
                  (move m c b a)))))])
@@ -1612,10 +1612,11 @@
   (concretize
     (let ([j (relation (x w z)
 	       (to-show z)
-	       (let-inject ([x () 4]
-                            [w () 3])
-                 (let-inject ([z^ (x w) (cons x w)])
-                   (== z^ z))))])
+	       (let*-inject/no-check
+                 ([x () 4]
+                  [w () 3]
+                  [z^ (x w) (cons x w)])
+                 (== z^ z)))])
       (exists (q) (solve 4 (j q)))))
   '(((4 . 3))))
 
@@ -1630,13 +1631,12 @@
                  cut)
                (relation (n a b c)
                  (to-show n a b c)
-                 (exists (m)
-                   (all
-                     (predicate (n) (positive? n))
-                     (let-inject ([m (n) (- n 1)])
-                       (move m a c b)
-                       (predicate (a b) (push-step a b))
-                       (move m c b a))))))])
+                 (all
+                   (predicate (n) (positive? n))
+                   (let*-inject ([m (n) (- n 1)])
+                     (move m a c b)
+                     (predicate (a b) (push-step a b))
+                     (move m c b a)))))])
         (relation (n path)
           (to-show n path)
           (begin
@@ -1725,10 +1725,11 @@
   (concretize
     (let ([j (relation (x w z)
 	       (to-show z)
-	       (let-inject ([x () 4]
-                            [w () 3])
-                 (let-inject ([z^ (x w) (cons x w)])
-                   (== z z^))))])
+	       (let*-inject/no-check
+                 ([x () 4]
+                  [w () 3]
+                  [z^ (x w) (cons x w)])
+                 (== z z^)))])
       (exists (q) (solve 4 (j q)))))
   '(((4 . 3))))
 
@@ -2000,12 +2001,11 @@
   (concretize
     (let ([j (relation (x w z)
 	       (to-show z)
-	       (let-inject
+	       (let*-inject/no-check
                  ([x () 4]
-                  [w () 3])
-                 (let-inject
-                   ([z^ (x w) (cons x w)])
-                   (== z z^))))])
+                  [w () 3]
+                  [z^ (x w) (cons x w)])
+                 (== z z^)))])
       (exists (q) (solve 4 (j q)))))
   '(((4 . 3))))
           
@@ -2192,7 +2192,7 @@
 (define generic-base-env
   (relation (g v targ tresult t)
     (to-show `(generic ,v (--> ,targ ,tresult) ,g) v t)
-    (let-inject/no-check ([t^ (targ tresult) (instantiate `(--> ,targ ,tresult))])
+    (let*-inject/no-check ([t^ (targ tresult) (instantiate `(--> ,targ ,tresult))])
       (== t t^))))
 
 (define generic-recursive-env
@@ -2617,21 +2617,21 @@
       (relation (x y z)
         (to-show x y z)
         (all (fails (instantiated z))
-          (let-inject ([z^ (x y) (op x y)])
+          (let*-inject ([z^ (x y) (op x y)])
             (== z z^))))
       (relation (x y z)
         (to-show x y z)
         (all (fails (instantiated y))
-          (let-inject ([y^ (z x) (inverted-op z x)])
+          (let*-inject ([y^ (z x) (inverted-op z x)])
             (== y y^))))
       (relation (x y z)
         (to-show x y z)
         (all (fails (instantiated x))
-          (let-inject ([x^ (z y) (inverted-op z y)])
+          (let*-inject ([x^ (z y) (inverted-op z y)])
             (== x x^))))
       (relation (x y z)
         (to-show x y z)
-        (let-inject ([z^ (x y) (op x y)])
+        (let*-inject ([z^ (x y) (op x y)])
           (== z z^))))))
 
 (define ++ (invertible-binary-function->ternary-relation + -))
@@ -2669,18 +2669,18 @@
       (relation (x y)
         (to-show x y)
         (all (fails (instantiated y))
-          (let-inject ([y^ (x) (op x)])
+          (let*-inject ([y^ (x) (op x)])
             (== y y^))))
       (relation (x y)
         (to-show x y)
         (all (fails (instantiated x))
-          (let-inject ([x^ (y) (inverted-op y)])
+          (let*-inject ([x^ (y) (inverted-op y)])
             (== x x^))))
       (relation (x y)
         (to-show x y)
         (begin
           (pretty-print "Third rule")
-          (let-inject ([y^ (x) (op x)])
+          (let*-inject ([y^ (x) (op x)])
             (== y y^)))))))
 
 (define name
@@ -3054,11 +3054,11 @@
 (define bench
   (relation (count)
     (to-show count)
-    (let-inject ([t0 () (get_cpu_time)])
+    (let*-inject ([t0 () (get_cpu_time)])
       (dodummy count)
-      (let-inject ([t1 () (get_cpu_time)])
+      (let*-inject ([t1 () (get_cpu_time)])
         (dobench count)
-        (let-inject ([t2 () (get_cpu_time)])
+        (let*-inject ([t2 () (get_cpu_time)])
           (report count t0 t1 t2))))))
 
 (define dobench
@@ -3094,20 +3094,20 @@
       (to-show n)
       (all
         (predicate (n) (> n 1))
-        (let-inject ([n1 (n) (- n 1)])
+        (let*-inject ([n1 (n) (- n 1)])
           (repeat n1))))))
 
 (define report
   (relation (count t0 t1 t2)
     (to-show count t0 t1 t2)
     (exists (lips units)
-      (let-inject ([time1 (t0 t1) (- t1 t0)]
-                   [time2 (t1 t2) (- t2 t1)])
-        (let-inject ([time (time1 time2) (- time2 time1)])
-          (calculate_lips count time lips units)
-          (predicate (lips count) (printf "~n~s lips for ~s" lips count))
-          (predicate (time units)
-            (printf " Iterations taking ~s  ~s ( ~s )~n " time units time)))))))
+      (let*-inject ([time1 (t0 t1) (- t1 t0)]
+                    [time2 (t1 t2) (- t2 t1)]
+                    [time (time1 time2) (- time2 time1)])
+        (calculate_lips count time lips units)
+        (predicate (lips count) (printf "~n~s lips for ~s" lips count))
+        (predicate (time units)
+          (printf " Iterations taking ~s  ~s ( ~s )~n " time units time))))))
 
 (define calculate_lips
   (extend-relation (a1 a2 a3 a4)
@@ -3118,10 +3118,10 @@
       (== lips 0))
     (relation (count time lips)
       (to-show count time lips 'msecs)
-      (let-inject ([t1 (count) (* 496 count 1000)]
-                   [t2 (time) (+ time 0.0)])
-        (let-inject ([lips^ (t1 t2) (/ t1 t2)])
-          (== lips lips^))))))
+      (let*-inject ([t1 (count) (* 496 count 1000)]
+                    [t2 (time) (+ time 0.0)]
+                    [lips^ (t1 t2) (/ t1 t2)])
+        (== lips lips^)))))
 
 ;(test-lots)
 
@@ -3818,5 +3818,4 @@
 ; phase of the proof checks.
 
 ;(exit 0)
-
 
