@@ -1421,7 +1421,8 @@
      (let-lv (var0 ...)
        (map (lambda (subst)
 	      (concretize-subst/vars subst var0 ...))
-         (stream-prefix (- n 1) (query ant))))]))
+         (if (= n 0) '()
+           (stream-prefix (- n 1) (query ant)))))]))
 
 (define sam/rob
   (relation ()
