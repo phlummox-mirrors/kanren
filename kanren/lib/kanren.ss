@@ -496,12 +496,9 @@
        (extend-relation (id ...) rel-exp1 rel-exp2 ...))]))
 
 (define-syntax all
-  (syntax-rules (all all! any)
+  (syntax-rules ()
     [(_) (lambda (sk) sk)]
     [(_ ant) ant]
-    [(_ ant (any)) ant]
-    [(_ ant (all)) ant]
-    [(_ ant (all!)) ant]
     [(_ ant0 ant1 ant2 ...)
      (lambda@ (sk)
        (ant0 (splice-in-ants/all sk ant1 ant2 ...)))]))
@@ -513,12 +510,9 @@
      (ant0 (splice-in-ants/all sk ant1 ...))]))
 
 (define-syntax all!
-  (syntax-rules (all any)
+  (syntax-rules ()
     [(_) (lambda (sk) sk)]
     [(_ ant) ant]
-    [(_ ant (any)) ant]
-    [(_ ant (all)) ant]
-    [(_ ant (all!)) ant]
     [(_ ant0 ant1 ant2 ...)
      (lambda@ (sk fk)
        (@ ant0 (splice-in-ants/all! sk fk ant1 ant2 ...) fk))]))
@@ -3152,7 +3146,7 @@
         [(assq depth-counter-var subst)
          => (lambda (cmt)
               (let ([counter (commitment->term cmt)])
-                (printf "~%counter ~d" counter)
+                (printf "counter ~d~n" counter)
                 (if (= counter limit)
                   (fk)
                   (let ([s (extend-subst depth-counter-var (+ counter 1) subst)])
@@ -3857,3 +3851,202 @@
        (japanese parliaments coffee zebra green)))))
 
 
+
+; mirror with the equational theory
+
+(define myeq-axioms
+  (lambda (kb)
+    (extend-relation (t)
+      (fact (val) `(myeq ,val ,val)) ; reflexivity
+      (relation (a b)
+	(to-show `(myeq ,a ,b))		; symmetry
+	(predicate/no-check (a b) (printf "symmetry: ~a ~a ~n" a b))
+	(kb `(myeq ,b ,a)))
+      (relation (a b)			; transitivity
+	(to-show `(myeq ,a ,b))
+	(exists (c)
+	  (kb `(myeq ,a ,c))
+	  (kb `(myeq ,c ,b))))
+      )))
+
+(define myeq-axioms-trees		; equational theory of trees
+  (lambda (kb)				; equality commutes with root
+    (extend-relation (t)
+      (relation (a b c d)
+	(to-show `(myeq (root ,a ,b) (root ,c ,d)))
+	(predicate/no-check (a b) (printf "trees: ~a ~a ~a ~a ~n" a b c d))
+	(kb `(myeq ,a ,c))
+	(kb `(myeq ,b ,d))))))
+  
+; equality on leaves follows from the reflexivity of equality
+
+(define myeq-axioms-mirror		; equational theory of mirror
+  (lambda (kb)				; equality commutes with root
+    (extend-relation (t)
+      (relation (a b)
+	(to-show `(myeq (mirror ,a) ,b))
+	(predicate/no-check (a b) (printf "mirror: ~a ~a~n" a b))
+	(exists (c)
+	  (kb `(myeq ,b (mirror ,c)))
+	  (kb `(myeq ,a ,c)))))))
+ 
+; The second axiom
+; In Athena:
+; (define mirror-axiom-eq-2
+;   (forall ?t1 ?t2
+;     (= (mirror (root ?t1 ?t2))
+;       (root (mirror ?t2) (mirror ?t1)))))
+
+
+(define mirror-axiom-eq-2
+  (lambda (kb)
+    (fact (t1 t2) `(myeq (root ,t1 ,t2) (root (mirror ,t2) (mirror ,t1))))))
+
+(define mirror-axiom-eq-2
+  (lambda (kb)
+    (relation (t1 t2) 
+      (to-show `(myeq (mirror (root ,t1 ,t2)) (root (mirror ,t2) (mirror ,t1))))
+      (predicate/no-check (t1 t2)
+	(printf "mirror ax2: ~a~n"
+	  `(myeq (root ,t1 ,t2) (root (mirror ,t2) (mirror ,t1))))))))
+
+; Define the goal
+; In Athena:
+;  (define (goal t)
+;     (= (mirror (mirror t)) t))
+
+(define goal
+  (lambda (t)
+    (list 
+      `(btree ,t)
+      `(myeq (mirror (mirror ,t)) ,t))))
+
+(define goal-fwd
+  (lambda (kb)
+    (relation (t)
+      (to-show `(goal ,t))
+      (kb `(btree ,t))
+      (kb `(myeq (mirror (mirror ,t)) ,t)))))
+
+(define goal-rev
+  (lambda (kb)
+    (extend-relation (t)
+      (relation (t)			; (goal t) => (btree t)
+	(to-show `(btree ,t))
+	(kb `(goal ,t)))
+      (relation (t)		; (goal t) => (myeq (mirror (mirror t)) t)
+	(to-show `(myeq (mirror (mirror ,t)) ,t))
+	(kb `(goal ,t))))))
+
+; (by-induction-on ?t (goal ?t)
+;   ((leaf x) (!pf (goal (leaf x)) [mirror-axiom-1]))
+;   ((root t1 t2) 
+;     (!pf (goal (root t1 t2)) [(goal t1) (goal t2)  mirror-axiom-2])))
+
+(define with-depth
+  (lambda (limit ant)
+    (lambda@ (sk fk subst cutk)
+     ;(printf "here: ~a ~a ~a ~a~n" sk fk subst cutk)
+      (cond
+        [(assq depth-counter-var subst)
+         => (lambda (cmt)
+              (let ([counter (commitment->term cmt)])
+                (printf "counter ~d~n" counter)
+                (if (= counter limit)
+                  (fk)
+                  (let ([s (extend-subst depth-counter-var (+ counter 1) subst)])
+                    (@ ant sk fk s cutk)))))]
+        [else
+          (let ([s (extend-subst depth-counter-var 0 subst)])
+            (@ ant sk fk s cutk))]))))
+
+'(define mirror-axiom-eq-1
+  (lambda (kb)
+    (relation (val)
+      (to-show `(myeq (leaf ,val) (mirror (leaf ,val))))
+      (predicate/no-check () (printf "mirror-axiom-eq-1: ~a~n" val)))))
+
+; The initial assumptions: just the btree
+;(define init-kb (Y btree))
+(define init-kb-coll
+  (lambda (kb)
+    (lambda (t)
+      (with-depth 5
+	(any
+	  ((btree kb) t)
+	  ((myeq-axioms kb) t)
+	  ((myeq-axioms-mirror kb) t)
+	  ((myeq-axioms-trees kb) t)
+	)))))
+
+
+(printf "~%First check the base case, using goal-fwd ~s~%"
+  (query
+    (let ((kb0
+	    (Y (lambda (kb)
+		 (extend-relation (t) 
+		   (mirror-axiom-eq-1 kb)
+		   (init-kb-coll kb))))))
+      (let ((kb1
+	      (extend-relation (t) (goal-fwd kb0) kb0)))
+	(kb1 '(goal (leaf x))))))) ; note, x is an eigenvariable!
+
+
+(printf "~%Some preliminary checks, using goal-rev ~s~%"
+; (goal t2) => (btree t2)
+  (query
+    (let ((kb
+	    (Y
+	      (lambda (kb)
+		(extend-relation (t)
+		  (init-kb-coll kb)
+		  (goal-rev kb)
+		  (fact () '(goal t1))
+		  (fact () '(goal t2)))))))
+      (kb '(btree t2)))))
+
+(printf "~%Another check, using goal-rev ~s~%"
+  (query
+	;(goal t1), (goal t2) => (btree (root t1 t2))
+    (let ((kb
+	    (Y
+	      (lambda (kb)
+		(extend-relation (t)
+		  (init-kb-coll kb)
+		  (goal-rev kb)
+		  (mirror-axiom-eq-2 kb)
+		  (fact () '(goal t1))
+		  (fact () '(goal t2)))))))
+      (kb '(btree (root t1 t2))))))
+
+'(printf "~%Check particulars of the inductive case, using goal-rev, goal-fwd ~s~%"
+  (let ((kb
+          (Y
+            (lambda (kb)
+              (extend-relation (t)
+                (init-kb-coll kb)
+                (fact () '(goal t1))
+                (fact () '(goal t2))
+                (mirror-axiom-eq-2 kb)
+                (goal-rev kb)
+                )))))
+    (list
+      ;(solve 1 (x) (kb `(myeq (root t1 t2)  (mirror ,x))))
+      (solve 1 (x) (kb `(myeq ,x (mirror (root t1 t2)))))
+      )))
+
+(printf "~%Check the inductive case, using goal-rev, goal-fwd ~s~%"
+  (query
+    (let ((kb
+	    (Y
+	      (lambda (kb)
+		(extend-relation (t)
+		  (init-kb-coll kb)
+		  (fact () '(goal t1))
+		  (fact () '(goal t2))
+		  (mirror-axiom-eq-2 kb)
+		  (goal-rev kb))))))
+      (let ((kb1 (goal-fwd kb)))
+	(kb1 '(goal (root t1 t2)))))))
+
+(exit 0)
