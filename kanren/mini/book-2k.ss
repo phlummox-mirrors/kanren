@@ -144,15 +144,6 @@
   (syntax-rules ()
     ((_ body args ...) (app-tagged (sk fk answer) body args ...))))
 
-(define-syntax lambdau@
-  (syntax-rules ()
-    ((_ args body) (lambda-tagged (fk answer) args body))))
-
-(define-syntax u@ 
-  (syntax-rules ()
-    ((_ body args ...) (app-tagged (fk answer) body args ...))))
-
-
 (define-syntax lambdak@
   (syntax-rules ()
     ((_ args body) (lambda-tagged (subst fk answer) args body))))
