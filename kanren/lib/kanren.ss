@@ -3503,6 +3503,53 @@
 	`(myeq ,t  (mirror ,t1))
 	`(myeq ,t1 (mirror ,t))))))
 
+; For clarity, the above predicate can be written as two (prolog) relations
+; The forward relation:
+; (goal t) is implied by (btree t), (myeq t (mirror t1)) and 
+;                        (myeq t1 (mirror t))
+; In the above, t is universally quantified and t1 is existentially
+; quantified
+
+(define goal-fwd
+  (lambda (kb)
+    (relation (t t1)
+      (to-show `(goal ,t))
+      (kb `(btree ,t))
+      (kb `(myeq ,t  (mirror ,t1)))
+      (kb `(myeq ,t1 (mirror ,t))))))
+
+; The reverse relation for the goal:
+; (goal t) implies (btree t), (myeq t (mirror t1)) and 
+;                             (myeq t1 (mirror t))
+; In the above, t is universally quantified and t1 is existentially
+; quantified
+; Because t1 now appears on the left-hand side, it is represented
+; as an eigenvariable (skolem function) rather than a logical variable
+
+(define symbol-append
+  (lambda symbs
+    (string->symbol
+      (apply string-append
+        (map symbol->string symbs)))))
+
+(define goal-rev
+  (let* ((sk (symbol-append 'sk ': (gensym)))
+	 (t1-sk (lambda (t) `(,sk ,t))))
+    (lambda (kb)
+      (extend-relation (t)
+	(relation (t)			; (goal t) => (btree t)
+	  (to-show `(btree ,t))
+	  (kb `(goal ,t)))
+	(relation (t)			; (goal t) => (myeq t  (mirror t1))
+	  (to-show `(myeq ,t  (mirror ,(t1-sk t))))
+	  (kb `(goal ,t)))
+	(relation (t)			; (goal t) => (myeq t1 (mirror t))
+	  (to-show `(myeq ,(t1-sk t) (mirror ,t)))
+	  (kb `(goal ,t)))
+	))))
+      
+      
+      
 (define Y
   (lambda (f)
     ((lambda (u) (u (lambda (x) (lambda (n) ((f (u x)) n)))))
@@ -3536,11 +3583,6 @@
         [(pair? term) (loop (cdr term) (loop (car term) fv))]
         [else fv]))))
 
-(define symbol-append
-  (lambda symbs
-    (string->symbol
-      (apply string-append
-        (map symbol->string symbs)))))
 
 (define concretize
   (lambda (term)
@@ -3596,6 +3638,15 @@
     (verify-goal (goal '(leaf x))
       (extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb))))
 
+(printf "~%First check the base case, using goal-fwd ~s~%"
+  (query
+    (let ((kb0
+	    (extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb)))
+      (let ((kb1
+	      (extend-relation (t) (goal-fwd kb0) kb0)))
+	(kb1 '(goal (leaf x))))))) ; note, x is an eigenvariable!
+
+
 ; that is, we obtain the list of subgoals to verify '(leaf x)
 ; by invoking the function 'goal'.
 ; we extend the initial database (which contains btree facts)
@@ -3607,6 +3658,8 @@
 ;    (exists (x) `(leaf ,x))
 ; because we want to prove that (goal '(leaf x)) holds for _all_ x
 ; rather than for some particular x.
+;
+; non-empty result printed by the above expressions means success...
 
 
 ; The inductive case.
@@ -3621,6 +3674,21 @@
 	      (extend-kb (goal 't1) 
 		(extend-kb (goal 't2) init-kb))))
 	kb0))))
+
+(printf "~%Some preliminary checks, using goal-rev ~s~%"
+  (query
+    (let ((kb
+	    (Y
+	      (lambda (kb)
+		(extend-relation (t)
+		  (btree kb)
+		  (goal-rev kb)
+		  (fact () '(goal t1))
+		  (fact () '(goal t2)))))))
+      (kb '(btree t2)))))
+
+; the above two expressions should give the same result: a non-empty stream
+; (with an empty substitution: no variables leak)
 
 (printf "~%Another check ~s~%"
   (query
@@ -3637,6 +3705,19 @@
 	      kb0
 	      (btree kb)
 	      (mirror-axiom-eq-2 kb))))))))
+
+(printf "~%Another checks, using goal-rev ~s~%"
+  (query
+    (let ((kb
+	    (Y
+	      (lambda (kb)
+		(extend-relation (t)
+		  (btree kb)
+		  (goal-rev kb)
+		  (mirror-axiom-eq-2 kb)
+		  (fact () '(goal t1))
+		  (fact () '(goal t2)))))))
+      (kb '(btree (root t1 t2))))))
 
 ; now we really need Y because we rely on the clause
 ;	btree(root(T1,T2)) :- btree(T1),btree(T2).
@@ -3655,6 +3736,38 @@
 	      kb0
 	      (btree kb)
 	      (mirror-axiom-eq-2 kb))))))))
+
+(printf "~%Check particulars of the inductive case, using goal-rev, goal-fwd ~s~%"
+  (exists (x)
+    (let ((kb
+	    (Y
+	      (lambda (kb)
+		(extend-relation (t)
+		  (btree kb)
+		  (fact () '(goal t1))
+		  (fact () '(goal t2))
+		  (mirror-axiom-eq-2 kb)
+		  (goal-rev kb)
+		  )))))
+      (list
+	(solve 1 (kb `(myeq (root t1 t2)  (mirror ,x))))
+	(solve 1 (kb `(myeq ,x (mirror (root t1 t2)))))
+))))
+
+(printf "~%Check the inductive case, using goal-rev, goal-fwd ~s~%"
+  (query
+    (let ((kb
+	    (Y
+	      (lambda (kb)
+		(extend-relation (t)
+		  (btree kb)
+		  (fact () '(goal t1))
+		  (fact () '(goal t2))
+		  (mirror-axiom-eq-2 kb)
+		  (goal-rev kb)
+		  )))))
+      (let ((kb1 (goal-fwd kb)))
+	(kb1 '(goal (root t1 t2)))))))
 
 ; Again, we use Y because btree and mirror-axiom-eq-2 are recursive.
 ; We need the database that is the fixpoint of all constituent
