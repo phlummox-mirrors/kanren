@@ -744,7 +744,6 @@
 
 (define fail (any))
 
-
 ; Negation
 ; (fails ant) succeeds iff ant has no solutions
 ; (fails ant) is a semi-deterministic predicate: it can have at most
@@ -1008,7 +1007,6 @@
        (exists (ex-id ...)
  	 (if-all! ((promise-one-answer (== g x)) ...) ant)))]))
 
-
 ; relation-head-let (head-term ...) ant A simpler, and more efficient
 ; kind of relation. The simplicity comes from a simpler pattern at the
 ; head of the relation. The pattern must be linear and shallow with
@@ -1055,8 +1053,11 @@
     [(_ (head-term ...) . ants)
      (relation-head-let "g" () (head-term ...) (head-term ...) . ants)]
     ; generate names of formal parameters
-    [(_ "g" (genvar ...)  (head-term . ht-rest) head-terms . ants)
+    [(_ "g" (genvar ...) ((head-term . tail-term) . ht-rest)
+       head-terms . ants)
      (relation-head-let "g" (genvar ... g) ht-rest head-terms . ants)]
+    [(_ "g" (genvar ...) (head-term . ht-rest) head-terms . ants)
+     (relation-head-let "g" (genvar ... head-term) ht-rest head-terms . ants)]
     [(_ "g" genvars  () head-terms . ants)
      (relation-head-let "d" () () genvars head-terms genvars . ants)]
     ; partition head-terms into vars and others
@@ -1064,7 +1065,7 @@
      (relation-head-let "d" vars ((gv (hth . htt)) . others)
        gv-rest ht-rest gvs . ants)]
     [(_ "d" vars others (gv . gv-rest) (htv . ht-rest) gvs . ants)
-     (relation-head-let "d" ((gv htv) . vars) others
+     (relation-head-let "d" (htv . vars) others
        gv-rest ht-rest gvs . ants)]
     [(_ "d" vars others () () gvs . ants)
      (relation-head-let "f" vars others gvs . ants)]
@@ -1076,11 +1077,11 @@
 	 (let*-and (fk) ([subst (unify gv term subst)] ...)
 	   (@ sk fk subst))))]
 
-    [(_ "f" ((gvv0 var0) ...) ((gvo term) ...) gvs ant)
+    [(_ "f" (var0 ...) ((gvo term) ...) gvs ant)
      (lambda gvs
-       (lambda@ (sk fk subst)			; first unify the constants
-	 (let*-and (fk) ([subst (unify gvo term subst)] ...)
-	   (let ([var0 (if (eq? gvv0 _) (logical-variable '?) gvv0)] ...)
+       (let ([var0 (if (eq? var0 _) (logical-variable '?) var0)] ...)
+	 (lambda@ (sk fk subst)			; first unify the constants
+	   (let*-and (fk) ([subst (unify gvo term subst)] ...)
 	     (@ ant sk fk subst)))))]))
 
 ; (define-syntax relation/cut
