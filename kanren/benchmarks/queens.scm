@@ -239,6 +239,9 @@
 
 ; Now we take advantage of the fact that the parameter l in qdelete
 ; is fully instantiated.
+; Actually, all of our relations are actually indeterministic functions:
+; all their arguments are instantiated, except the last one
+; (to which the result is bound to).
 
 (define benchmark
   (letrec
@@ -246,53 +249,123 @@
        (relation (head-let data out)
 	 (all
 	   (qperm data out)
-	   (safe out))))
+	   (project (out)
+	     (safe out)))))
 
      (qperm
-       (extend-relation (a b)
-	 (fact () '() '())
-	 (relation (head-let l k)
-	   (if-only (project (l) (predicate (pair? l)))
-	   (exists (z u v)
-	     (all
-	       (qdelete l `(,u . ,z))
-	       (== k `(,u . ,v))
-	       (qperm z v)))))))
-
+       (lambda (l k)
+	 (if (null? l) (== k '())
+	   (exists (dr)
+	     (all (qdelete l dr)
+	       (project (dr)
+		 (let ((u (car dr)) (z (cdr dr)))
+		   (exists (v)
+		     (all
+		       (qperm z v)
+			 (== k (cons u v)))))))))))
       (qdelete
-	(relation (head-let l l1)
-	  (project (l)
-	    (all
-	      (predicate (pair? l))
+	(lambda (l l1)
+	  (if (null? l)
+	    fail
 	    (any
 	      (== l l1)
 	      (exists (u)
 		(all
 		  (qdelete (cdr l) u)
 		  (project (u)
-		    (== l1 (cons (car u) (cons (car l) (cdr u))))))))))))
+		    (== l1 (cons (car u) (cons (car l) (cdr u)))))))))))
 
      (safe				; a deterministic predicate
-       (relation (head-let l)
-	 (project (l)
-	   (predicate
-	     (let safe ((l l))
-	       (or (null? l)
-		 (and
-		   (let nodiag ((b (car l)) (d 1) (lr (cdr l)))
-		     (or (null? lr)
-		       (let ((n (car lr)) (l (cdr lr)))
-			 (and
-			   (not (= d (abs (- n b))))
-			   (nodiag b (+ 1 d) l)))))
-		   (safe (cdr l)))))))))
+       (lambda (l)
+	 (predicate
+	   (let safe ((l l))
+	     (or (null? l)
+	       (and
+		 (let nodiag ((b (car l)) (d 1) (lr (cdr l)))
+		   (or (null? lr)
+		     (let ((n (car lr)) (l (cdr lr)))
+		       (and
+			 (not (= d (abs (- n b))))
+			 (nodiag b (+ 1 d) l)))))
+		 (safe (cdr l))))))))
       )
     (lambda (data out)
       (queen data out))))
 
 ; kanren.ss version 4.15 (similar to 4.11)
 ; (time (solve 1000 ...))
-;     1942 collections
-;     39804 ms elapsed cpu time, including 464 ms collecting
-;     40212 ms elapsed real time, including 452 ms collecting
-;     2100992152 bytes allocated, including 2100567008 bytes reclaimed
+;     1738 collections
+;     37260 ms elapsed cpu time, including 362 ms collecting
+;     37609 ms elapsed real time, including 367 ms collecting
+;     1880374592 bytes allocated, including 1880634984 bytes reclaimed
+
+; The following is a closer emulation of non-deterministic functions
+; Even notation is better: A-normal form rather than CPS.
+
+(define yield-var (logical-variable '*yield*))
+(define (yield val) (== yield-var val))
+; The latter is similar to the above, but much faster.
+; We take advantage of the fact that yield-var, like `multiple values'
+; is ephemeral and so we don't need to scan the substitutions
+; and do regular unification tests. It is clear that yield-var is
+; `fresh' and unbound.
+(define (yield val) 
+  (lambda@ (sk fk subst)
+    (@ sk fk (extend-subst yield-var val subst))))
+
+(define-syntax let-fr
+  (syntax-rules ()
+    ((let-fr ((var exp)) body)
+      (all exp
+	(lambda@ (sk fk subst)
+	  (if (not (eq? (commitment->var (car subst)) yield-var))
+	    (error "bummer"))
+	  (let ((var (commitment->term (car subst))))
+	    (@ body sk fk (cdr subst))))))))
+
+(define benchmark
+  (letrec
+    ((queen
+       (relation (head-let data out)
+	 (let-fr ((res (qperm data)))
+	   (all!! (safe res) (== res out)))))
+
+     (qperm
+       (lambda (l)
+	 (if (null? l) (yield '())
+	   (let-fr ((dr (qdelete l)))
+	     (let ((u (car dr)) (z (cdr dr)))
+	       (let-fr ((v (qperm z)))
+		 (yield (cons u v))))))))
+
+      (qdelete
+	(lambda (l)
+	  (if (null? l) fail
+	    (any
+	      (yield l)
+	      (let-fr ((u (qdelete (cdr l))))
+		(yield (cons (car u) (cons (car l) (cdr u)))))))))
+
+     (safe				; a deterministic predicate
+       (lambda (l)
+	 (predicate
+	   (let safe ((l l))
+	     (or (null? l)
+	       (and
+		 (let nodiag ((b (car l)) (d 1) (lr (cdr l)))
+		   (or (null? lr)
+		     (let ((n (car lr)) (l (cdr lr)))
+		       (and
+			 (not (= d (abs (- n b))))
+			 (nodiag b (+ 1 d) l)))))
+		 (safe (cdr l))))))))
+      )
+    (lambda (data out)
+      (queen data out))))
+
+; kanren.ss version 4.15 (similar to 4.11)
+; (time (solve 1000 ...))
+;     1333 collections
+;     13660 ms elapsed cpu time, including 242 ms collecting
+;     13754 ms elapsed real time, including 253 ms collecting
+;     1443508328 bytes allocated, including 1443541736 bytes reclaimed
