@@ -30,27 +30,28 @@
 
 (define benchmark
   (letrec
-    ((bquery
-      (relation (c1 d1 c2 d2)
-	(to-show `(quad ,c1 ,d1 ,c2 ,d2))
-	(all
-	  (density c1 d1)
-	  (density c2 d2)
-	  (predicate (d1 d2)
-	    (and (> d1 d2)
-	      (let ((t1 (* 20 d1))
-		    (t2 (* 21 d2)))
-		(< t1 t2)))))))
-      (density
-	(relation (head-let c d)
-	  (exists (p)
-	    (all
-	      (pop c p)
-	      (exists (a)
-		(all!!
-		  (area c a)
-                  (project (p a)
-                    (== d (* p (/ 100.0 a)))))))))))
+      ((bquery
+         (relation (c1 d1 c2 d2)
+           (to-show `(quad ,c1 ,d1 ,c2 ,d2))
+           (all
+             (density c1 d1)
+             (density c2 d2)
+             (project (d1 d2)
+               (predicate
+                 (and (> d1 d2)
+                      (let ((t1 (* 20 d1))
+                            (t2 (* 21 d2)))
+                        (< t1 t2))))))))
+       (density
+         (relation (head-let c d)
+           (exists (p)
+             (all
+               (pop c p)
+               (exists (a)
+                 (all!!
+                   (area c a)
+                   (project (p a)
+                     (== d (* p (/ 100.0 a)))))))))))
     (lambda (out)
       (bquery out))))
 
@@ -62,11 +63,12 @@
            (all
              (density c1 d1)
              (density c2 d2)
-             (predicate (d1 d2)
-               (and (> d1 d2)
-                    (let ((t1 (* 20 d1))
-                          (t2 (* 21 d2)))
-                      (< t1 t2)))))))
+             (project (d1 d2)
+               (predicate
+                 (and (> d1 d2)
+                      (let ((t1 (* 20 d1))
+                            (t2 (* 21 d2)))
+                        (< t1 t2))))))))
        (density
          (relation (head-let c d)
            (exists (p)
