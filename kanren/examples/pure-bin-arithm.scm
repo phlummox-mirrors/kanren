@@ -1,8 +1,9 @@
 ;	     Pure, declarative, and constructive binary arithmetics
 ;
-; aka: Addition, Multiplication, Division as always terminating,
-; pure and declarative relations that can be used in any mode whatsoever.
-; The relations define arithmetics over binary (base-2) integral numerals
+; aka: Addition, Multiplication, Division with remainder 
+; as sound and complete, pure and declarative relations that can be
+; used in any mode whatsoever and that recursively enumerate their domains.
+; The relations define arithmetics over base-2 non-negative numerals
 ; of *arbitrary* size.
 ;
 ; aka: division as relation.
@@ -576,6 +577,84 @@
 ; 	         (**o m1 q p)
 ; 	         (--o n r `(0 . ,p))))
 
+
+; A faster and more refutationally complete divo algorithm
+; Again, divo n m q r 
+; holds iff n = m*q + r
+; Let l be the bit-length of r (if r=0, l=0).
+; Let n = 2^(l+1) * n1 + n2
+;     q = 2^(l+1) * q1 + q2
+; Note that n1 or q1 may be zero.
+; We obtain that
+;    n = m*q + r
+; is equivalent to the conjunction of the following two relations
+;    q2*m + r - n2 is divisible by 2^(l+1)
+;    n1 = q1*m + (q2*m + r - n2)/2^(l+1)
+; We note that by construction (see the mentioning of (<ol m n) below)
+; all numbers in 'q2*m + r - n2' are length-limited. Therefore, we can
+; obtain the success or failure of 'q2*m + r - n2' in finite time.
+; This fact let us fail the 'divo' relation, in finite time,
+; when it obviously does not hold, as in
+;	(divo `(0 . ,x) (build 2) q '(1))
+; (because no even number can give the remainder 1 upon the 
+; division by two).
+
+
+
+(define divo
+  (relation (head-let n m q r)
+    (any-interleave
+	; m has more digits than n: q=0,n=r
+      (all (== r n) (== q '()) (<ol n m) (<o n m)) 
+      ; n has the same number of digits than m
+      (all (== q '(1)) (=ol n m) (++o r m n) (<o r m))
+      (all (== q '()) (== r n) (=ol n m) (<o n m))  ; if n < m, then q=0, n=r
+      (all
+	(<ol m n)			; n has more digits than m
+					; Note that m is L-instantiated here
+	(<o r m)			; r is L-instantiated
+	(pos q)				; q must be positive then
+	(exists (n1 n2 q1 q2 q2m q2mr rr r1)
+	  (all
+	    (split n r n1 n2)
+	    (split q r q1 q2)
+	    (**o q2 m q2m)
+	    (++o q2m r q2mr)
+	    (--o q2mr n2 rr)		; rr = q2*m + r - n2
+	    (split rr r r1 '())		; r1 = rr/2^(l+1), evenly
+	    (divo n1 m q1 r1)))
+	)
+      )))
+
+; split n r n1 n2
+; holds if n = 2^(l+1)*n1 + n2 where l = bitlength(r)
+; This relation makes sense to use only when 'r' is L-instantiated
+; (see the Prolog code file for the definition of L-instantiated).
+; In that case, the relation has only the finite number of answers, in
+; all of which n2 is L-instatantiated.
+; We take trouble to assure that we produce only well-formed numbers:
+; the major bit must be one.
+
+(define split
+  (extend-relation (n r n1 n2)
+    (fact () '() _ '() '())
+    (fact (n) `(0 . ,n) '() n '())
+    (fact (n) `(1 . ,n) '() n '(1))
+    (relation (n r n1)
+      (to-show `(0 . ,n) `(,_ . ,r) n1 '())
+      (split n r n1 '()))
+    (relation (n r n1)
+      (to-show `(1 . ,n) `(,_ . ,r) n1 '(1))
+      (split n r n1 '()))
+    (relation (b n r n1 n2)
+      (to-show `(,b . ,n) `(,_ . ,r) n1 `(,b . ,n2))
+      (all (pos n2)
+	(split n r n1 n2)))
+))
+
+;------------------------------------------------------------------------
+;				Tests
+
 (define-syntax test
   (syntax-rules ()
     ((_ (x) ant)
@@ -801,31 +880,77 @@
 	  `(((x.0 ,(build i)) (y.0 ,(build j))
 	      (z.0 ,(build p)))))))))
 
+(cout nl "split" nl)
+
+(test-check 'split-1
+  (solve 5 (x y) (split (build 4) '() x y))
+  '(((x.0 (0 1)) (y.0 ()))))
+(test-check 'split-2
+  (solve 5 (x y) (split (build 4) '(1) x y))
+  '(((x.0 (1)) (y.0 ()))))
+(test-check 'split-3
+  (solve 5 (x y) (split (build 4) '(1 1) x y))
+  '(((x.0 ()) (y.0 (0 0 1)))))
+(test-check 'split-4
+  (solve 5 (x y) (split (build 4) '(1 1 1) x y))
+  '(((x.0 ()) (y.0 (0 0 1)))))
+(test-check 'split-5
+  (solve 5 (x y) (split (build 5) '(1) x y))
+  '(((x.0 (1)) (y.0 (1)))))
+
 (cout nl "division, general" nl)
 
-(test (x) (divo (build 4) (build 2) x _))
-(test-check 'div-fail-1 (test (x) (divo (build 4) (build 0) x _)) '())
-(test (x) (divo (build 4) (build 3) x _))
-(test (x) (divo (build 4) (build 4) x _))
-(test (x) (divo (build 4) (build 5) x _))
-(test (x) (divo (build 4) (build 5) _ x))
 
-(test (x) (divo (build 33) (build 3) x _))
-(test (x) (divo (build 33) x (build 11) _))
-(test (x) (divo x (build 3) (build 11) _))
+(test-check 'divo-1
+  (solution (x) (divo (build 4) (build 2) x _))
+  '((x.0 (0 1))))
+(test-check 'div-fail-1 (test (x) (divo (build 4) (build 0) x _)) '())
+(test-check 'divo-2
+  (solution (x) (divo (build 4) (build 3) x _))
+  '((x.0 (1))))
+(test-check 'divo-3
+  (solution (x) (divo (build 4) (build 4) x _))
+  '((x.0 (1))))
+(test-check 'divo-4
+  (solution (x y) (divo (build 4) (build 5) x y))
+  '((x.0 ()) (y.0 (0 0 1))))
+
+
+(test-check 'divo-33-1
+  (solution (x) (divo (build 33) (build 3) x _))
+  `((x.0 ,(build 11))))
+(test-check 'divo-33-2
+  (solution (x) (divo (build 33) x (build 11) _))
+  `((x.0 ,(build 3))))
+(test-check 'divo-33-3
+  (solution (x) (divo x (build 3) (build 11) _))
+  `((x.0 ,(build 33))))
+(test-check 'divo-33-5
+  (solution (x y) (divo (build 33) (build 5) x y))
+  `((x.0 ,(build 6)) (y.0 ,(build 3))))
+
+
+(test-check 'divo-5-4
+  (solve 3 (x y) (divo x (build 5) y (build 4)))
+  '(((x.0 (0 0 1)) (y.0 ()))
+    ((x.0 (0 0 0 0 0 0 1)) (y.0 (0 0 1 1)))
+    ((x.0 (0 0 0 0 0 0 0 0 0 0 1)) (y.0 (0 0 1 1 0 0 1 1))))
+)
+(test-check 'divo-5-5
+  (solve 3 (x y) (divo x (build 5) y (build 5)))
+  '())
+
 
 (test (x) (divo x (build 5) _ (build 4)))
 (test (x) (divo x (build 5) (build 3) (build 4)))
 (test (x) (divo x _ (build 3) (build 4)))
 (test-check 'div-fail-2 (test (x) (divo (build 5) x (build 7) _)) '())
 
-(test (x) (divo (build 33) (build 5) x _))
-
 (test-check "all numbers such as 5/Z = 1"
   (solve 7 (w) 
     (exists (z) (all (divo (build 5) z (build 1) _)
 		    (project (z) (== `(,(trans z)) w)))))
-  '(((w.0 (3))) ((w.0 (5))) ((w.0 (4)))))
+  '(((w.0 (5))) ((w.0 (3))) ((w.0 (4)))))
 
 (test-check "all inexact factorizations of 12"
   (set-equal?
@@ -848,17 +973,32 @@
 (test-check 'div-all-3
   (solve 3 (x y z r) (divo x y z r))
 '(((x.0 ()) (y.0 (*anon.0 . *anon.1)) (z.0 ()) (r.0 ())) ; 0 = a*0 + 0, a>0
-   ; There, anon.1 must be 1
-  ((x.0 (*anon.0 *anon.1)) (y.0 (1)) (z.0 (*anon.0 *anon.1)) (r.0 ()))
   ; if z = 1, the two numbers must be equal -- but positive!
   ((x.0 (*anon.0)) (y.0 (*anon.0)) (z.0 (1)) (r.0 ()))
+   ; There, anon.0 must be 1
+  ((x.0 (0 *anon.0)) (y.0 (1 *anon.0)) (z.0 ()) (r.0 (0 *anon.0)))
 ))
-
 
 (test-check 'div-even
   (solve 3  (y z r) (divo `(0 . ,y) (build 2) z r))
-  '(((y.0 (0 1)) (z.0 (0 1)) (r.0 ()))
-    ((y.0 (1))   (z.0 (1)) (r.0 ()))
-    ((y.0 (1 *anon.0)) (z.0 (1 *anon.0)) (r.0 ())))
+  '(((y.0 (1)) (z.0 (1)) (r.0 ()))
+    ((y.0 (0 1)) (z.0 (0 1)) (r.0 ()))
+    ((y.0 (0 0 1)) (z.0 (0 0 1)) (r.0 ())))
 )
 
+(test-check 'div-even-fail
+  (solve 3  (y z r) (divo `(0 . ,y) (build 2) z '(1)))
+  '()
+)
+
+(test-check 'div-odd
+  (solve 3  (y z) (divo `(1 0 . ,y) (build 2) z '(1)))
+  '(((y.0 (0 1)) (z.0 (0 0 1))) ; 9 = 2*4 + 1
+   ((y.0 (0 0 1)) (z.0 (0 0 0 1)))
+   ((y.0 (0 0 0 1)) (z.0 (0 0 0 0 1))))
+)
+
+(test-check 'div-odd-fail
+  (solve 3  (y z r) (divo `(1 0 . ,y) (build 2) z '()))
+  '()
+)
