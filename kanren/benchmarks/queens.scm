@@ -154,3 +154,9 @@
 ;     13193 collections
 ;     265112 ms elapsed cpu time, including 3682 ms collecting
 ;     270339 ms elapsed real time, including 3657 ms collecting
+; kanren.ss version 3.53
+; (time (solve 1000 ...))
+;     13476 collections
+;     263209 ms elapsed cpu time, including 3625 ms collecting
+;     266191 ms elapsed real time, including 3609 ms collecting
+
