@@ -2720,5 +2720,92 @@
   (exists (x y) (solve 7
 		  ((binary-extend-relation-interleave (a1 a2) fact3 R1) x y))))
 
+(define-syntax binary-extend-relation-interleave-non-overlap
+  (syntax-rules ()
+    [(_ (id ...) rel-exp1 rel-exp2)
+     (let ([rel1 rel-exp1] [rel2 rel-exp2])
+       (lambda (id ...)
+         (lambda@ (sk fk subst cutk)
+           ((interleave-non-overlap sk fk)
+            (@ (rel1 id ...) initial-sk initial-fk subst cutk)
+            (@ (rel2 id ...) initial-sk initial-fk subst cutk)
+	    ; means in case of overlap, prefer rel2 over rel1
+	    fail
+	    (rel2 id ...)))))]))
+
+(define interleave-non-overlap
+  (lambda (sk fk)
+    (letrec
+      ([finish
+         (lambda (q)
+           (cond
+             [(null? q) (fk)]
+             [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
+                     (@ sk (lambda () (finish (fk))) subst cutk))]))]
+       [interleave
+         (lambda (q1 q2 ant1 ant2)
+           (cond
+             [(null? q1) (if (null? q2) (fk) (finish q2))]
+             [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
+		(if (satisfied? ant2 subst) ; the solution of q1
+					; satisfies ant2. Skip it
+		  (interleave q2 (fk) ant2 ant1)
+		  (@ sk (lambda () (interleave q2 (fk) ant2 ant1)) 
+		    subst cutk)))]))])
+      interleave)))
+
+(define (satisfied? rel subst)
+  (not (null? (@ rel initial-sk initial-fk subst initial-fk))))
+
+(printf "~%binary-extend-relation-interleave-non-overlap~%")
+(printf "~%R1+R2:~%")
+(pretty-print 
+  (exists (x y) 
+    (solve 10 
+      ((binary-extend-relation-interleave-non-overlap (a1 a2) R1 R2) x y))))
+(printf "~%R2+R1:~%")
+(pretty-print 
+  (exists (x y) 
+    (solve 10 
+      ((binary-extend-relation-interleave-non-overlap (a1 a2) R2 R1) x y))))
+(printf "~%Rinf+R1:~%")
+(pretty-print 
+  (exists (x y)
+    (solve 7
+      ((binary-extend-relation-interleave-non-overlap (a1 a2) Rinf R1) x y))))
+(printf "~%R1+RInf:~%")
+(pretty-print 
+  (exists (x y) 
+    (solve 7
+      ((binary-extend-relation-interleave-non-overlap (a1 a2) R1 Rinf) x y))))
+
+; Infinitary relation Rinf2
+; r(z,z).
+; r(s(s(X)),s(s(Y))) :- r(X,Y).
+; Rinf2 overlaps with Rinf in the infinite number of points
+
+(define Rinf2
+  (extend-relation (a1 a2)
+    (fact () 'z 'z)
+    (relation _ (x y t1 t2)
+      (to-show t1 t2)
+      (== t1 `(s (s ,x)))
+      (== t2 `(s (s ,y)))
+      (Rinf2 x y))))
+(printf "~%Rinf2:~%")
+(pretty-print (exists (x y) (solve 5 (Rinf2 x y))))
+(printf "~%Rinf+Rinf2~%")
+(pretty-print 
+  (exists (x y)
+    (solve 9
+      ((binary-extend-relation-interleave-non-overlap 
+	 (a1 a2) Rinf Rinf2) x y))))
+(printf "~%Rinf2+Rinf~%")
+(pretty-print 
+  (exists (x y)
+    (solve 9
+      ((binary-extend-relation-interleave-non-overlap 
+	 (a1 a2) Rinf2 Rinf) x y))))
+
 #!eof
 
