@@ -2949,9 +2949,10 @@
 ; Note that in the following all relations have exactly one
 ; argument (which is usually a complex structure)
 ; This is not the very efficient way, and it smacks of prolog.
-; Yet it makes it easy to represent assumption.
+; Yet it makes it easy to represent and add assumptions.
 ; To add an assumption to our knowledge base, we just extend
-; the relation
+; the relation. So we use the same evaluation engine to handle
+; assumptions.
 
 ; First we define the inductive structure
 
@@ -2973,6 +2974,7 @@
       (fact (val) `(btree (leaf ,val)))
       (relation _ (t1 t2)
 	(to-show `(btree (root ,t1 ,t2)))
+	(pred-call printf "btree ~s ~s ~n" t1 t2)
 	(kb `(btree ,t1))
 	(kb `(btree ,t2))))))
 
@@ -3015,10 +3017,8 @@
 
 ; we could also add reflexivity and transitivity and symmetry axioms
 ; and with-depth to keep them from diverging.
-; (define myeq
-;   (extend-relation (a b)
-;     mirror-axiom-eq-1
-;     (mirror-axiom-eq-2 myeq)))
+
+
 
 ; Define the goal
 ; In Athena:
@@ -3040,11 +3040,6 @@
 	`(myeq ,t  (mirror ,t1))
 	`(myeq ,t1 (mirror ,t))))))
 
-; (by-induction-on ?t (goal ?t)
-;   ((leaf x) (!pf (goal (leaf x)) [mirror-axiom-1]))
-;   ((root t1 t2) 
-;     (!pf (goal (root t1 t2)) [(goal t1) (goal t2)  mirror-axiom-2])))
-
 (define (Y f)
   ((lambda (u) (u (lambda (x) (lambda (n) ((f (u x)) n)))))
    (lambda (x) (x x))))
@@ -3052,7 +3047,9 @@
 ; The initial assumptions: just the btree
 (define init-kb (Y btree))
 
-; A nullary relation that is the conjunction of preds against the
+; Verification engine
+;	verify-goal PREDS KB
+; returns a nullary relation that is the conjunction of preds against the
 ; assumption base kb
 (define (verify-goal preds kb)
   (if (null? (cdr preds)) (kb (car preds))
@@ -3060,57 +3057,101 @@
       (kb (car preds))
       (verify-goal (cdr preds) kb))))
 
+; A better version of concretize that replaces each variable
+; with a _unique_! symbol. The unique symbol symbolizes universal
+; quantification, as usual.
+
+; get the free vars of term
+(define (free-vars term)
+  (let loop ((term term) (fv '()))
+    (cond
+      ((var? term)
+	(if (memv term fv) fv (cons term fv)))
+      ((pair? term)
+	(loop (cdr term) (loop (car term) fv)))
+      (else fv))))
+
+(define (symbol-append . symbs)
+  (string->symbol
+    (apply string-append
+      (map symbol->string symbs))))
+
+(define (concretize term)
+  (let* ((fv (free-vars term))
+	 (subst
+	   (map
+	     (lambda (v)
+	       (commitment v
+		 (symbol-append (var-id v) ': (gensym))))
+	     fv)))
+    (subst-in term subst)))
+
 ; extend the kb with the list of assumptions
 ; this is just like 'any' only it's a procedure rather than a syntax
 (define (extend-kb facts kb)
-  (if (null? facts) kb
-    (any
-      (fact () (car facts))
-      (extend-kb (cdr facts) kb))))
+  (let ((facts (concretize facts)))
+    (printf "Extending KB with ~s~%" facts)
+    (let loop ((facts facts))
+      (if (null? facts) kb
+	(extend-relation (t)
+	  (fact () (car facts))
+	  (loop (cdr facts)))))))
+
+
+
+; (by-induction-on ?t (goal ?t)
+;   ((leaf x) (!pf (goal (leaf x)) [mirror-axiom-1]))
+;   ((root t1 t2) 
+;     (!pf (goal (root t1 t2)) [(goal t1) (goal t2)  mirror-axiom-2])))
 
 ; ?- goal(leaf(X),C),verify(C,[]).
 (printf "~%First check the base case ~s~%"
-  (exists (val) 
-    (query
-      (verify-goal (goal '(leaf x))
-	(extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb)))))
+  (query
+    (verify-goal (goal '(leaf x))
+      (extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb))))
 
 
 ; Now, assume the goal holds for t1 and t2 and check if it holds
 ; for root(t1,t2)
 ;?- goal(t1,A1),goal(t2,A2), append(A1,A2,A), goal(root(t1,t2),C), verify(C,A).
 
-(printf "~%Check the inductive case ~s~%"
-  (exists (val) 
-    (query
-      (verify-goal (goal '(root t1 t2))
+(printf "~%Some preliminary checks ~s~%"
+  (query
+    (verify-goal '((btree t2)) ; (goal t2) => (btree t2)
+      (let ((kb0
+	      (extend-kb (goal 't1) 
+		(extend-kb (goal 't2) init-kb))))
+	kb0))))
+
+(printf "~%Another check ~s~%"
+  (query
+	;(goal t1), (goal t2) => (btree (root t1 t2))
+    (verify-goal '((btree t1) (btree t2)
+		   (btree (root t1 t2)))
+      (let ((kb0
+	      (extend-kb (goal 't1) 
+		(extend-kb (goal 't2) 
+		  (fact () 'nothing)))))
 	(Y
 	  (lambda (kb)
 	    (extend-relation (t)
-	      init-kb
-	      (extend-kb (goal 't1) kb)
-	      (extend-kb (goal 't2) kb)
+	      kb0
+	      (btree kb)
 	      (mirror-axiom-eq-2 kb))))))))
 
-; % First check the base case
-; ?- goal(leaf(X),C),verify(C,[]).
-
-; %X = _G151
-; %C = [btree(leaf(_G151)), myeq(leaf(_G151), mirror(leaf(_G151))), 
-; %     myeq(leaf(_G151), mirror(leaf(_G151)))] 
-; %Yes
-
-; % Now, assume the goal holds for t1 and t2 and check if it holds
-; % for root(t1,t2)
-; ?- goal(t1,A1),goal(t2,A2), append(A1,A2,A), goal(root(t1,t2),C), verify(C,A).
-
-; % A1 = [btree(t1), myeq(t1, mirror(uv3)), myeq(uv3, mirror(t1))]
-; % A2 = [btree(t2), myeq(t2, mirror(uv4)), myeq(uv4, mirror(t2))]
-; % A = [btree(t1), myeq(t1, mirror(uv3)), myeq(uv3, mirror(t1)), 
-;        btree(t2), myeq(t2, mirror(uv4)), myeq(uv4, mirror(t2))]
-; % C = [btree(root(t1, t2)), myeq(root(t1, t2), mirror(root(uv4, uv3))),
-;        myeq(root(uv4, uv3), mirror(root(t1, t2)))] 
-; %Yes
+(printf "~%Check the inductive case ~s~%"
+  (query
+    (verify-goal (goal '(root t1 t2))
+      (let ((kb0
+	      (extend-kb (goal 't1) 
+		(extend-kb (goal 't2) 
+		  (fact () 'initial)))))
+	(Y
+	  (lambda (kb)
+	    (extend-relation (t)
+	      kb0
+	      (btree kb)
+	      (mirror-axiom-eq-2 kb))))))))
 
 (exit 0)
 
