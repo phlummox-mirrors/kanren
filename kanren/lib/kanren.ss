@@ -66,77 +66,12 @@
 '(test-check 'test-@-lambda@
   (@ (lambda@ (x y z) (+ x (+ y z))) 1 2 3)
   42)
+
+;------------------------------------------------------------------------
+; Logical variables, substitutions, and commitments (aka bindings)
    
 (define-record var (id) ())
 (define var make-var)
-
-; A framework to remove introduced variables when they leave their scope.
-; To make removing variables easier, we consider the list
-; of subst as a "stack". Before we add a new variable, we put a mark
-; on the stack. Mark is a special variable binding, whose term is 
-; the current subst. When we are about to remove added variables after
-; their scope is ended, we locate the mark (using eq?) and check that
-; the term bound to the mark is indeed the subst after the mark.
-; If it so, then the subst list wasn't perturbed, and we know that
-; anything below the mark can't possibly contain the reference to the
-; variable we're about to remove.
-
-(define-syntax exists
-  (syntax-rules ()
-    [(_ () ant) ant]
-    [(_ (id ...) ant)
-     (let-lv (id ...)
-       (lambda@ (sk fk in-subst)
-	 (@ ant
-            (lambda@ (fk out-subst)
-              (@ sk fk (prune-subst (list id ...) in-subst out-subst)))
-            fk in-subst)))]))
-
-; check if any of vars occur in a term
-(define relatively-ground?
-  (lambda (term vars)
-    (cond
-      [(var? term) (not (memq term vars))]
-      [else #t])))
-
-; PRUNE IN-SUBST SUBST ID ....
-; remove the bindings of ID ... from SUBST (by composing with the
-; rest of subst). IN-SUBST is the mark.
-; If we locate IN-SUBST in SUBST, we know that everything below the
-; mark can't possibly contain ID ...
-
-(define compose-subst/own-survivors
-  (lambda (base refining survivors)
-    (let refine ([b* base])
-      (if (null? b*) survivors
-          (cons-if-real-commitment
-            (commitment->var (car b*))
-            (subst-in (commitment->term (car b*)) refining)
-            (refine (cdr b*)))))))
-
-(define compose-subst
-  (lambda (base refining)
-    (compose-subst/own-survivors base refining
-      (let survive ([r* refining])
-        (cond
-          [(null? r*) '()]
-          [(assq (commitment->var (car r*)) base) (survive (cdr r*))]
-          [else (cons (car r*) (survive (cdr r*)))])))))
-
-(define prune-subst
-  (lambda (vars in-subst subst)
-    (if (eq? subst in-subst)
-        subst
-        (let loop ([current subst] [to-remove '()] [clean '()] [to-subst '()])
-          (cond
-            [(null? current) (compose-subst/own-survivors to-subst to-remove clean)]
-            [(eq? current in-subst)
-             (compose-subst/own-survivors to-subst to-remove (append clean current))]
-            [(memq (commitment->var (car current)) vars)
-             (loop (cdr current) (cons (car current) to-remove) clean to-subst)]
-            [(relatively-ground? (commitment->term (car current)) vars)
-             (loop (cdr current) to-remove (cons (car current) clean) to-subst)]
-            [else (loop (cdr current) to-remove clean (cons (car current) to-subst))])))))
 
 (print-gensym #f)
 ; (define var
@@ -169,6 +104,36 @@
     (cond
       [(eq? term var) subst]
       [else (cons (commitment var term) subst)])))
+
+(define compose-subst/own-survivors
+  (lambda (base refining survivors)
+    (let refine ([b* base])
+      (if (null? b*) survivors
+          (cons-if-real-commitment
+            (commitment->var (car b*))
+            (subst-in (commitment->term (car b*)) refining)
+            (refine (cdr b*)))))))
+
+(define compose-subst
+  (lambda (base refining)
+    (compose-subst/own-survivors base refining
+      (let survive ([r* refining])
+        (cond
+          [(null? r*) '()]
+          [(assq (commitment->var (car r*)) base) (survive (cdr r*))]
+          [else (cons (car r*) (survive (cdr r*)))])))))
+
+; relatively-ground? TERM (VAR ...) -> BOOL
+; Returns #t if none of the VARs occur in TERM
+(define relatively-ground?
+  (lambda (term vars)
+    (cond
+      [(var? term) (not (memq term vars))]
+      [(pair? term)
+       (and (relatively-ground? (car term) vars)
+            (relatively-ground? (cdr term) vars))]
+      [else #t])))
+
 
 (define subst-in  ;;; This definition will change several times.
   (lambda (t subst)
@@ -234,7 +199,7 @@
   #t)
 
 
-(define == 
+'(define == 
   (lambda (x y)
     (lambda@ (sk fk subst)
       (cond
@@ -255,16 +220,6 @@
 
 ;(load "plprelims.ss")
 
-;  Fk  = () -> Ans
-;  Ans =  Nil + [Subst,Fk]
-;  Sk = Fk -> Subst -> Ans  
-;  Antecedent = Sk -> Sk
-;  Rule = Antecedent -> [Goal-fn,Int] -> Antecedent
-
-;  relation: Term -> Antecedent
-;  to-show: Term -> Antecedent -> Rule
-;  initial-sk : Sk
-;  initial-fk : Fk
 
 ;(load "expand-only.ss")
 
@@ -404,10 +359,72 @@
       (let-lv (x) (unit-subst x 4))))
   '((x.0 . 3) (x.1 . 4)))
 
+
+;  Fk  = () -> Ans
+;  Ans =  Nil + [Subst,Fk]
+;  Sk = Fk -> Subst -> Ans  
+;  Antecedent = Sk -> Sk
+;  Rule = Antecedent -> [Goal-fn,Int] -> Antecedent
+
+;  relation: Term -> Antecedent
+;  to-show: Term -> Antecedent -> Rule
+;  initial-sk : Sk
+;  initial-fk : Fk
+
 (define initial-fk (lambda () '()))
 (define initial-sk (lambda@ (fk subst)
 		     ;(pretty-print subst)
 		     (cons subst fk)))
+
+;------------------------------------------------------------------------
+; Making logical variables "scoped" and garbage-collected
+
+; A framework to remove introduced variables when they leave their scope.
+; To make removing variables easier, we consider the list
+; of subst as a "stack". Before we add a new variable, we put a mark
+; on the stack. Mark is a special variable binding, whose term is 
+; the current subst. When we are about to remove added variables after
+; their scope is ended, we locate the mark (using eq?) and check that
+; the term bound to the mark is indeed the subst after the mark.
+; If it so, then the subst list wasn't perturbed, and we know that
+; anything below the mark can't possibly contain the reference to the
+; variable we're about to remove.
+
+(define-syntax exists
+  (syntax-rules ()
+    [(_ () ant) ant]
+    [(_ (id ...) ant)
+     (let-lv (id ...)
+       (lambda@ (sk fk in-subst)
+	 (@ ant
+            (lambda@ (fk out-subst)
+              (@ sk fk (prune-subst (list id ...) in-subst out-subst)))
+            fk in-subst)))]))
+
+; PRUNE IN-SUBST SUBST ID ....
+; remove the bindings of ID ... from SUBST (by composing with the
+; rest of subst). IN-SUBST is the mark.
+; If we locate IN-SUBST in SUBST, we know that everything below the
+; mark can't possibly contain ID ...
+
+
+(define prune-subst
+  (lambda (vars in-subst subst)
+    (if (eq? subst in-subst)
+        subst
+        (let loop ([current subst] [to-remove '()] [clean '()] [to-subst '()])
+          (cond
+            [(null? current) (compose-subst/own-survivors to-subst to-remove clean)]
+            [(eq? current in-subst)
+             (compose-subst/own-survivors to-subst to-remove (append clean current))]
+            [(memq (commitment->var (car current)) vars)
+             (loop (cdr current) (cons (car current) to-remove) clean to-subst)]
+            [(relatively-ground? (commitment->term (car current)) vars)
+             (loop (cdr current) to-remove (cons (car current) clean) to-subst)]
+            [else (loop (cdr current) to-remove clean (cons (car current) to-subst))])))))
+
+; when the unifier is moved up, move prune-subst test from below up...
+
 
 
 ;-----------------------------------------------------------
@@ -1924,14 +1941,6 @@
            (values (cons carct cdrct) env)))]
       [else (values t env)])))
 
-(define relatively-ground?
-  (lambda (term vars)
-    (cond
-      [(var? term) (not (memq term vars))]
-      [(pair? term)
-       (and (relatively-ground? (car term) vars)
-            (relatively-ground? (cdr term) vars))]
-      [else #t])))
 
 (define subst-in
   (lambda (t subst)
@@ -2750,6 +2759,30 @@
           ((q.0 (x.0 x.1 x.2 x.3 x.4)))))))
   #t)
 
+; Using the properties of the unifier to do the proper garbage
+; collection of logical vars
+
+(test-check 'prune-subst-1
+  (concretize
+    (let-lv (x z dummy)
+      (@ 
+	(exists (y)
+	  (== `(,x ,z ,y) `(5 9 ,x)))
+	(lambda@ (fk subst) subst)
+	initial-fk
+	(unit-subst dummy 'dummy))))
+  '((x.0 . 5) (z.0 . 9) (dummy.0 . dummy)))
+
+(test-check 'prune-subst-2
+  (concretize
+    (let-lv (x dummy)
+      (@ 
+	(exists (y)
+	  (== `(,x ,y) `((5 ,y) ,7)))
+	(lambda@ (fk subst) subst)
+	initial-fk
+	(unit-subst dummy 'dummy))))
+  '((a*.0 . 7) (x.0 5 a*.0) (dummy.0 . dummy)))
 
 ;;;; *****************************************************************
 ;;;; This is the start of a different perspective on logic programming.
