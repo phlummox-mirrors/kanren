@@ -1,0 +1,311 @@
+		Multiple-world semantics of Kanren
+	  Algebraic properties of antecedents and combinators
+
+* Primitive antecedents
+
+(== var val), succeed (hereafter denoted as #s) and fail (hereafter,
+#u) are primitive antecedents. They tell an atomic piece of
+information about the world. Each has at most one answer. (== var val)
+succeeds and tells us that in the world it succeeds, var is associated
+with val. #s just succeeds (and tells us nothing more about the
+world). #u just fails.
+
+#u (== var_i val_i) #s form a lattice: nothing, something, everything
+
+* Simple antecedents: all
+
+(== x 5) tells us that in the world it succeeds x is associated with
+5.
+(== y 7) tells us that in the world it succeeds y is associated with
+7.
+
+(all (== x 5) (== y 7)) tells that in the world it succeeds x is
+associated with 5 and y is associated with 7. So, (all fact1 fact2)
+tells us that both facts are true in the world where (all fact1 fact2)
+succeeds. 'all' enumerates the facts that hold simultaneously.
+
+(all fact1 fact2) is often written as just a juxtaposition "fact1
+fact2" (just as multiplication a * b is often written as a b in
+mathematical notation. The analogy with multiplication is not an
+accident).
+
+So, simple antecedents -- like trivial antecedents -- either fail or
+succeed at most once. When they succeed, they tell us several facts
+about the world. By a "fact" we mean an association between a variable
+and a value (a value associated with a particular variable).
+
+
+#s is a trivial antecedent that succeeds and tells nothing about the
+association of variables with values. Totally indeterminate.
+
+(all (== x 1) (== y 2)) tells that in the world the all form succeeds,
+x is associated with 1 and y is associated with 2. Totally
+determinate.
+
+(== x y) -- tells that in the world it succeeds, x is associated with
+the same value that y is associated with. But it does not tell what
+this value is. Can be anything. Somewhat indeterminate.
+
+So, when we add simple antecedents, we get a richer lattice, more
+shades between the total knowledge and the total ignorance.
+
+(== x x) -- in the world this succeeds, x is associated with whatever
+x is associated. Which tells us absolutely nothing about x. This is
+the same as #s.
+
+
+* General antecedents
+
+A general antecedent either fails, or succeeds. When it succeeds, it
+tells us one or more _alternative_ facts about the world (or
+alternative worlds?).  Each answer is an _alternative_ view of the
+world. The list of answers is _ordered_.
+
+
+(member* x '(1 2 3))
+returns three answers.
+
+That means, in the world where (member* x '(1 2 3)) succeeds, x can be
+either 1, or 2, or 3.
+
+
+* Any
+
+(any (== x 1) (== x 2) (== x 3)))
+The same answers, in the same order. 
+
+So, each antecedent can be conceptually (if not literally) represented
+either as #s, #u, or (any ant1 ant2 ...)
+
+where ant_i is either a simple or trivial antecedent.
+So, a general antecedent either fails, or gives us a sequence of
+alternative views of the world, each view being a set of facts that hold
+about the world.
+
+
+* Properties of `all' of simple or trivial antecedents
+
+(all (== x 1) (== x 1))
+In the world where that succeeds, x is associated with 1 and x is
+associated with 1. That is, x is associated with 1: 
+the same is (== x 1)
+
+(all (== x 1) (== y 5))
+In the world where that succeeds, x is associated with 1 and y is
+associated with 5.
+
+(all (== y 5) (== x 1))
+In the world where that succeeds, x is associated with 1 and y is
+associated with 5. That is the same as above.
+
+(all (== x 1) (== y x))
+In the world where that succeeds, x is associated with 1 and y is
+associated with the same value -- that is, 1.
+
+(all (== x 1) #s) -- in the world this succeeds, x is associated with
+1. #s adds no information, So 
+(all (== x 1) #s) is the same as (== x 1)
+
+(all (== x 1) #u): in the world this succeeds, x is associated with 1,
+and, well, #u denies every possible fact. There is no world where both
+facts hold because there is no world #u holds.
+That form can never succeed, so (all (== x 1) #u) is the same as #u.
+
+(all (== x 1) (== x 2)) In a world where this form succeeds, x is
+associated with 1 and at the same time x is associated with 2. But
+this is a contradiction. So, there is no world the above form
+succeeds: (all (== x 1) (== x 2)) is the same as #u.
+
+(all (all (== x 1) (== y 2)) (== x 1)): in the world it succeeds, on
+one hand, x is associated with 1 and y with 2. OTH, we assert that x
+is associated with 1. The latter adds nothing to our knowledge: we
+already know that x is associated with 1. So,
+(all (all (== x 1) (== y 2)) (== x 1)) is the same as (all (== x 1)
+(== y 2)) 
+
+
+The upshot (`ant' is a simple or a trivial antecedent):
+
+(all ant ant) === ant
+(all ant) === ant
+(all ant1 ant2) === (all ant2 ant1)
+(all ant1 #s) === ant1
+(all ant1 #u) === #u
+(all ant1 ant2) === #u if ant1 and ant2 contradict each other.
+(all ant1 ant2) === ant1 if ant1 implies ant2: that is, all facts
+   described by ant2 are true for ant1. Facts ant1 subsume facts ant2.
+
+(all (all ant1 ant2) ant3) === (all ant1 ant2 ant3) Flattening
+
+So, all indeed looks like a multiplication: or, more precise, as
+conjunction. Here, #s plays the role of #t and #u as #f. However, we
+have a far richer logic.
+
+
+
+* Properties of any
+
+(any simple-ant) tells one alternative view of the world -- which is
+the same as simple-ant.
+
+(any (== x 1) (== y 2)) In the world this holds, either x is
+associated with 1, or y is associated with 2.
+
+(any (== y 2) (== x 1)) In the world this holds, either y is
+associated with 2, or x is associated with 1. The order of the
+alternatives matter, so this is not the same as the above.
+
+
+(any (== x 1) (== x 1)) In the world this holds, either x is
+associated with 1, or x is associated with 1. This is not the same as
+(== x 1) [I guess the "alternative _worlds_"  notion plays better: (== x 1)
+means one world. (any (== x 1) (== x 1)) asserts two different worlds
+in both of which x is associated with 1. Those two worlds are not
+necessarily the same. They may differ in other respects, of which we
+are not told.]
+
+(any (== x 1) (== x 2)) We have two alternatives: either x is
+associated with 1, or x is associated with 2. They are alternatives,
+there is no contradiction here.
+
+(any (== x 1) #u) -- we have two alternatives: in one of them, x is
+associated with 1. In the other alternative -- wait, we don't have the
+other alternative. So,
+(any (== x 1) #u) is the same as (== x 1). That is, in (cond@ ...)
+lines that are equivalent to #u are effectively non-existent.
+
+(any (== x 1) #s) -- we have two alternatives: in one of them, x is
+associated with one. In another alternative, we don't know what x is
+associated with. But that alternative exists.
+(any (== x 1) #s) is not the same as (== x 1)
+Likewise, (any #s #s ....) is not the same as #s.
+
+So, 'any' is not the same as 'or' -- order matters, no #t subsumption,
+but #u (aka #f) suppression holds.
+
+(any (any ant1 ant2) (any ant3 ant4)) === (any ant1 ant2 ant3 ant4)
+flattening. But watch the order! Unlike 'all', the order matters here.
+
+* #s
+
+#s succeeds but says essentially nothing about the world it succeeds.
+
+#s is essentially equivalent to
+	(any (== x 0) (== x 1) (== x 2) (== x any-possible-value))
+So, #s is a set of every possible alternative view of the
+world. However, unlike the above `any' form (which has many answers),
+#s has only one answer.
+
+
+* Any and All
+
+(any (all (== x 1) (== y 2)) (all (== x 2) (== y 1)))
+Two alternatives. In the first one, x is associated with 1 and y with
+2. In the second alternative, it's the other way around.
+
+(all (any (== x 1) (== x 2)) (== y 5))
+The same as (any (all (== x 1) (== y 5)) (all (== x 2) (== y 5)))
+Two alternatives.
+
+(all (any (== x 1) (== y 2)) (any (== x 2) (== y 1)))
+We assert that (any (== x 1) (== y 2)) holds and (any (== x 2) (== y
+1)) holds at the same time. But the former actually two alternatives,
+and so is the latter. So, we have four alternatives to consider:
+
+(any (all (== x 1) (== x 2))
+     (all (== x 1) (== y 1))
+     (all (== y 2) (== x 2))
+     (all (== y 2) (== y 1)))
+
+But (all (== x 1) (== x 2)) is the same as #u, by the rule of
+contradiction. The same for (all (== y 2) (== y 1)). So, we get
+
+(any #u
+     (all (== x 1) (== y 1))
+     #u
+     (all (== y 2) (== y 1)))
+which is the same as (any (all (== x 1) (== y 1)) (all (== y 2) (== x 2)))
+That is, we have two alternatives: either x and y are both 1, or both
+2. 
+
+This is quite similar to the distributivity of multiplication relative to
+addition. 'all' is quite similar to multiplication. But for 'any',
+order matters a great deal. So, we have to watch the order.
+Actually, the commutativity of 'all' holds only if its arguments are
+simple antecedents.
+
+* The disjunctive normal form for antecedents
+
+An antecedent is conceptually (or literally) equivalent to
+	(any (all ant1 ...) ...)
+where ant1 is a simple or a trivial antecedent. This is a disjunctive
+normal form. 
+
+
+* An antecedent as a question. 
+
+Its answer is an ordered list of world alternative views (alternative
+worlds) where the question holds.
+In other words, an antecedent is a question of the form: "are there
+any worlds so that either that set of facts holds, or that set of
+facts holds, etc." In the second form, the question is essentially
+the answer itself.
+
+Non-deterministic semantics of 'solve': if we disregard the order of the
+answers, we can seek the answers just be trying at random all possible
+answers. That is, we just consider the set of all the of worlds and try
+out one-by-one or in parallel until we find the one with the set of
+facts consistent with the question. This is white-box vs. black-box.
+In the white-box approach (which is essentially used in kanren), we take a
+look at the disjunctive normal form of a question and return the
+corresponding answers. In the black-box approach, we try to guess at
+the set of facts that correspond to one or several disjunctions.
+
+* Committed choice.
+
+A general antecedent gen-ant gives us an ordered list of possible
+alternative views of the world (or possible worlds). Sometimes we
+don't care about all the possibilities: we only want one. Given a
+question (a predicate) we are interested in the one answer -- the first
+in the list of possible alternatives. 
+
+(cchoice gen-ant) converts a general antecedent into a simple one.
+(cchoice ant) has at most one answer -- the first answer of the
+gen-ant.
+
+Justification: See the mercury documentation on committed choice. It
+is well-written.
+
+Another justification. We want to find out if a particular question can
+ever be answered. In that formulation, we don't care about all the
+answers. E.g., if there is a counter-example to some assertion. When
+we look for a counter-example, we are usually satisfied with the first
+we find.
+
+Another, the most important justification: greedy search. When we
+search through possible worlds looking for the one with specific
+properties, often there are way too many alternatives to
+consider. Therefore, in practical terms it is worth to pare down the
+search. Cf. greedy search vs. exhaustive search. By limiting the
+search (considering the first of many alternatives) we may miss
+something (or the really optimal solution). OTH, we may quickly find a
+quite satisfactory solution. So, sacrificing completeness for
+efficiency -- the very common trade-off in logical programming.
+
+So, in mini-kanren,
+(cond@ ((q1 a1) ...)) is essentially (any (all q1 a1) ...)
+BTW, (else a) is a shorthand for (#s a)
+
+But
+
+(condo ((q1 a1)) ...) is a subset of cond@. We commit to the first
+question that succeeds (at least once). The set of worlds that satisfy
+the first q_i constitute the subset of all the choices we are
+committed to. We disregard all other alternatives. So, condo always
+gives a subset of answers of the corresponding cond@ (it can be an
+improper subset, i.e., the same sequence of answers as that of cond@).
+
+BTW, 'cchoice' is not expressible with condo (condo is like if-some,
+and cchoice corresponds to if-only). 
+
+
