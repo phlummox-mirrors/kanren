@@ -32,7 +32,7 @@
 ;
 ; We give two implementations of addition and multiplication
 ; relations, `++o' and `**o'. Both versions have the properties of
-; soundness and refutational completeness. The first version of `++o'
+; soundness and nealy refutational completeness. The first version of `++o'
 ; is faster, but it does not always recursively enumerate its domain
 ; if that domain is infinite.  This is the case when, e.g., (**o x y
 ; z) is invoked when all three x, y, and z are uninstantiated
@@ -80,8 +80,8 @@
 ; Therefore, our arithmetic relations are not only sound
 ; (e.g., if (**o X Y Z) holds then it is indeed X*Y=Z) but also
 ; complete (if X*Y=Z is true then (**o X Y Z) holds) and
-; refutationally complete (if X*Y=Z is false then (**o X Y Z) fails,
-; in finite time).
+; nearly refutationally complete (if X*Y=Z is false and Z is fully
+; instantiated, then (**o X Y Z) fails, in finite time).
 ;
 ; The numerals are represented in the binary little-endian
 ; (least-significant bit first) notation. The higher-order bit must be 1.
@@ -136,7 +136,7 @@
 
 ; (<ol3 p1 p n m) holds iff
 ; p1 = 0 and p > 0 or
-; length(p1) < length(p) <= length(n) + length(m)
+; length(p1) < min(length(p), length(n) + length(m) + 1)
 (define <ol3
   (relation (head-let p1 p n m)
     (any
@@ -153,6 +153,24 @@
 	      (all (== n  `(,_ . ,nr)) 
 		(<ol3 p1r pr nr m)))
 	    ))))))
+
+; (<ol2 p n m) holds iff
+; if length(p) <= length(n) + length(m)
+; This predicate has nice properties: see the corresponding Prolog
+; code for proofs.
+(define <ol2
+  (relation (head-let p n m)
+    (any-interleave
+      (== p '())
+      (exists (pr mr)
+	(all
+	  (== p `(,_ . ,pr)) (== n '()) (== m `(,_ . ,mr))
+	  (<ol2 pr '() mr)))
+      (exists (pr nr)
+	(all
+	  (== p `(,_ . ,pr)) (== n `(,_ . ,nr))
+	  (<ol2 pr nr m))))))
+
 
 ; Half-adder: carry-in a b r carry-out
 ; The relation holds if
@@ -464,16 +482,26 @@
       (all (zeroo n) (== p '()))		; 0 * m = 0
       (all (zeroo m) (pos n) (== p '()))	; n * 0 = 0
       (all (== n '(1)) (pos m) (== m p))        ; 1 * m = m
+      (all (== m '(1)) (gt1 n) (== n p))        ; n * 1 = n, n>1
 
       ; (2*nr) * m = 2*(nr*m), m>0 (the case of m=0 is taken care of already)
       ; nr > 0, otherwise the number is ill-formed
       (exists (nr pr)
 	(all
-	  (pos m)
+	  (gt1 m)
 	  (== n `(0 . ,nr))
 	  (== p `(0 . ,pr))
 	  (pos nr) (pos pr)
 	  (**o nr m pr)))
+
+      ; The symmetric case to the above: m is even, n is odd
+      (exists (mr pr)
+	(all
+	  (== n `(1 ,_ . ,_))		; n is odd and n > 1
+	  (== m `(0 . ,mr))
+	  (== p `(0 . ,pr))
+	  (pos mr) (pos pr)
+	  (**o n mr pr)))
 
       ; (2*nr+1) * m = 2*(n*m) + m
       ; m > 0; also nr>0 for well-formedness
@@ -482,7 +510,7 @@
       ; and (floor (log2 (nr*m))) < (floor (log2 (2*(nr*m) + m)))
       (exists (nr p1)
 	(all
-	  (pos m)
+	  (== m `(1 ,_ . ,_))		; m is odd and n > 1
 	  (== n `(1 . ,nr))
 	  (pos nr) (gt1 p)
 	  (<ol3 p1 p n m)
@@ -669,7 +697,7 @@
   (solve 7 (w) 
     (exists (y z) (all (**o y z (build 6))
 		    (project (y z) (== `(,(trans y) ,(trans z)) w)))))
-  '(((w.0 (1 6))) ((w.0 (2 3))) ((w.0 (3 2)))  ((w.0 (6 1)))))
+  '(((w.0 (1 6))) ((w.0 (6 1))) ((w.0 (2 3)))  ((w.0 (3 2)))))
 
 ; Only one answer
 (test-check 'multiplication-all-2
@@ -703,23 +731,42 @@
 )
 
 (test-check 'multiplication-all-5
-  (solve 5 (x y z) (**o x y z))
+  (solve 7 (x y z) (**o x y z))
   '(((x.0 ()) (y.0 y.0) (z.0 ())) ; 0 * y = 0 for any y whatsoever
     ((x.0 (*anon.0 . *anon.1)) (y.0 ()) (z.0 ())) ; x * 0 = 0 for x > 0
      ; 1 * y = y for y > 0
     ((x.0 (1)) (y.0 (*anon.0 . *anon.1)) (z.0 (*anon.0 . *anon.1)))
-     ; 2 * y = even positive number, for y > 0
-    ((x.0 (0 1)) (y.0 (*anon.0 . *anon.1)) (z.0 (0 *anon.0 . *anon.1)))
-     ; 3 * 1 = 3
-     ((x.0 (1 1)) (y.0 (1)) (z.0 (1 1)))
+    ((x.0 (*anon.0 *anon.1 . *anon.2)) (y.0 (1)) 
+      (z.0 (*anon.0 *anon.1 . *anon.2))) ;  x * 1 = x, x > 1
+     ; 2 * y = even positive number, for y > 1
+    ((x.0 (0 1)) (y.0 (*anon.0 *anon.1 . *anon.2)) 
+      (z.0 (0 *anon.0 *anon.1 . *anon.2)))
+     ; x * 2 = shifted-left x, for even x>1
+    ((x.0 (1 *anon.0 . *anon.1)) (y.0 (0 1)) (z.0 (0 1 *anon.0 . *anon.1)))
+     ; 3 * 3 = 9
+    ((x.0 (1 1)) (y.0 (1 1)) (z.0 (1 0 0 1)))
     )
 )
 
 (test-check 'multiplication-even-1
-  (solve 5 (y z) (**o (build 2) y z))
+  (solve 10 (y z) (**o (build 2) y z))
   '(((y.0 ()) (z.0 ()))
-     ; 2*y is an even number, for any y > 0!
-    ((y.0 (*anon.0 . *anon.1)) (z.0 (0 *anon.0 . *anon.1))))
+    ((y.0 (1)) (z.0 (0 1))) ; 2 * 1 = 2
+     ; 2*y is an even number, for any y > 1!
+    ((y.0 (*anon.0 *anon.1 . *anon.2)) (z.0 (0 *anon.0 *anon.1 . *anon.2)))
+     )
+)
+
+(test-check 'multiplication-even-2
+  ; multiplication by an even number cannot yield an odd number
+  (solution (q x y u v) (**o '(1 1) `(0 0 1 ,x . ,y) `(1 0 0 ,u . ,v)))
+  #f
+)
+
+(test-check 'multiplication-even-3
+  ; multiplication by an even number cannot yield an odd number
+  (solution (q x y z) (**o `(0 0 1 . ,y) `(1 . ,x) `(1 0 . ,z)))
+  #f
 )
 
 ; check that mul(X,Y,Z) recursively enumerates all
@@ -786,15 +833,17 @@
 (test-check 'div-all-3
   (solve 3 (x y z r) (divo x y z r))
 '(((x.0 ()) (y.0 (*anon.0 . *anon.1)) (z.0 ()) (r.0 ())) ; 0 = a*0 + 0, a>0
-   ; There, anon.0 must be 1
-  ((x.0 (0 *anon.0)) (y.0 (*anon.0)) (z.0 (0 1)) (r.0 ()))
+   ; There, anon.1 must be 1
+  ((x.0 (*anon.0 *anon.1)) (y.0 (1)) (z.0 (*anon.0 *anon.1)) (r.0 ()))
   ; if z = 1, the two numbers must be equal -- but positive!
   ((x.0 (*anon.0)) (y.0 (*anon.0)) (z.0 (1)) (r.0 ()))
 ))
+
 
 (test-check 'div-even
   (solve 3  (y z r) (divo `(0 . ,y) (build 2) z r))
   '(((y.0 (0 1)) (z.0 (0 1)) (r.0 ()))
     ((y.0 (1))   (z.0 (1)) (r.0 ()))
-    ((y.0 (1 1)) (z.0 (1 1)) (r.0 ())))
+    ((y.0 (1 *anon.0)) (z.0 (1 *anon.0)) (r.0 ())))
 )
+
