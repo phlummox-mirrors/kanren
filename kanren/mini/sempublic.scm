@@ -1,5 +1,3 @@
-;;; Even prettier code for alli
-
 ;;; all_2 succeed
 (load "minikanrensupport.scm")
 
@@ -322,6 +320,16 @@
                          (lambda (w)
                            (fk)))))
           (@ a like-sk like-fk s (- n 1)))))))
+
+(define-syntax succ
+  (syntax-rules ()
+    [(_) succeed]
+    [(_ e e* ...)
+     (lambda@ (sk fk s)
+       (begin
+         e
+         (@ (succ e* ...) sk fk s)))]))
+
 
 (define handy
   (lambda (x y q)
@@ -671,6 +679,30 @@
     ((_ (a* ...) c* ...) (any (alli a* ...) (cond@$ c* ...)))))
 
 
+
+
+
+(define count-up
+  (lambda (i n)
+    (cond@
+      ((== i n) succeed)
+      (else (count-up (+ i 1) n)))))
+
+;;;  alli is not in the book yet
+(cout "Test recursive enumerability of alli" nl)
+(let ((n 4))
+  (do ((i 0 (+ 1 i))) ((> i n))
+    (do ((j 0 (+ 1 j))) ((> j n))
+      (test-check
+	(string-append "alli enumerability: " (number->string i)
+          " " (number->string j))
+        (run (q)
+          (fresh (x y)
+            (alli (count-up 0 x) (count-up 0 y))
+            (== x i)
+            (== y j)
+            (== `(,x ,y) q)))
+        `(,i ,j)))))
 
 ; testing alli
 (test-check 'alli-1
