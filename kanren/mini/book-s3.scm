@@ -161,7 +161,7 @@
   (syntax-rules ()
     ((_ (x ...) g0 g ...)  
      (lambdag@ (s)
-       (let ((x (walk-strongly x s)) ...)
+       (let ((x (walk* x s)) ...)
          ((all g0 g ...) s))))))
 
 (define-syntax cond@

@@ -40,24 +40,10 @@
               (if (procedure? x) (x) (display x)))
             args))
 
-; (define-record logical-variable (id) ())
-; (define var make-logical-variable)
-; (define var? logical-variable?)
-; (define var-id logical-variable-id)
-
 (define empty-s '())
 
-(define var-id
-  (lambda (x)
-    (vector-ref x 0)))
-
-(define var       ;;;;; (and needs explaining)
-  (lambda (id)
-    (vector (symbol->string id))))
-
-(define var?
-  (lambda (x)
-    (vector? x)))
+(define var vector)      ;;;;; (and needs explaining)
+(define var? vector?)
 
 (define ground?
   (lambda (v)
@@ -67,10 +53,9 @@
        (and (ground? (car v)) (ground? (cdr v))))
       (else #t))))
 
-(define rhs
-  (lambda (b)
-    (cdr b)))
+(define rhs cdr)
 
+(define lhs car)
 
 (define ext-s
   (lambda (x v s)
@@ -134,63 +119,71 @@
 
 
 ; Compute the list of (free) variables of a term t, in the depth-first 
-; term-traversal order.
+; term-traversal order; we know that v^ has been walked-strongly.
 (define free-vars
-  (lambda (t)
-    (reverse (fv t '()))))
+  (lambda (v^)
+    (reverse (fv v^ '()))))
 
 (define fv
-  (lambda (t acc)
+  (lambda (v^ acc)
     (cond
-      ((pair? t) (fv (cdr t) (fv (car t) acc)))
-      ((var? t) (if (memq t acc) acc (cons t acc)))
+      ((var? v^) (if (memq v^ acc) acc (cons v^ acc)))
+      ((pair? v^) (fv (cdr v^) (fv (car v^) acc)))
       (else acc))))
 
 
 ; Given a term v and a subst s, return v', the weak normal form of v:
 ; v -->w! v' with respect to s
 (define walk
-  (lambda (v s)
+  (lambda (x s)
     (cond
-      ((var? v) 
-       (cond
-         ((assq v s) =>
-          (lambda (b) (walk (rhs b) s)))
-         (else v)))
-      (else v))))
+      ((assq x s) =>
+       (lambda (pr)
+         (let ((v (rhs pr)))
+           (cond
+             ((var? v) (walk v s))
+             (else v)))))
+      (else x))))
 
 ; Given a term v and a subst s, return v', the strong normal form of v:
 ; v -->s! v' with respect to s
-(define walk-strongly
+(define walk*
   (lambda (v s)
     (cond
       ((var? v)
-       (cond
-         ((assq v s) =>
-          (lambda (b) (walk-strongly (rhs b) s)))
-         (else v)))
+       (let ((v (walk v s)))
+         (cond
+           ((var? v) v)
+           (else (walk* v s)))))
       ((pair? v)
        (cons 
-         (walk-strongly (car v) s)
-         (walk-strongly (cdr v) s)))
+         (walk* (car v) s)
+         (walk* (cdr v) s)))
       (else v))))
 
 (define reify
   (lambda (v s)
-    (let ((t (walk-strongly v s)))
-      (let ((fv (free-vars t)))
-    	(walk-strongly t (find-pretty-names fv 0))))))
+    (re (walk* v s))))
+
+(define re
+  (lambda (v^)
+    (walk* v^ (name-s (free-vars v^)))))
 
 ; Given the list of free variables and the initial index,
 ; create a subst { v -> pretty-name-indexed }
 ; where pretty-name-indexed is the combination of "_" (indicating
 ; a free variable) and the index ".0", ".1", etc.
-(define find-pretty-names
-  (lambda (fv index)
-    (if (null? fv) empty-s
-      (ext-s (car fv) (reify-id index)
-	(find-pretty-names (cdr fv) (+ 1 index))))))
+(define name-s
+  (lambda (fv)
+    (ns fv 0)))
 
+(define ns
+  (lambda (fv c)
+    (cond
+      ((null? fv) empty-s)
+      (else
+        (ext-s (car fv) (reify-id c)
+	      (ns (cdr fv) (+ c 1)))))))
 
 (define reify-id      ;;;;; NEW
   (lambda (index)
@@ -201,39 +194,14 @@
         "}}$"))))
 
 (define reify-id      ;;;; NEW
-  (lambda (index)
+  (lambda (c)
     (string->symbol
-      (string-append "_" (string #\.) (number->string index)))))
-
-
-(define unify-check
-  (lambda (v w s)
-    (let ((v (walk v s))
-          (w (walk w s)))
-      (cond
-        ((eq? v w) s)
-        ((var? v)
-         (cond
-           ((occurs? v w s) #f)
-           (else (ext-s v w s))))
-        ((var? w)
-         (cond
-           ((occurs? w v s) #f)
-           (else (ext-s w v s))))
-        ((and (pair? v) (pair? w))
-         (cond
-           ((unify-check (car v) (car w) s) =>
-            (lambda (s)
-              (unify-check (cdr v) (cdr w) s)))
-           (else #f)))
-        ((or (pair? v) (pair? w)) #f)
-        ((equal? v w) s)
-        (else #f)))))
+      (string-append "_." (number->string c)))))
 
 (define unify
   (lambda (v w s)
-    (let ((v (walk v s))
-          (w (walk w s)))
+    (let ((v (if (var? v) (walk v s) v))
+          (w (if (var? w) (walk w s) w)))
       (cond
         ((eq? v w) s)
         ((var? v) (ext-s v w s))
@@ -244,25 +212,23 @@
             (lambda (s)
               (unify (cdr v) (cdr w) s)))
            (else #f)))
-        ((or (pair? v) (pair? w)) #f)
         ((equal? v w) s)
         (else #f)))))
 
 (define unify-check
   (lambda (v w s)
-    (let ((v (walk v s))
-          (w (walk w s)))
+    (let ((v (if (var? v) (walk v s) v))
+          (w (if (var? w) (walk w s) w)))
       (cond
         ((eq? v w) s)
         ((var? v) (ext-s-check v w s))
         ((var? w) (ext-s-check w v s))
         ((and (pair? v) (pair? w))
          (cond
-           ((unify (car v) (car w) s) =>
+           ((unify-check (car v) (car w) s) =>
             (lambda (s)
-              (unify (cdr v) (cdr w) s)))
+              (unify-check (cdr v) (cdr w) s)))
            (else #f)))
-        ((or (pair? v) (pair? w)) #f)
         ((equal? v w) s)
         (else #f)))))
 
@@ -275,12 +241,18 @@
 (define occurs?
   (lambda (x v s)
     (cond
-      ((var? v) (eq? v x))
-      ((pair? v)
-       (or (occurs? x (walk (car v) s) s)
-           (occurs? x (walk (cdr v) s) s)))
+      ((var? v)
+       (let ((v (walk v s)))
+         (cond
+           ((var? v) (eq? v x))
+           (else (occurs? x v s)))))
+      ((pair? v) 
+       (or 
+         (occurs? x (car v) s)
+         (occurs? x (cdr v) s)))
       (else #f))))
 
-(define count-cons 0)
+
+
 
 
