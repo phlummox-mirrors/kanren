@@ -42,7 +42,7 @@
               [produced tested-expression])
          (or (equal? expected produced)
              (error 'test-check
-               "Failed: ~a~%Expected: ~a~%Computed: ~a~%"
+               "Failed: ~s~%Expected: ~s~%Computed: ~s~%"
                'tested-expression expected produced)))))))
 
 (test-check 'test-@-lambda@
@@ -146,20 +146,6 @@
 (define unit-subst
   (lambda (var t)
     (if (and (var? t) (eq? t _)) empty-subst (list (commitment var t)))))
-
-'(define compose-subst
-  (lambda (base refining)
-    (let refine ([base base] [survivors refining])
-      (cond
-        [(null? base) survivors]
-        [else (cons-if-real-commitment
-                (commitment->var (car base))
-                (subst-in (commitment->term (car base)) refining)
-                (refine (cdr base)
-                  (cond
-                    [(assq (commitment->var (car base)) survivors)
-                     => (lambda (c) (remv c survivors))]
-                    [else survivors])))]))))
 
 (define extend-subst
   (lambda (unbound-var contains-no-bound-vars subst)
@@ -399,6 +385,12 @@
       `(,(commitment x 'b) ,(commitment z y))))
   #t)
 
+(test-check 'test-compose-subst-5
+  (concretize-subst
+    (compose-subst
+      (let-lv (x) (unit-subst x 3))
+      (let-lv (x) (unit-subst x 4))))
+  '((x.0 . 3) (x.1 . 4)))
 
 (define initial-fk (lambda () '()))
 (define initial-cutk initial-fk)
@@ -406,16 +398,75 @@
 		     ;(pretty-print subst)
 		     (cons (cons subst cutk) fk)))
 
-(define-syntax splice-in-ants/any
+(define-syntax binary-extend-relation-interleave
   (syntax-rules ()
-    [(_ sk fk subst cutk ant1) (@ ant1 sk fk subst cutk)]
-    [(_ sk fk subst cutk ant1 ant2 ...)
-      (@ ant1
-	sk
-	(lambda () (splice-in-ants/any sk fk subst cutk ant2 ...))
-	subst
-	cutk)]))
+    [(_ (id ...) rel-exp1 rel-exp2)
+     (let ([rel1 rel-exp1] [rel2 rel-exp2])
+       (lambda (id ...)
+         (lambda@ (sk fk subst cutk)
+           ((interleave sk fk (finish-interleave sk fk))
+            (@ (rel1 id ...) initial-sk initial-fk subst cutk)
+            (@ (rel2 id ...) initial-sk initial-fk subst cutk)))))]))
 
+(define finish-interleave
+  (lambda (sk fk)
+    (letrec
+      ([finish
+         (lambda (q)
+           (cond
+             [(null? q) (fk)]
+             [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
+                     (@ sk (lambda () (finish (fk))) subst cutk))]))])
+      finish)))
+
+(define interleave
+  (lambda (sk fk finish)
+    (letrec
+      ([interleave
+         (lambda (q1 q2)
+           (cond
+             [(null? q1) (if (null? q2) (fk) (finish q2))]
+             [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
+                     (@ sk (lambda () (interleave q2 (fk))) subst cutk))]))])
+      interleave)))
+
+(define-syntax binary-extend-relation-interleave-non-overlap
+  (syntax-rules ()
+    [(_ (id ...) rel-exp1 rel-exp2)
+     (let ([rel1 rel-exp1] [rel2 rel-exp2])
+       (lambda (id ...)
+         (lambda@ (sk fk subst cutk)
+           (let ([ant2 (rel2 id ...)])
+             ((interleave-non-overlap sk fk)
+              (@ (rel1 id ...) initial-sk initial-fk subst cutk)
+              (@ ant2 initial-sk initial-fk subst cutk)
+              ; means in case of overlap, prefer (rel2 ...) over (rel1 ...)
+              fail
+              ant2)))))]))
+
+(define interleave-non-overlap
+  (lambda (sk fk)
+    (letrec
+      ([finish
+         (lambda (q)
+           (cond
+             [(null? q) (fk)]
+             [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
+                     (@ sk (lambda () (finish (fk))) subst cutk))]))]
+       [interleave
+         (lambda (q1 q2 ant1 ant2)
+           (cond
+             [(null? q1) (if (null? q2) (fk) (finish q2))]
+             [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
+		(if (satisfied? ant2 subst) ; the solution of q1
+   					    ; satisfies ant2. Skip it
+		  (interleave q2 (fk) ant2 ant1)
+		  (@ sk (lambda () (interleave q2 (fk) ant2 ant1)) subst cutk)))]))])
+      interleave)))
+
+(define satisfied?
+  (lambda (ant subst)
+    (not (null? (@ ant initial-sk initial-fk subst initial-fk)))))
 
 ; make extend-relation behave as a CBV function, that is,
 ; evaluate rel-exp early.
@@ -439,26 +490,27 @@
 
 (define-syntax all
   (syntax-rules ()
-    [(_) (lambda (sk) sk)]
+    [(_) (lambda@ (sk) sk)]
     [(_ ant) ant]
     [(_ ant0 ant1 ant2 ...)
      (lambda@ (sk)
-       (ant0 (splice-in-ants/all sk ant1 ant2 ...)))]))
+       (@ ant0 (splice-in-ants/all sk ant1 ant2 ...)))]))
 
 (define-syntax splice-in-ants/all
   (syntax-rules ()
     [(_ sk ant) (ant sk)]
     [(_ sk ant0 ant1 ...)
-     (ant0 (splice-in-ants/all sk ant1 ...))]))
+     (@ ant0 (splice-in-ants/all sk ant1 ...))]))
+
+(define succeed (lambda (sk) sk))
 
 (define-syntax all!
   (syntax-rules ()
-    [(_) (lambda (sk) sk)]
+    [(_) succeed]
     [(_ ant) ant]
     [(_ ant0 ant1 ant2 ...)
      (lambda@ (sk fk)
        (@ ant0 (splice-in-ants/all! sk fk ant1 ant2 ...) fk))]))
-
 
 (define-syntax splice-in-ants/all!
   (syntax-rules ()
@@ -512,25 +564,13 @@
     (lambda@ (sk fk)
       (@ sk exiting-fk))))
 
-(define-syntax any
+(define-syntax splice-in-ants/any
   (syntax-rules ()
-    [(_) (lambda@ (sk fk subst cutk) (fk))]
-    [(_ ant) ant]
-    [(_ ant0 ant1 ...)
-     (lambda@ (sk fk subst cutk)
-       (letrec-syntax
-         ([splice-in-ants 
-            (syntax-rules ()
-              [(_) fk]
-              [(_ ant . other-ants)
-               (lambda ()
-                 (@ ant sk (splice-in-ants . other-ants) subst cutk))])])
-         (@ ant0 sk (splice-in-ants ant1 ...) subst cutk)))]))
-
-'(define-syntax any
-  (syntax-rules ()
-    [(_ ant ...)
-     ((extend-relation () (relation () (to-show) ant) ...))]))
+    [(_ sk fk subst cutk ant1) (@ ant1 sk fk subst cutk)]
+    [(_ sk fk subst cutk ant1 ant2 ...)
+     (@ ant1 sk (lambda ()
+                  (splice-in-ants/any sk fk subst cutk ant2 ...))
+       subst cutk)]))
 
 (define-syntax any
   (syntax-rules ()
@@ -539,146 +579,6 @@
     [(_ ant ...)
       (lambda@ (sk fk subst cutk)
 	(splice-in-ants/any sk fk subst cutk ant ...))]))
-
-; partially-eval-sant: Partially evaluate a semi-antecedent
-; An semi-antecedent is an expression that, when applied to
-; two arguments, sk fk, can produce zero, one, or
-; more answers.
-; Any antecedent can be turned into a semi-antecedent if partially applied
-; to subst and cutk.
-; The following higher-order semi-antecedent takes an
-; antecedent and yields the first answer and another, residual
-; antecedent. The latter, when evaluated, will give the rest
-; of the answers of the original semi-antecedent.
-; partially-eval-sant could be implemented with streams (lazy
-; lists). The following is a purely combinational implementation.
-;
-; (@ partially-eval-sant sant a b) =>
-;   (b) if sant has no answers
-;   (a s residial-sant) if sant has a answer. That answer is delivered
-;                       in s. 
-; The residial semi-antecedent can be passed to partially-eval-sant
-; again, and so on, to obtain all answers from an antecedent one by one.
-
-; The following definition is eta-reduced.
-
-(define (partially-eval-sant sant)
-  (@ sant
-    (lambda@ (fk subst cutk a b)
-      (@ a subst 
-	(lambda@ (sk1 fk1)
-	  (@
-	    (fk) 
-	    ; new a
-	    (lambda@ (sub11 x) (@ sk1 (lambda () (@ x sk1 fk1)) sub11 cutk))
-	    ; new b
-	    fk1))))
-    (lambda () (lambda@ (a b) (b)))))
-
-(define (ant->sant ant subst cutk)
-  (lambda@ (sk fk)
-    (@ ant sk fk subst cutk)))
-
-
-(define fathers-of-cubscouts
-  (extend-relation (a1 a2)
-    (fact () 'sam 'bob)
-    (fact () 'tom 'adam)
-    (fact () 'tad 'carl)))
-
-(test-check 'test-partially-eval-sant
-  (let-lv (p1 p2)
-    (let* ((fathers-of-cubscouts-sant
-	     (ant->sant (fathers-of-cubscouts p1 p2) empty-subst
-	       initial-fk))
-	    (cons@ (lambda@ (x y) (cons x y)))
-	    (split1 (@ 
-		      partially-eval-sant fathers-of-cubscouts-sant
-		      cons@ (lambda () '())))
-	    (a1 (car split1))
-	    (split2 (@ partially-eval-sant (cdr split1) cons@
-		      (lambda () '())))
-	    (a2 (car split2))
-	    (split3 (@ partially-eval-sant (cdr split2) cons@
-		      (lambda () '())))
-	    (a3 (car split3))
-	    )
-      (map (lambda (subst) (list (subst-in p1 subst) (subst-in p2 subst)))
-	(list a1 a2 a3))
-      ))
-  '((sam bob) (tom adam) (tad carl))
-)
-
-
-(define-syntax any-interleave
-  (syntax-rules ()
-    [(_) fail]
-    [(_ ant) ant]
-    [(_ ant ...)
-      (lambda@ (sk fk subst cutk)
-	(interleave sk fk cutk
-	  (list (ant->sant ant subst cutk) ...)))]))
-
-; we treat sants as a sort of a circular list
-(define (interleave sk fk cutk sants)
-  (cond
-    ((null? sants) (fk))		; all of the sants are finished
-    ((null? (cdr sants))
-      ; only one sants left -- run it through the end
-      (@ (car sants) sk fk))
-    (else
-      (let loop ((curr sants) (residuals '()))
-	; check if the current round is finished
-	(if (null? curr) (interleave sk fk cutk (reverse residuals))
-	  (@
-	    partially-eval-sant (car curr)
-	    ; (car curr) had an answer
-	    (lambda@ (subst residual)
-	      (@ sk
-	        ; re-entrance cont
-		(lambda () (loop (cdr curr) (cons residual residuals)))
-		subst cutk))
-	  ; (car curr) is finished - drop it, and try next
-	  (lambda () (loop (cdr curr) residuals))))))))
-
-
-(define-syntax binary-extend-relation-interleave-non-overlap
-  (syntax-rules ()
-    [(_ (id ...) rel-exp1 rel-exp2)
-     (let ([rel1 rel-exp1] [rel2 rel-exp2])
-       (lambda (id ...)
-         (lambda@ (sk fk subst cutk)
-           (let ([ant2 (rel2 id ...)])
-             ((interleave-non-overlap sk fk)
-              (@ (rel1 id ...) initial-sk initial-fk subst cutk)
-              (@ ant2 initial-sk initial-fk subst cutk)
-              ; means in case of overlap, prefer (rel2 ...) over (rel1 ...)
-              fail
-              ant2)))))]))
-
-(define interleave-non-overlap
-  (lambda (sk fk)
-    (letrec
-      ([finish
-         (lambda (q)
-           (cond
-             [(null? q) (fk)]
-             [else (let ([fk (cdr q)] [subst (caar q)] [cutk (cdar q)])
-                     (@ sk (lambda () (finish (fk))) subst cutk))]))]
-       [interleave
-         (lambda (q1 q2 ant1 ant2)
-           (cond
-             [(null? q1) (if (null? q2) (fk) (finish q2))]
-             [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
-		(if (satisfied? ant2 subst) ; the solution of q1
-   					    ; satisfies ant2. Skip it
-		  (interleave q2 (fk) ant2 ant1)
-		  (@ sk (lambda () (interleave q2 (fk) ant2 ant1)) subst cutk)))]))])
-      interleave)))
-
-(define satisfied?
-  (lambda (ant subst)
-    (not (null? (@ ant initial-sk initial-fk subst initial-fk)))))
 
 ; (define initial-fk (lambda () '()))
 ; (define initial-sk
@@ -689,11 +589,11 @@
 
 (define father  
   (relation ()
-    (to-show 'john 'sam)))
+    (to-show 'jon 'sam)))
 
 (test-check 'test-father0
   (let ([result
-          (@ (father 'john 'sam)
+          (@ (father 'jon 'sam)
              initial-sk initial-fk empty-subst initial-fk)])
     (and
       (equal? (caar result) '())
@@ -709,9 +609,9 @@
 
 (test-check 'test-child-of-male-0
   (concretize-subst
-    (caar (@ (child-of-male 'sam 'john)
+    (caar (@ (child-of-male 'sam 'jon)
 	    initial-sk initial-fk empty-subst initial-fk)))
-  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'john)))))
+  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))))
   '())  ; variables shouldn't leak
 
 
@@ -722,21 +622,21 @@
     (child-of-male dad child)))
 (test-check 'test-child-of-male-1
   (concretize-subst
-    (caar (@ (child-of-male 'sam 'john)
+    (caar (@ (child-of-male 'sam 'jon)
 	    initial-sk initial-fk empty-subst initial-fk)))
-  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'john)))))
+  ;`(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'jon)))))
   '())
 
-(define pete/sal
+(define rob/sal
   (relation ()
-    (to-show 'pete 'sal)))
+    (to-show 'rob 'sal)))
 
 (define new-father
-  (extend-relation (a1 a2) father pete/sal))
+  (extend-relation (a1 a2) father rob/sal))
 
 (test-check 'test-father-1
   (let ([result
-	  (@ (new-father 'pete 'sal)
+	  (@ (new-father 'rob 'sal)
 	    initial-sk initial-fk empty-subst initial-fk)])
     (and
       (equal? (caar result) '())
@@ -752,7 +652,7 @@
 
 (test-check 'test-father-2
   (let-lv (x)
-    (let ([result (query (new-father 'pete x))])
+    (let ([result (query (new-father 'rob x))])
       (and
 	(equal? (caar result) `(,(commitment x 'sal)))
 	(equal? ((cdr result)) '()))))
@@ -763,70 +663,78 @@
     (let-values (ct new-env) (concretize-term t '())
       ct)))
 
+(define-syntax concretize-subst/vars
+  (syntax-rules ()
+    [(_ subst) '()]
+    [(_ subst x0 x1 ...)
+     (let-values (cx env) (concretize-var x0 '())
+       (let-values (ct env) (concretize-term (subst-in x0 subst) env)
+         (cons (list cx ct)
+           (concretize-subst/vars/env subst env x1 ...))))]))
+
+(define-syntax concretize-subst/vars/env
+  (syntax-rules ()
+    [(_ subst env) '()]
+    [(_ subst env x0 x1 ...)
+     (let-values (cv env) (concretize-var x0 env)
+       (let-values (ct env) (concretize-term (subst-in x0 subst) env)
+         (cons (list cv ct)
+           (concretize-subst/vars/env subst env x1 ...))))]))
+
 (test-check 'test-father-3
   (let-lv (x)
-    (equal?
-      (let ([answer (query (new-father 'pete x))])
-	(let ([subst (caar answer)])
-	  (list (concretize (subst-in 'pete subst))
-            (concretize (subst-in x subst)))))
-      '(pete sal)))
-  #t)
+    (let ([answer (query (new-father 'rob x))])
+      (let ([subst (caar answer)])
+        (concretize-subst/vars subst x))))
+  '((x.0 sal)))
 
 (test-check 'test-father-4
   (let-lv (x y)
-    (equal?
-      (let ([answer (query (new-father x y))])
-	(let ([subst (caar answer)])
-	  (list (concretize (subst-in x subst)) (concretize (subst-in y subst)))))
-      '(john sam)))
-  #t)
+    (let ([answer (query (new-father x y))])
+      (let ([subst (caar answer)])
+        (concretize-subst/vars subst x y))))
+  '((x.0 jon) (y.0 sam)))
 
-(define pete/pat
+(define rob/pat
   (relation ()
-    (to-show 'pete 'pat)))
+    (to-show 'rob 'pat)))
 
 (define newer-father
-  (extend-relation (a1 a2) new-father pete/pat))
+  (extend-relation (a1 a2) new-father rob/pat))
 
 (test-check 'test-father-5
   (let-lv (x)
     (and
       (equal?
-	(let ([answer1 (query (newer-father 'pete x))])
+	(let ([answer1 (query (newer-father 'rob x))])
 	  (pretty-print answer1)
 	  (let ([subst (caar answer1)])
-	    (list
-              (list (concretize (subst-in 'pete subst))
-                (concretize (subst-in x subst)))
-	      (let ([answer2 ((cdr answer1))])
-		(pretty-print answer2)
-		(let ([subst (caar answer2)])
-		  (list (concretize (subst-in 'pete subst))
-                    (concretize (subst-in x subst))))))))
-	'((pete sal) (pete pat)))
+            (list
+              (concretize-subst/vars subst x)
+              (let ([answer2 ((cdr answer1))])
+                (pretty-print answer2)
+                (let ([subst (caar answer2)])
+                  (concretize-subst/vars subst x))))))
+	'(((x.0 sal)) ((x.0 pat))))
       (equal?
-	(let ([answer1 (query (newer-father 'pete x))])
+	(let ([answer1 (query (newer-father 'rob x))])
 	  (let ([subst (caar answer1)])
 	    (cons
-              (list (concretize (subst-in 'pete subst))
-                (concretize (subst-in x subst)))
+              (concretize-subst/vars subst x)
 	      (let ([answer2 ((cdr answer1))])
 		(let ([subst (caar answer2)])
 		  (cons
-		    (list (concretize (subst-in 'pete subst))
-                      (concretize (subst-in x subst)))
+                    (concretize-subst/vars subst x)
 		    (let ([answer3 ((cdr answer2))])
 		      (if (null? answer3)
                           '()
                           (let ([subst (car answer3)])
                             (cons
-                              (list (concretize (subst-in 'pete subst))
-                                (concretize (subst-in x subst)))
+                              (concretize-subst/vars subst x)
                               '()))))))))))
-	'((pete sal) (pete pat)))))
+        '(((x.0 sal)) ((x.0 pat))))))
   #t)
-      
+
 (define stream-prefix
   (lambda (n strm)
     (if (null? strm) '()
@@ -845,30 +753,26 @@
      (let-lv (var ...)
        (map (lambda (subst/cutk)
               (let ([subst (car subst/cutk)])
-                (map (lambda (v)
-                       (list
-                         (concretize v)
-                         (concretize (subst-in v subst))))
-                  (list var ...))))
+                (concretize-subst/vars subst var ...)))
          (stream-prefix (- n 1) (query ant))))]))
 
-(define sam/pete
+(define sam/rob
   (relation ()
-    (to-show 'sam 'pete)))
+    (to-show 'sam 'rob)))
 
-(define newest-father (extend-relation (a1 a2) newer-father sam/pete))
+(define newest-father (extend-relation (a1 a2) newer-father sam/rob))
 
 (test-check 'test-father-6/solve
   (and
     (equal?
-      (solve 5 (x) (newest-father 'pete x))
+      (solve 5 (x) (newest-father 'rob x))
       '(((x.0 sal)) ((x.0 pat))))
     (equal?
       (solve 6 (x y) (newest-father x y))
-      '(((x.0 john) (y.0 sam))
-        ((x.0 pete) (y.0 sal))
-        ((x.0 pete) (y.0 pat))
-        ((x.0 sam) (y.0 pete)))))
+      '(((x.0 jon) (y.0 sam))
+        ((x.0 rob) (y.0 sal))
+        ((x.0 rob) (y.0 pat))
+        ((x.0 sam) (y.0 rob)))))
   #t)
 
 (define-syntax binary-intersect-relation
@@ -879,36 +783,29 @@
          (lambda (sk)
            ((rel1 id ...) ((rel2 id ...) sk)))))]))
 
-'(define-syntax binary-intersect-relation
-  (syntax-rules ()
-    [(_ (id ...) rel-exp1 rel-exp2)
-     (let ([rel1 rel-exp1] [rel2 rel-exp2])
-       (lambda (id ...)
-         (lambda@ (sk fk subst cutk)
-           (@ (rel1 id ...)
-              (lambda@ (fk subst cutk)
-                (@ (rel2 id ...) sk fk subst cutk))
-              fk subst cutk))))]))
-
-(define fathers-of-cubscouts
+(define parents-of-scouts
   (extend-relation (a1 a2)
-    (fact () 'sam 'bob)
-    (fact () 'tom 'adam)
-    (fact () 'tad 'carl)))
+    (fact () 'sam 'rob)
+    (fact () 'roz 'sue)
+    (fact () 'rob 'sal)))
 
-(define fathers-of-little-leaguers
+(define parents-of-athletes
   (extend-relation (a1 a2)
-    (fact () 'sam 'bobo)
-    (fact () 'tom 'adam)
-    (fact () 'tad 'carl)))
+    (fact () 'sam 'roz)
+    (fact () 'roz 'sue)
+    (fact () 'rob 'sal)))
 
-(define busy-fathers
+(define busy-parents
   (binary-intersect-relation (a1 a2) 
-    fathers-of-cubscouts fathers-of-little-leaguers))
+    parents-of-scouts parents-of-athletes))
 
-(test-check 'test-busy-fathers
-  (solve 5 (x y) (busy-fathers x y))
-  '(((x.0 tom) (y.0 adam)) ((x.0 tad) (y.0 carl))))
+(define busy-parents
+  (binary-intersect-relation (a1 a2) 
+    parents-of-scouts parents-of-athletes))
+
+(test-check 'test-busy-parents
+  (solve 5 (x) (exists (y) (busy-parents x y)))
+  '(((x.0 roz)) ((x.0 rob))))
 
 (define-syntax intersect-relation
   (syntax-rules ()
@@ -917,20 +814,20 @@
      (binary-intersect-relation (id ...) rel-exp0
        (intersect-relation (id ...) rel-exp1 rel-exp2 ...))]))
 
-(define busy-fathers
-  (intersect-relation (a1 a2) fathers-of-cubscouts fathers-of-little-leaguers))
+(define busy-parents
+  (intersect-relation (a1 a2) parents-of-scouts parents-of-athletes))
 
-(define conscientious-fathers
-  (extend-relation (a1 a2) fathers-of-cubscouts fathers-of-little-leaguers))
+(define conscientious-parents
+  (extend-relation (a1 a2) parents-of-scouts parents-of-athletes))
 
-(test-check 'test-conscientious-fathers
-  (solve 7 (x y) (conscientious-fathers x y))
-  '(((x.0 sam) (y.0 bob))
-    ((x.0 tom) (y.0 adam))
-    ((x.0 tad) (y.0 carl))
-    ((x.0 sam) (y.0 bobo))
-    ((x.0 tom) (y.0 adam))
-    ((x.0 tad) (y.0 carl))))
+(test-check 'test-conscientious-parents
+  (solve 7 (x y) (conscientious-parents x y))
+  '(((x.0 sam) (y.0 rob))
+    ((x.0 roz) (y.0 sue))
+    ((x.0 rob) (y.0 sal))
+    ((x.0 sam) (y.0 roz))
+    ((x.0 roz) (y.0 sue))
+    ((x.0 rob) (y.0 sal))))
 
 (define-syntax solution
   (syntax-rules ()
@@ -939,7 +836,7 @@
        (if (null? ls) #f (car ls)))]))
 
 (test-check 'test-father-7/solution
-  (solution (x) (newest-father 'pete x))
+  (solution (x) (newest-father 'rob x))
   '((x.0 sal)))
 
 (define grandpa-sam
@@ -962,10 +859,10 @@
 
 (test-check 'test-child-1
   (solve 10 (x y) (child x y))
-  '(((x.0 sam) (y.0 john))
-    ((x.0 sal) (y.0 pete))
-    ((x.0 pat) (y.0 pete))
-    ((x.0 pete) (y.0 sam))))
+  '(((x.0 sam) (y.0 jon))
+    ((x.0 sal) (y.0 rob))
+    ((x.0 pat) (y.0 rob))
+    ((x.0 rob) (y.0 sam))))
 
 (define grandpa-sam
   (relation (grandchild)
@@ -1028,19 +925,19 @@
 
 (define father
   (extend-relation (a1 a2)
-    (fact () 'john 'sam)
+    (fact () 'jon 'sam)
     (extend-relation (a1 a2)
-      (fact () 'sam 'pete)
+      (fact () 'sam 'rob)
       (extend-relation (a1 a2)
-        (fact () 'sam 'polly)
+        (fact () 'sam 'roz)
         (extend-relation (a1 a2)
-          (fact () 'pete 'sal)
-          (fact () 'pete 'pat))))))
+          (fact () 'rob 'sal)
+          (fact () 'rob 'pat))))))
 
 (define mother
   (extend-relation (a1 a2)
-    (fact () 'polly 'betty)
-    (fact () 'polly 'david)))
+    (fact () 'roz 'sue)
+    (fact () 'roz 'sid)))
 
 (define grandpa
   (extend-relation (a1 a2)
@@ -1059,7 +956,7 @@
 
 (test-check 'test-grandpa-2
   (solve 10 (y) (grandpa 'sam y))
-  '(((y.0 sal)) ((y.0 pat)) ((y.0 betty)) ((y.0 david))))
+  '(((y.0 sal)) ((y.0 pat)) ((y.0 sue)) ((y.0 sid))))
 
 (define grandpa/father
   (relation (grandad grandchild)
@@ -1082,7 +979,7 @@
 
 (test-check 'test-grandpa-5
   (solve 10 (y) (grandpa 'sam y))
-  '(((y.0 sal)) ((y.0 pat)) ((y.0 betty)) ((y.0 david))))
+  '(((y.0 sal)) ((y.0 pat)) ((y.0 sue)) ((y.0 sid))))
 
 (define grandpa-sam
   (let ([r (relation (child)
@@ -1123,7 +1020,7 @@
 
 (test-check 'test-grandpa-8
   (solve 10 (x y) (grandpa x y))
-  '(((x.0 john) (y.0 pete))))
+  '(((x.0 jon) (y.0 rob))))
 
 (define grandpa/father
   (relation/cut cut (grandad grandchild)
@@ -1136,8 +1033,8 @@
 
 (test-check 'test-grandpa-10
   (solve 10 (x y) (grandpa x y))
-  '(((x.0 john) (y.0 pete))
-    ((x.0 john) (y.0 polly))
+  '(((x.0 jon) (y.0 rob))
+    ((x.0 jon) (y.0 roz))
     ((x.0 sam) (y.0 sal))
     ((x.0 sam) (y.0 pat))))
 
@@ -1158,7 +1055,7 @@
   (extend-relation (a1 a2) no-grandma grandpa))
 
 (test-check 'test-no-grandma-grandpa-1
-  (solve 10 (x) (no-grandma-grandpa 'polly x))
+  (solve 10 (x) (no-grandma-grandpa 'roz x))
   '())
 
 (define-syntax if/bc
@@ -1171,9 +1068,8 @@
     [(_ ([t ([var bool] ...) scheme-expression] ...) body ...)
      (lambda@ (sk fk subst)
        (@ (exists (t ...)
-	    (all! (== t (let ([var (if/bc bool
-				     (nonvar! (subst-in var subst))
-				     (subst-in var subst))]
+	    (all! (== t (let ([var (let ([x (subst-in var subst)])
+                                     (if/bc bool (nonvar! x) x))]
 			      ...)
 			  scheme-expression))
               ...
@@ -1226,8 +1122,7 @@
 (define nonvar!
   (lambda (t)
     (if (var? t)
-      (error 'nonvar! "Variable found in call: ~s"
-        (let-values (cvar env) (concretize-var t '()) cvar))
+      (error 'nonvar! "Logic variable ~s found after substituting." (concretize t))
       t)))
 
 (define grandpa
@@ -1236,14 +1131,14 @@
     (exists (parent)
       (all 
         (father grandad parent)
-        (predicate (parent) (starts-with-p? parent))
+        (predicate (parent) (starts-with-r? parent))
         (father parent grandchild)))))
 
-(define starts-with-p?
+(define starts-with-r?
   (lambda (x)
     (and
       (symbol? x)
-      (string=? (string (string-ref (symbol->string x) 0)) "p"))))
+      (string=? (string (string-ref (symbol->string x) 0)) "r"))))
 
 (test-check 'test-grandpa-11
   (solve 10 (x y) (grandpa x y))
@@ -1319,12 +1214,12 @@
     (exists (parent)
       (all
         (father grandad parent)
-        (fails (predicate (parent) (starts-with-p? parent)))
+        (fails (predicate (parent) (starts-with-r? parent)))
         (father parent grandchild)))))
 
 (test-check 'test-grandpa-13
   (solve 10 (x y) (grandpa x y))
-  '(((x.0 john) (y.0 pete)) ((x.0 john) (y.0 polly))))
+  '(((x.0 jon) (y.0 rob)) ((x.0 jon) (y.0 roz))))
 
 (define instantiated
   (lambda (t)
@@ -1349,39 +1244,39 @@
 (test-check 'test-grandpa-14/view-subst
   (solve 10 (x y) (grandpa x y))
   (begin
-    'pete
+    'rob
     '((grandad.0 x.0)
       (grandchild.0 y.0)
-      (x.0 john)
+      (x.0 jon)
       (parent.0 sam)
-      (y.0 pete))
-    'polly
+      (y.0 rob))
+    'roz
     '((grandad.0 x.0)
       (grandchild.0 y.0)
-      (x.0 john)
+      (x.0 jon)
       (parent.0 sam)
-      (y.0 polly))
+      (y.0 roz))
     'sal 
     '((grandad.0 x.0)
       (grandchild.0 y.0)
       (x.0 sam)
-      (parent.0 pete)
+      (parent.0 rob)
       (y.0 sal))
     'pat
     '((grandad.0 x.0)
       (grandchild.0 y.0)
       (x.0 sam)
-      (parent.0 pete)
+      (parent.0 rob)
       (y.0 pat))
-    '(((x.0 john) (y.0 pete))
-      ((x.0 john) (y.0 polly))
+    '(((x.0 jon) (y.0 rob))
+      ((x.0 jon) (y.0 roz))
       ((x.0 sam) (y.0 sal))
       ((x.0 sam) (y.0 pat)))))
 
 (define father
   (extend-relation (a1 a2) father
-    (extend-relation (a1 a2) (fact () 'john 'harry)
-      (extend-relation (a1 a2) (fact () 'harry 'carl) (fact () 'sam 'ed)))))
+    (extend-relation (a1 a2) (fact () 'jon 'hal)
+      (extend-relation (a1 a2) (fact () 'hal 'ted) (fact () 'sam 'jay)))))
 
 (define ancestor
   (extend-relation (a1 a2)
@@ -1394,15 +1289,15 @@
         (all (father old not-so-old) (ancestor not-so-old young))))))
 
 (test-check 'test-ancestor
-  (solve 21 (x) (ancestor 'john x))
+  (solve 21 (x) (ancestor 'jon x))
   '(((x.0 sam))
-    ((x.0 harry))
-    ((x.0 pete))
-    ((x.0 polly))
-    ((x.0 ed))
+    ((x.0 hal))
+    ((x.0 rob))
+    ((x.0 roz))
+    ((x.0 jay))
     ((x.0 sal))
     ((x.0 pat))
-    ((x.0 carl))))
+    ((x.0 ted))))
 
 (define common-ancestor
   (relation (young-a young-b old)
@@ -1412,8 +1307,8 @@
       (ancestor old young-b))))
 
 (test-check 'test-common-ancestor
-  (solve 4 (x) (common-ancestor 'pat 'ed x))
-  '(((x.0 john)) ((x.0 sam))))
+  (solve 4 (x) (common-ancestor 'pat 'jay x))
+  '(((x.0 jon)) ((x.0 sam))))
 
 (define younger-common-ancestor
   (relation (young-a young-b old not-so-old)
@@ -1424,7 +1319,7 @@
       (ancestor old not-so-old))))
 
 (test-check 'test-younger-common-ancestor
-  (solve 4 (x) (younger-common-ancestor 'pat 'ed 'john x))
+  (solve 4 (x) (younger-common-ancestor 'pat 'jay 'jon x))
   '(((x.0 sam))))
 
 (define youngest-common-ancestor
@@ -1436,21 +1331,21 @@
         (fails (younger-common-ancestor young-a young-b not-so-old y))))))
 
 (test-check 'test-youngest-common-ancestor
-  (solve 4 (x) (youngest-common-ancestor 'pat 'ed x))
+  (solve 4 (x) (youngest-common-ancestor 'pat 'jay x))
   '(((x.0 sam))))
 
 (test-check 'test-Seres-Spivey
   (let ([father
 	  (lambda (dad child)
 	    (any
-	      (all (== dad 'john) (== child 'sam))
-	      (all (== dad 'sam) (== child 'pete))
-	      (all (== dad 'sam) (== child 'polly))
-	      (all (== dad 'pete) (== child 'sal))
-	      (all (== dad 'pete) (== child 'pat))
-	      (all (== dad 'john) (== child 'harry))
-	      (all (== dad 'harry) (== child 'carl))
-	      (all (== dad 'sam) (== child 'ed))))])
+	      (all (== dad 'jon) (== child 'sam))
+	      (all (== dad 'sam) (== child 'rob))
+	      (all (== dad 'sam) (== child 'roz))
+	      (all (== dad 'rob) (== child 'sal))
+	      (all (== dad 'rob) (== child 'pat))
+	      (all (== dad 'jon) (== child 'hal))
+	      (all (== dad 'hal) (== child 'ted))
+	      (all (== dad 'sam) (== child 'jay))))])
     (letrec
         ([ancestor
            (lambda (old young)
@@ -1460,15 +1355,15 @@
                  (all
                    (father old not-so-old)
                    (ancestor not-so-old young)))))])
-      (solve 20 (x) (ancestor 'john x))))
+      (solve 20 (x) (ancestor 'jon x))))
   '(((x.0 sam))
-    ((x.0 harry))
-    ((x.0 pete))
-    ((x.0 polly))
-    ((x.0 ed))
+    ((x.0 hal))
+    ((x.0 rob))
+    ((x.0 roz))
+    ((x.0 jay))
     ((x.0 sal))
     ((x.0 pat))
-    ((x.0 carl))))
+    ((x.0 ted))))
 
 (define towers-of-hanoi
   (letrec
@@ -2279,7 +2174,7 @@
 
 (define-syntax infer-type
   (syntax-rules ()
-    [(infer g term type)
+    [(_ g term type)
      (cond
        [(solution (g type) (!- g (parse term) type))
         => (lambda (result)
@@ -2408,38 +2303,40 @@
 (test-check 'test-!-1
   (and
     (equal?
-      (solution (g) (!- g '(intc 17) int))
-      '((g.0 g.0)))
+      (solution () (exists (g) (!- g '(intc 17) int)))
+      '())
     (equal?
-      (solution (g ?) (!- g '(intc 17) ?))
-      '((g.0 g.0) (?.0 int))))
+      (solution (?) (exists (g) (!- g '(intc 17) ?)))
+      '((?.0 int))))
   #t)
 
 (test-check 'arithmetic-primitives
-  (solution (g ?) (!- g '(zero? (intc 24)) ?))
-  '((g.0 g.0) (?.0 bool)))
+  (solution (?) (exists (g)  (!- g '(zero? (intc 24)) ?)))
+  '((?.0 bool)))
 
 (test-check 'test-!-sub1
-  (solution (g ?) (!- g '(zero? (sub1 (intc 24))) ?))
-  '((g.0 g.0) (?.0 bool)))
+  (solution (?) (exists (g) (!- g '(zero? (sub1 (intc 24))) ?)))
+  '((?.0 bool)))
 
 (test-check 'test-!-+
-  (solution (g ?)
-    (!- g '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?))
-  '((g.0 g.0) (?.0 bool)))
+  (solution (?)
+    (exists (g)
+      (!- g '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
+  '((?.0 bool)))
 
 (test-check 'test-!-2
   (and
     (equal?
-      (solution (g ?) (!- g '(zero? (intc 24)) ?))
-      '((g.0 g.0) (?.0 bool)))
+      (solution (?) (exists (g) (!- g '(zero? (intc 24)) ?)))
+      '((?.0 bool)))
     (equal?
-      (solution (g ?) (!- g '(zero? (+ (intc 24) (intc 50))) ?))
-      '((g.0 g.0) (?.0 bool)))
+      (solution (?) (exists (g) (!- g '(zero? (+ (intc 24) (intc 50))) ?)))
+      '((?.0 bool)))
     (equal?
-      (solution (g ?)
-        (!- g '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?))
-      '((g.0 g.0) (?.0 bool))))
+      (solution (?)
+        (exists (g)
+          (!- g '(zero? (sub1 (+ (intc 18) (+ (intc 24) (intc 50))))) ?)))
+      '((?.0 bool))))
   #t)
 
 (test-check 'test-!-3
@@ -2447,144 +2344,156 @@
   '((?.0 int)))
 
 (test-check 'if-expressions
-  (solution (g ?) (!- g '(if (zero? (intc 24)) (zero? (intc 3)) (zero? (intc 4))) ?))
-  '((g.0 g.0) (?.0 bool)))
+  (solution (?)
+    (exists (g) (!- g '(if (zero? (intc 24)) (zero? (intc 3)) (zero? (intc 4))) ?)))
+  '((?.0 bool)))
 
 (test-check 'variables
   (and
     (equal?
-      (solution (g ?)
-        (env `(non-generic b int (non-generic a bool ,g)) 'a ?))
-      '((g.0 g.0) (?.0 bool)))
+      (solution (?)
+        (exists (g)
+          (env `(non-generic b int (non-generic a bool ,g)) 'a ?)))
+      '((?.0 bool)))
     (equal?
-      (solution (g ?)
-        (!- `(non-generic a int ,g) '(zero? (var a)) ?))
-      '((g.0 g.0) (?.0 bool)))
+      (solution (?)
+        (exists (g)
+          (!- `(non-generic a int ,g) '(zero? (var a)) ?)))
+      '((?.0 bool)))
     (equal?
-      (solution (g ?)
-        (!- `(non-generic b bool (non-generic a int ,g))
-          '(zero? (var a))
-          ?))
-      '((g.0 g.0) (?.0 bool))))
+      (solution (?)
+        (exists (g)
+          (!- `(non-generic b bool (non-generic a int ,g))
+            '(zero? (var a))
+            ?)))
+      '((?.0 bool))))
   #t)
 
-
-
 (test-check 'variables-4a
-  (solution (g ?)
-    (!- `(non-generic b bool (non-generic a int ,g))
-      '(lambda (x) (+ (var x) (intc 5)))
-      ?))
-  '((g.0 g.0) (?.0 (--> int int))))
+  (solution (?)
+    (exists (g)
+      (!- `(non-generic b bool (non-generic a int ,g))
+        '(lambda (x) (+ (var x) (intc 5)))
+        ?)))
+  '((?.0 (--> int int))))
 
 (test-check 'variables-4b
-  (solution (g ?)
-    (!- `(non-generic b bool (non-generic a int ,g))
-      '(lambda (x) (+ (var x) (var a)))
-      ?))
-  '((g.0 g.0) (?.0 (--> int int))))
+  (solution (?)
+    (exists (g)
+      (!- `(non-generic b bool (non-generic a int ,g))
+        '(lambda (x) (+ (var x) (var a)))
+        ?)))
+  '((?.0 (--> int int))))
 
 (test-check 'variables-4c
-  (solution (g ?)
-    (!- g '(lambda (a) (lambda (x) (+ (var x) (var a)))) ?))
-  '((g.0 g.0) (?.0 (--> int (--> int int)))))
+  (solution (?)
+    (exists (g) 
+      (!- g '(lambda (a) (lambda (x) (+ (var x) (var a)))) ?)))
+  '((?.0 (--> int (--> int int)))))
 
 (test-check 'everything-but-polymorphic-let
-  (solution (g ?)
-    (!- g (parse
-	    '(lambda (f)
-	       (lambda (x)
-		 ((f x) x))))
-      ?))
-  '((g.0 g.0)
-     (?.0 (-->
-	    (--> type-v.0 (--> type-v.0 t.0))
-	    (--> type-v.0 t.0)))))
+  (solution (?)
+    (exists (g)
+      (!- g (parse
+              '(lambda (f)
+                 (lambda (x)
+                   ((f x) x))))
+        ?)))
+  '((?.0 (-->
+           (--> type-v.0 (--> type-v.0 t.0))
+           (--> type-v.0 t.0)))))
 
 (test-check 'everything-but-polymorphic-let
-  (solution (g ?)
-    (!- g
-      (parse
-	'((fix (lambda (sum)
-		 (lambda (n)
-		   (if (zero? n)
-		     0
-		     (+ n (sum (sub1 n)))))))
-	   10))
-      ?))
-  '((g.0 g.0) (?.0 int)))
+  (solution (?)
+    (exists (g)
+      (!- g
+        (parse
+          '((fix (lambda (sum)
+                   (lambda (n)
+                     (if (zero? n)
+                         0
+                         (+ n (sum (sub1 n)))))))
+            10))
+        ?)))
+  '((?.0 int)))
 
 (test-check 'everything-but-polymorphic-let
-  (solution (g ?)
-    (!- g
-      (parse
-	'((fix (lambda (sum)
-		 (lambda (n)
-		   (+ n (sum (sub1 n))))))
-	   10))
-      ?))
-  '((g.0 g.0) (?.0 int)))
+  (solution (?)
+    (exists (g)
+      (!- g
+        (parse
+          '((fix (lambda (sum)
+                   (lambda (n)
+                     (+ n (sum (sub1 n))))))
+            10))
+        ?)))
+  '((?.0 int)))
 
 (test-check 'everything-but-polymorphic-let
-  (solution (g ?)
-    (!- g
-      (parse '((lambda (f)
-		 (if (f (zero? 5))
-		   (+ (f 4) 8)
-		   (+ (f 3) 7)))
-		(lambda (x) x)))
-      ?))
+  (solution (?)
+    (exists (g)
+      (!- g
+        (parse '((lambda (f)
+                   (if (f (zero? 5))
+                       (+ (f 4) 8)
+                       (+ (f 3) 7)))
+                 (lambda (x) x)))
+        ?)))
   #f)
 
 (test-check 'polymorphic-let
-  (solution (g ?)
-    (!- g
-      (parse
-        '(let ([f (lambda (x) x)])
-           (if (f (zero? 5))
-	       (+ (f 4) 8)
-	       (+ (f 3) 7))))
-      ?))
-  '((g.0 g.0) (?.0 int)))
+  (solution (?)
+    (exists (g)
+      (!- g
+        (parse
+          '(let ([f (lambda (x) x)])
+             (if (f (zero? 5))
+                 (+ (f 4) 8)
+                 (+ (f 3) 7))))
+        ?)))
+  '((?.0 int)))
 
 (test-check 'with-robust-syntax
-  (solution (g ?)
-    (!- g
-      '(app
-         (fix
-           (lambda (sum)
-             (lambda (n)
-               (if (if (zero? (var n)) (boolc #t) (boolc #f))
-		   (intc 0)
-		   (+ (var n) (app (var sum) (sub1 (var n))))))))
-         (intc 10))
-      ?))
-  '((g.0 g.0) (?.0 int)))
+  (solution (?)
+    (exists (g)
+      (!- g
+        '(app
+           (fix
+             (lambda (sum)
+               (lambda (n)
+                 (if (if (zero? (var n)) (boolc #t) (boolc #f))
+                     (intc 0)
+                     (+ (var n) (app (var sum) (sub1 (var n))))))))
+           (intc 10))
+        ?)))
+  '((?.0 int)))
 
 (test-check 'with-robust-syntax-but-long-jumps/poly-let
-  (solution (g ?)
-    (!- g
-      '(let ([f (lambda (x) (var x))])
-         (if (app (var f) (zero? (intc 5)))
-	     (+ (app (var f) (intc 4)) (intc 8))
-	     (+ (app (var f) (intc 3)) (intc 7))))
-      ?))
-  '((g.0 g.0) (?.0 int)))
+  (solution (?)
+    (exists (g)
+      (!- g
+        '(let ([f (lambda (x) (var x))])
+           (if (app (var f) (zero? (intc 5)))
+               (+ (app (var f) (intc 4)) (intc 8))
+               (+ (app (var f) (intc 3)) (intc 7))))
+        ?)))
+  '((?.0 int)))
 
 (test-check 'type-habitation
   (and
     (equal?
       (solution (g ?)
         (!- g ? '(--> int int)))
-      '((g.0 (non-generic v.0 (--> int int) g.0)) (?.0 (var v.0))))
+      '((g.0 (non-generic v.0 (--> int int) g.1)) (?.0 (var v.0))))
     (equal?
-      (solution (g la f b)
-        (!- g `(,la (,f) ,b) '(--> int int)))
-      '((g.0 g.0) (la.0 lambda) (f.0 v.0) (b.0 (var v.0))))
+      (solution (la f b)
+        (exists (g)
+          (!- g `(,la (,f) ,b) '(--> int int))))
+      '((la.0 lambda) (f.0 v.0) (b.0 (var v.0))))
     (equal?
       (solution (g h r q z y t)
         (!- g `(,h ,r (,q ,z ,y)) t))
-      '((g.0 (non-generic v.0 int g.0))
+      '((g.0 (non-generic v.0 int g.1))
         (h.0 +)
         (r.0 (var v.0))
         (q.0 +)
@@ -2592,17 +2501,17 @@
         (y.0 (var v.0))
         (t.0 int)))
     (equal?
-      (solution (g h r q z y t u v)
-        (!- g `(,h ,r (,q ,z ,y)) `(,t ,u ,v)))
-      '((g.0 g.0)
-        (h.0 lambda)
+      (solution (h r q z y t u v)
+        (exists (g)
+          (!- g `(,h ,r (,q ,z ,y)) `(,t ,u ,v))))
+      '((h.0 lambda)
         (r.0 (v.0))
         (q.0 +)
         (z.0 (var v.0))
         (y.0 (var v.0))
         (t.0 -->)
         (u.0 int)
-        (v.0 int))))
+        (v.1 int))))
   #t)
 
 ;;; long cuts
@@ -2657,14 +2566,15 @@
     ((!-generator cut) g exp t)))
 
 (test-check 'with-robust-syntax-but-long-jumps/poly-let
-  (solution (g ?)
-    (!- g
-      '(let ([f (lambda (x) (var x))])
-         (if (app (var f) (zero? (intc 5)))
-	     (+ (app (var f) (intc 4)) (intc 8))
-	     (+ (app (var f) (intc 3)) (intc 7))))
-      ?))
-  '((g.0 g.0) (?.0 int)))
+  (solution (?)
+    (exists (g)
+      (!- g
+        '(let ([f (lambda (x) (var x))])
+           (if (app (var f) (zero? (intc 5)))
+               (+ (app (var f) (intc 4)) (intc 8))
+               (+ (app (var f) (intc 3)) (intc 7))))
+        ?)))
+  '((?.0 int)))
 
 (define invertible-binary-function->ternary-relation
   (lambda (op inverted-op)
@@ -2757,7 +2667,7 @@
 (define father
   (lambda (dad child)
     (all! 
-      (== dad 'john)
+      (== dad 'jon)
       (== child 'sam))))
 
 (define father
@@ -2765,13 +2675,13 @@
     (lambda (dad child)
       (all! 
 	(== dad 'sam)
-	(== child 'pete)))))
+	(== child 'rob)))))
 
 (define father
   (extend-relation (a1 a2) father
     (lambda (dad child)
       (all!
-	(== dad 'pete)
+	(== dad 'rob)
 	(== child 'sal)))))
 
 (define grandpa
@@ -2781,17 +2691,17 @@
 
 (test-check 'grandpa-ng
   (solve 5 (x y) (grandpa x y))
-  '(((x.0 john) (y.0 pete)) ((x.0 sam) (y.0 sal))))
+  '(((x.0 jon) (y.0 rob)) ((x.0 sam) (y.0 sal))))
 
-(define father-pete-sal (fact () 'pete 'sal))
-(define father-sam-pete (fact () 'sam 'pete))
-(define father-john-sam (fact () 'john 'sam))
+(define father-rob-sal (fact () 'rob 'sal))
+(define father-sam-rob (fact () 'sam 'rob))
+(define father-jon-sam (fact () 'jon 'sam))
 (define father
-  (extend-relation (a1 a2) father-john-sam father-sam-pete father-pete-sal))
+  (extend-relation (a1 a2) father-jon-sam father-sam-rob father-rob-sal))
 
 (test-check 'grandpa-ng-1
   (solve 5 (x y) (grandpa x y))
-  '(((x.0 john) (y.0 pete)) ((x.0 sam) (y.0 sal))))
+  '(((x.0 jon) (y.0 rob)) ((x.0 sam) (y.0 sal))))
 
 (test-check 'grandpa-ng-2
   (solve 5 (y) (grandpa 'sam y))
@@ -2833,27 +2743,27 @@
     [(_ (ex ...) x ...)
      (relation (ex ...) (to-show x ...))]))
 
-(define father-pete-sal (fact () 'pete 'sal))
-(define father-sam-pete (fact () 'sam 'pete))
-(define father-john-sam (fact () 'john 'sam))
+(define father-rob-sal (fact () 'rob 'sal))
+(define father-sam-rob (fact () 'sam 'rob))
+(define father-jon-sam (fact () 'jon 'sam))
 (define father 
-  (extend-relation (a1 a2) father-john-sam father-sam-pete father-pete-sal))
+  (extend-relation (a1 a2) father-jon-sam father-sam-rob father-rob-sal))
 
 (test-check 'grandpa-sam-3
   (solve 5 () (grandpa-sam 'sal))
   '(()))
 
-(define father-pete-sal
-  (relation () (to-show 'pete 'sal)))
+(define father-rob-sal
+  (relation () (to-show 'rob 'sal)))
 
-(define father-sam-pete
-  (relation () (to-show 'sam 'pete)))
+(define father-sam-rob
+  (relation () (to-show 'sam 'rob)))
 
 (define father-johh-sam
-  (relation () (to-show 'john 'sam)))
+  (relation () (to-show 'jon 'sam)))
 
 (define father 
-  (extend-relation (a1 a2) father-john-sam father-sam-pete father-pete-sal))
+  (extend-relation (a1 a2) father-jon-sam father-sam-rob father-rob-sal))
 
 (test-check 'grandpa-sam-4
   (solve 5 () (grandpa-sam 'sal))
@@ -2915,54 +2825,27 @@
 ; Or a second-level shift/reset!
 
 (printf "~%binary-extend-relation-interleave~%")
-(test-check "Rinf+R1"
-  (time 
-    (solve 7 (x y)
-      (any-interleave (Rinf x y) (R1 x y))))
-  '(((x.0 z) (y.0 z))
-     ((x.0 x1) (y.0 y1))
-     ((x.0 (s z)) (y.0 (s z)))
-     ((x.0 x2) (y.0 y2))
-     ((x.0 (s (s z))) (y.0 (s (s z))))
-     ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
-     ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z)))))))
-  )
+(printf "~%Rinf+R1:~%")
+(time (pretty-print 
+        (solve 7 (x y)
+          ((binary-extend-relation-interleave (a1 a2) Rinf R1) x y))))
+(printf "~%R1+RInf:~%")
+(time (pretty-print 
+        (solve 7 (x y)
+          ((binary-extend-relation-interleave (a1 a2) R1 Rinf) x y))))
 
-(test-check "R1+Rinf"
-  (time 
-    (solve 7 (x y)
-      (any-interleave (R1 x y) (Rinf x y))))
-  '(((x.0 x1) (y.0 y1))
-    ((x.0 z) (y.0 z))
-    ((x.0 x2) (y.0 y2))
-    ((x.0 (s z)) (y.0 (s z)))
-    ((x.0 (s (s z))) (y.0 (s (s z))))
-    ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
-    ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z)))))))
-)
-
-
-(test-check "R2+R1"
-  (solve 7 (x y)
-    (any-interleave (R2 x y) (R1 x y)))
-  '(((x.0 x1) (y.0 y1))
-    ((x.0 x1) (y.0 y1))
-    ((x.0 x3) (y.0 y3))
-    ((x.0 x2) (y.0 y2)))
-)
-
-(test-check "R1+fact3"
-  (solve 7 (x y)
-    (any-interleave (R1 x y) (fact3 x y)))
-    '(((x.0 x1) (y.0 y1)) ((x.0 x3) (y.0 y3)) ((x.0 x2) (y.0 y2)))
-)
-
-(test-check "fact3+R1"
-  (solve 7 (x y)
-    (any-interleave (fact3 x y) (R1 x y)))
-    '(((x.0 x3) (y.0 y3)) ((x.0 x1) (y.0 y1)) ((x.0 x2) (y.0 y2)))
-)
-
+(printf "~%R2+R1:~%")
+(time (pretty-print 
+        (solve 7 (x y)
+          ((binary-extend-relation-interleave (a1 a2) R2 R1) x y))))
+(printf "~%R1+fact3:~%")
+(time (pretty-print 
+        (solve 7 (x y)
+          ((binary-extend-relation-interleave (a1 a2) R1 fact3) x y))))
+(printf "~%fact3+R1:~%")
+(time (pretty-print 
+        (solve 7 (x y)
+          ((binary-extend-relation-interleave (a1 a2) fact3 R1) x y))))
 
 ;;; Test for nonoverlapping.
 
@@ -3268,7 +3151,6 @@
         [(assq depth-counter-var subst)
          => (lambda (cmt)
               (let ([counter (commitment->term cmt)])
-                (printf "counter ~d~n" counter)
                 (if (= counter limit)
                   (fk)
                   (let ([s (extend-subst depth-counter-var (+ counter 1) subst)])
@@ -4068,12 +3950,10 @@
 (define with-depth
   (lambda (limit ant)
     (lambda@ (sk fk subst cutk)
-     ;(printf "here: ~a ~a ~a ~a~n" sk fk subst cutk)
       (cond
         [(assq depth-counter-var subst)
          => (lambda (cmt)
               (let ([counter (commitment->term cmt)])
-                (printf "counter ~d~n" counter)
                 (if (= counter limit)
                   (fk)
                   (let ([s (extend-subst depth-counter-var (+ counter 1) subst)])
@@ -4171,4 +4051,127 @@
       (let ((kb1 (goal-fwd kb)))
 	(kb1 '(goal (root t1 t2)))))))
 
-(exit 0)
+(define-syntax nabla
+  (syntax-rules ()
+    [(_ () ant0 ant1 ...)
+     (all ant0 ant1 ...)]
+    [(_ (id ...) ant0 ant1 ...)
+     (let-lv (id ...)
+       (lambda@ (sk fk in-subst)
+	 (@ (all ant0 ant1 ...)
+            (lambda@ (fk out-subst)
+              (let ([ps (prune-subst (list id ...) in-subst out-subst)])
+                (if (ormap (lambda (cmt)
+                             (or (occurs-check? id (commitment->term cmt))
+                                 ...))
+                      ps)
+                    (lambda (ign-cutk) (fk))
+                    (@ sk fk ps))))
+            fk in-subst)))]))
+
+; partially-eval-sant: Partially evaluate a semi-antecedent
+; An semi-antecedent is an expression that, when applied to
+; two arguments, sk fk, can produce zero, one, or
+; more answers.
+; Any antecedent can be turned into a semi-antecedent if partially applied
+; to subst and cutk.
+; The following higher-order semi-antecedent takes an
+; antecedent and yields the first answer and another, residual
+; antecedent. The latter, when evaluated, will give the rest
+; of the answers of the original semi-antecedent.
+; partially-eval-sant could be implemented with streams (lazy
+; lists). The following is a purely combinational implementation.
+;
+; (@ partially-eval-sant sant a b) =>
+;   (b) if sant has no answers
+;   (a s residial-sant) if sant has a answer. That answer is delivered
+;                       in s. 
+; The residial semi-antecedent can be passed to partially-eval-sant
+; again, and so on, to obtain all answers from an antecedent one by one.
+
+; The following definition is eta-reduced.
+
+(define (partially-eval-sant sant)
+  (@ sant
+    (lambda@ (fk subst cutk a b)
+      (@ a subst 
+	(lambda@ (sk1 fk1)
+	  (@
+	    (fk) 
+	    ; new a
+	    (lambda@ (sub11 x) (@ sk1 (lambda () (@ x sk1 fk1)) sub11 cutk))
+	    ; new b
+	    fk1))))
+    (lambda () (lambda@ (a b) (b)))))
+
+(define (ant->sant ant subst cutk)
+  (lambda@ (sk fk)
+    (@ ant sk fk subst cutk)))
+
+(define parents-of-scouts
+  (extend-relation (a1 a2)
+    (fact () 'sam 'rob)
+    (fact () 'roz 'sue)
+    (fact () 'rob 'sal)))
+
+(define fathers-of-cubscouts
+  (extend-relation (a1 a2)
+    (fact () 'sam 'bob)
+    (fact () 'tom 'adam)
+    (fact () 'tad 'carl)))
+
+(test-check 'test-partially-eval-sant
+  (let-lv (p1 p2)
+    (let* ((parents-of-scouts-sant
+	     (ant->sant (parents-of-scouts p1 p2) empty-subst
+	       initial-fk))
+	    (cons@ (lambda@ (x y) (cons x y)))
+	    (split1 (@ 
+		      partially-eval-sant parents-of-scouts-sant
+		      cons@ (lambda () '())))
+	    (a1 (car split1))
+	    (split2 (@ partially-eval-sant (cdr split1) cons@
+		      (lambda () '())))
+	    (a2 (car split2))
+	    (split3 (@ partially-eval-sant (cdr split2) cons@
+		      (lambda () '())))
+	    (a3 (car split3))
+	    )
+      (map (lambda (subst)
+             (concretize-subst/vars subst p1 p2))
+	(list a1 a2 a3))))
+  '(((p1.0 sam) (p2.0 rob)) ((p1.0 roz) (p2.0 sue)) ((p1.0 rob) (p2.0 sal))))
+
+(define-syntax any-interleave
+  (syntax-rules ()
+    [(_) fail]
+    [(_ ant) ant]
+    [(_ ant ...)
+      (lambda@ (sk fk subst cutk)
+	(interleave sk fk cutk
+	  (list (ant->sant ant subst cutk) ...)))]))
+
+; we treat sants as a sort of a circular list
+(define (interleave sk fk cutk sants)
+  (cond
+    ((null? sants) (fk))		; all of the sants are finished
+    ((null? (cdr sants))
+      ; only one sants left -- run it through the end
+      (@ (car sants) sk fk))
+    (else
+      (let loop ((curr sants) (residuals '()))
+	; check if the current round is finished
+	(if (null? curr) (interleave sk fk cutk (reverse residuals))
+	  (@
+	    partially-eval-sant (car curr)
+	    ; (car curr) had an answer
+	    (lambda@ (subst residual)
+	      (@ sk
+	        ; re-entrance cont
+		(lambda () (loop (cdr curr) (cons residual residuals)))
+		subst cutk))
+	  ; (car curr) is finished - drop it, and try next
+	  (lambda () (loop (cdr curr) residuals))))))))
+
+;(exit 0)
+
