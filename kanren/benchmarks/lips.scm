@@ -44,8 +44,8 @@
       (to-show)
       (exists (count)
         (all
-          (predicate () (newline))
-          (predicate () (newline))
+          (predicate (newline))
+          (predicate (newline))
           (eg_count count)
           (bench count)
           fail)))
@@ -111,10 +111,8 @@
     (fact (n) n)
     (relation (n)
       (to-show n)
-      (all
-        (predicate (n) (> n 1))
-        (project (n)
-          (repeat (- n 1)))))))
+      (project (n)
+        (all (> n 1) (repeat (- n 1)))))))
 
 (define report
   (relation (count t0 t1 t2)
@@ -126,9 +124,11 @@
           (let ([time (- time2 time1)])
             (all
               (calculate_lips count time lips units)
-              (predicate (lips count) (printf "~n~s lips for ~s" lips count))
-              (predicate (units)
-                (printf " Iterations taking ~s  ~s ( ~s )~n " time units time)))))))))
+              (project (lips count)
+                (predicate (printf "~n~s lips for ~s" lips count)))
+              (project (units)
+                (predicate
+                  (printf " Iterations taking ~s  ~s ( ~s )~n " time units time))))))))))
 
 (define calculate_lips
   (extend-relation (a1 a2 a3 a4)
