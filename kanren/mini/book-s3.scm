@@ -10,7 +10,7 @@
 ; Constructors
 (define mzero 0) ; with an eye for many cuts
 
-(define-syntax unit			; just the identity
+(define-syntax unit                     ; just the identity
   (syntax-rules ()
     ((unit a) a)))
 
@@ -24,10 +24,10 @@
     ((case-ans e on-zero ((a1) on-one) ((a f) on-choice))
      (let ((r e))
        (cond
-	 ((mzero? r) on-zero)
-	 ((and (pair? r) (procedure? (cdr r)))
-	  (let ((a (car r)) (f (cdr r))) on-choice))
-	 (else (let ((a1 r)) on-one)))))))
+         ((mzero? r) on-zero)
+         ((and (pair? r) (procedure? (cdr r)))
+          (let ((a (car r)) (f (cdr r))) on-choice))
+         (else (let ((a1 r)) on-one)))))))
 
 
 ; bind r k = case r of
@@ -42,7 +42,7 @@
       ((a) (k a))
       ((a f) (mplus (k a) (lambda () (bind (f) k)))))))
 
-; mplus:: Ans a -> (() -> Ans a)
+; mplus:: Ans a -> (() -> Ans a) -> Ans a
 ; mplus r f =
 ;     case r of
 ;              Zero -> f ()
@@ -57,7 +57,7 @@
       ((a) (choice a f))
       ((a f^) (choice a (lambda () (mplus (f^) f)))))))
 
-; interleave :: Ans a -> (() -> Ans a)
+; interleave :: Ans a -> (() -> Ans a) -> Ans a
 ; interleave r f =
 ;     case r of
 ;              Zero -> f ()
@@ -83,11 +83,12 @@
      (let ((x (var 'x)))
        (lambda () (rn x ((all g0 g ...) empty-s)))))))
 
-(define (rn x r)
-  (case-ans r
-    '()
-    ((s) (cons (reify x s) (lambda () '())))
-    ((s f) (cons (reify x s) (lambda () (rn x (f)))))))
+(define rn
+  (lambda (x r)
+    (case-ans r
+      '()
+      ((s) (cons (reify x s) (lambda () '())))
+      ((s f) (cons (reify x s) (lambda () (rn x (f))))))))
 
 (define-syntax all
   (syntax-rules ()
@@ -156,12 +157,12 @@
     ((_ chop (g0 g ...) c ...)
      (let ((g^ g0))
        (lambda (s)
-	 (let ((r (g^ s)))
-	 (case-ans r
-	   ((c1 chop c ...) s)   ; g0 failed
-	   ((s) ((all g ...) s)) ; g0 is deterministic
-	   ((s f)		 ; at least one answer from g0
-	    (bind (chop r s) (lambda (s) ((all g ...) s)))))))))))
+         (let ((r (g^ s)))
+           (case-ans r
+             ((c1 chop c ...) s)   ; g0 failed
+             ((s) ((all g ...) s)) ; g0 is deterministic
+             ((s f)                ; at least one answer from g0
+              (bind (chop r s) (lambda (s) ((all g ...) s)))))))))))
 
 (define-syntax alli
   (syntax-rules ()
@@ -199,15 +200,15 @@
   (lambda (f)
     (let ((p (f)))
       (cond
-	((null? p) '())
-	(else (cons (car p) (prefix* (cdr p))))))))
+        ((null? p) '())
+        (else (cons (car p) (prefix* (cdr p))))))))
 
 (define prefix
   (lambda (n f)
     (cond
       ((zero? n) '())
       (else
-	(let ((p (f)))
-	  (cond
-	    ((null? p) '())
-	    (else (cons (car p) (prefix (- n 1) (cdr p))))))))))
+        (let ((p (f)))
+          (cond
+            ((null? p) '())
+            (else (cons (car p) (prefix (- n 1) (cdr p))))))))))
