@@ -2549,6 +2549,8 @@
 ; we are trying to unify it with a bound variable (commitment->var cu)
 ; Chase the binding chain, see below for comments
 ; This also works somewhat like union-find...
+; This function always succeeds. The resulting substitution is either
+; identical to the input one, or differs only in the binding to t-var.
 (define unify-free/bound
   (lambda (t-var cu s)
     (let loop ([cm cu])
@@ -2604,7 +2606,29 @@
 ; is replaced by fresh variables, we must use the full unify rather
 ; than unify-free/any because some component of u-value may
 ; mention t-var (and so, after the first unification, fresh variables
-; may become ground).
+; may become ground). Actually, after a bit more thought one can
+; realize that cannot happen. We can formulate a theorem:
+; for any term t and a free variable v, (unify-free/any v t s)
+; succeeds. The resulting substitution may bind v. The resulting substitution
+; will _not_ bind any variables that freely occur in t or in s
+; with the exception of 'v'.
+; Proof: by induction, keeping in mind unify-free/any and
+; unify-free/list are mutually recursive.
+; Base case: t is atomic or ground, t is a free variable, t is _,
+;            t is bound. The code for unify-free/any upholds the
+;            theorem.
+; Inductive case. Assume the theorem holds for structures
+; (proper or improper lists) of the nesting depth at most n.
+; Let t be a structure of the nesting depth n+1.
+; If t is ground, v is bound to t. The theorem holds.
+; unify-free/list binds v to the rebuilt t. The rebuilt
+; term contains only fresh variables. We then invoke
+; (unify-free/any v' t' s) where v' is a fresh variable and
+; t' is a subterm of t. t' has the nesting depth at most n.
+; By the induction hypothesis (unify-free/any v' t' s) succeeds and
+; returns the substitution that perhaps binds v' -- but no other
+; existing variable. Because v' is fresh, the entered binding does not
+; affect variables that had occurred in the original t.
 
     ; return the list of assoc of fresh variables with
     ; non-ground cells of lst-src (which may be improper!)
@@ -2645,21 +2669,16 @@
       (cond 
 	((null? to-unify)		; u-value was totally ground
 	  (extend-subst t-var u-value subst))
-	((null? (cdr to-unify))	; only one non-ground component
-	  (unify-free/any (caar to-unify) (cdar to-unify)
-	    (extend-subst t-var (ufl-rebuild-with-vars to-unify u-value)
-	      subst)))
-	(else			; general case
+	(else				; general case
 	  (let loop ((subst
 		       (unify-free/any (caar to-unify) (cdar to-unify)
 			 (extend-subst t-var 
 			   (ufl-rebuild-with-vars to-unify u-value)
 			   subst)))
 		      (to-unify (cdr to-unify)))
-	    (and subst
-	      (if (null? to-unify) subst
-		(loop (unify (caar to-unify) (cdar to-unify) subst)
-		  (cdr to-unify)))))))))
+	    (if (null? to-unify) subst
+	      (loop (unify-free/any (caar to-unify) (cdar to-unify) subst)
+		(cdr to-unify))))))))
   )
 
 ;------------------------------------------------------------------------
@@ -2762,6 +2781,15 @@
     `(,(commitment y '(g a))
        ,(commitment x '(h (g a)))
        ,(commitment z 'a))))
+
+; The following loops...
+; (concretize-subst
+;   (let-lv (x y)
+;     (let* ((s (unify x `(1 ,x) '()))
+; 	   (s (unify y `(1 ,y) s))
+; 	   (s (unify x y s))) s)))
+
+
 
 ; (let-lv (x y w z u)
 ;   (test-check 'test-unify/pairs-oleg12
