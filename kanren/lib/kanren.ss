@@ -94,7 +94,7 @@
 ;;; ------------------------------------------------------
 
 (define commitment cons)             ;;; change to list
-(define commitment->term cdr)       ;;; and change to cadr
+(define commitment->term cdr)        ;;; and change to cadr
 (define commitment->var car)
 
 (define empty-subst '())
@@ -214,7 +214,6 @@
          (if subst (@ sk fk subst) (fk))))]))
 
 ;(load "plprelims.ss")
-
 
 ;(load "expand-only.ss")
 
@@ -370,7 +369,6 @@
 
 (define initial-fk (lambda () '()))
 (define initial-sk (lambda@ (fk subst)
-		     ;(pretty-print subst)
 		     (cons subst fk)))
 
 ;------------------------------------------------------------------------
@@ -380,7 +378,7 @@
 ; To make removing variables easier, we consider the list of subst as a
 ; "stack". Before we add a new variable, we retain a pointer to the
 ; stack. Then, when we are about to remove the added variables after their
-; scope is ended, we stop at the shared retained substitution.  and we know
+; scope is ended, we stop at the shared retained substitution, and we know
 ; that anything below the retained substitution can't possibly contain the
 ; reference to the variables we're about to remove.
 
