@@ -424,19 +424,19 @@
 (define prune-subst-1
   (lambda (var in-subst subst)
     (if (eq? subst in-subst) subst
-      ; if VAR is not bound, there is nothing to prune
-      (let*-and subst ([var-binding (assq var subst)]
-		       [tv (commitment->term var-binding)])
-        (let loop ([current subst])
-          (cond
-            [(null? current) current]
-            [(eq? current in-subst) current]
-	    [(eq? (car current) var-binding)
-	      (loop (cdr current))]
-	    [(eq? (commitment->term (car current)) var)
-	      (cons (commitment (commitment->var (car current)) tv)
-		(loop (cdr current)))]
-	    [else (cons (car current) (loop (cdr current)))]))))))
+        ; if VAR is not bound, there is nothing to prune
+        (let*-and subst ([var-binding (assq var subst)])
+          (let ([tv (commitment->term var-binding)])
+            (let loop ([current subst])
+              (cond
+                [(null? current) current]
+                [(eq? current in-subst) current]
+                [(eq? (car current) var-binding)
+                 (loop (cdr current))]
+                [(eq? (commitment->term (car current)) var)
+                 (cons (commitment (commitment->var (car current)) tv)
+                   (loop (cdr current)))]
+                [else (cons (car current) (loop (cdr current)))])))))))
 
 ; The same but for multiple vars
 ; To prune multiple-vars, we can prune them one-by-one
@@ -949,8 +949,8 @@
      (relation (ex-id ...) () (x ...) (x ...) ant)]
     [(_ (ex-id ...) (to-show x ...))      ; no body
      (relation (ex-id ...) () (x ...) (x ...))]
-    [(_ (ex-id ...) (var ...) (x0 x1 ...) xs ant ...) 
-     (relation (ex-id ...) (var ... g) (x1 ...) xs ant ...)]
+    [(_ (ex-id ...) (var0 ...) (x0 x1 ...) xs ant ...) 
+     (relation (ex-id ...) (var0 ... g) (x1 ...) xs ant ...)]
     [(_ (ex-id ...) () () () ant)	; no arguments (no head-tests)
       (lambda ()
 	(exists (ex-id ...) ant))]
@@ -1019,11 +1019,11 @@
 	 (let*-and (fk) ([subst (unify gv term subst)] ...)
 	   (@ sk fk subst))))]
 
-    [(_ "f" ((gvv var) ...) ((gvo term) ...) gvs ant)
+    [(_ "f" ((gvv0 var0) ...) ((gvo term) ...) gvs ant)
      (lambda gvs
        (lambda@ (sk fk subst)			; first unify the constants
 	 (let*-and (fk) ([subst (unify gvo term subst)] ...)
-	   (let ([var (if (eq? gvv _) (var '?) gvv)] ...)
+	   (let ([var0 (if (eq? gvv0 _) (var '?) gvv0)] ...)
 	     (@ ant sk fk subst)))))]))
 
 ; (define-syntax relation/cut
@@ -1274,10 +1274,10 @@
 
 (define-syntax solve
   (syntax-rules ()
-    [(_ n (var ...) ant)
-     (let-lv (var ...)
+    [(_ n (var0 ...) ant)
+     (let-lv (var0 ...)
        (map (lambda (subst)
-	      (concretize-subst/vars subst var ...))
+	      (concretize-subst/vars subst var0 ...))
          (stream-prefix (- n 1) (query ant))))]))
 
 (define sam/rob
@@ -1362,8 +1362,8 @@
 
 (define-syntax solution
   (syntax-rules ()
-    [(_ (var ...) x)
-     (let ([ls (solve 1 (var ...) x)])
+    [(_ (var0 ...) x)
+     (let ([ls (solve 1 (var0 ...) x)])
        (if (null? ls) #f (car ls)))]))
 
 (test-check 'test-father-7/solution
@@ -1446,11 +1446,11 @@
 
 (define-syntax fact
   (syntax-rules ()
-    [(_ (var ...) x ...) (relation (var ...) (to-show x ...))]))
+    [(_ (var0 ...) x ...) (relation (var0 ...) (to-show x ...))]))
 
 (define-syntax trace-fact
   (syntax-rules ()
-    [(_ id (var ...) x ...) (trace-relation id (to-show (var ...) x ...))]))
+    [(_ id (var0 ...) x ...) (trace-relation id (to-show (var0 ...) x ...))]))
 
 (define father
   (extend-relation (a1 a2)
@@ -1740,11 +1740,11 @@
 
 (define-syntax trace-vars
   (syntax-rules ()
-    [(trace-vars title (var ...))
+    [(trace-vars title (var0 ...))
      (promise-one-answer
-       (predicate/no-check (var ...)
+       (predicate/no-check (var0 ...)
          (begin (display title) (display " ")
-                (display '(var ...)) (display " ") (display (list var ...))
+                (display '(var0 ...)) (display " ") (display (list var0 ...))
                 (newline))))]))
 
 (define grandpa
