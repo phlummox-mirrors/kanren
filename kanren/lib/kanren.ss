@@ -1093,6 +1093,25 @@
 ; It is also easy to see that
 ; (all-interleave ant1 ant2 ...) is the same as
 ; (all-interleave ant1 (all-interleave ant2 ...))
+;
+; Although all-interleave was motivated by an example (all ant1 ant2)
+; where ant1 is finitary and only ant2 is infinitary, the above
+; equations (and the implementation below) show that all-interleave
+; can do the right thing even if ant1 is infinitary as well. To be
+; precise, given
+;
+;	(all-interleave ant1 ant2)
+;
+; with ant1 and ant2 infinitary, the i-th solution of ant1 will be
+; observed in every 2^i-th solution to the whole conjunction. Granted,
+; all-interleave isn't precisely very fair -- the later solutions of
+; ant1 will appear progressively more rarely -- yet, they will all
+; appear. The infinity of c0 is big enough. That is, given any
+; solution to ant1, we will eventually, in finite time, find it in the
+; solution of the whole conjunction (provided ant2 doesn't fail on
+; that solution, of course).
+
+
 
 (define-syntax all-interleave
   (syntax-rules ()
