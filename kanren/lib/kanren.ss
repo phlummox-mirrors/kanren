@@ -458,20 +458,45 @@
 
 (define-syntax all!
   (syntax-rules ()
-    [(_ (cutter ant ...)) (all cutter ant ...)]
-    [(_ (cutter ant ...) ant0 ant1 ...)
-     (all! (cutter ant ... ant0 cutter) ant1 ...)]))
+    [(_) (lambda (sk) sk)]
+    [(_ ant) ant]
+    [(_ ant0 ant1 ...)
+     (lambda@ (sk fk)
+       (letrec-syntax
+	 ((splice-in-ants 
+	    (syntax-rules ()
+	      ((_) sk)
+	      ((_ ant . other-ants)
+	       (lambda (ign-fk)
+		 (@ ant (splice-in-ants . other-ants) fk))))
+	    ))
+	 (@ ant0 (splice-in-ants ant1 ...) fk)))]
+    ))
+
 
 (define-syntax relation
-  (syntax-rules (to-show)
+  (syntax-rules (to-show _)
     [(_ short-cut (ex ...) (to-show x ...) ant ...)
      (relation short-cut (ex ...) () (x ...) (x ...) ant ...)]
+    ; a particular instance of the full form below. No ants.
+    ; no need to reify cuts.
+    [(_ short-cut (ex ...) (g ...) () (x ...))
+     (lambda (g ...)
+       (exists (ex ...)
+	 (all! (== g x) ...)))]
+    ; A particular instance of the full form below where we don't care
+    ; about the cut
+    [(_ _ (ex ...) (g ...) () (x ...) ant ...)
+     (lambda (g ...)
+       (exists (ex ...)
+	 (all! (== g x) ... (all ant ...))))]
+    ; the full form
     [(_ short-cut (ex ...) (g ...) () (x ...) ant ...)
      (lambda (g ...)
-       (reify-cutters
-         (lambda (next short-cut)
-           (exists (ex ...)
-             (all (all! (next) (== g x) ...) ant ...)))))]
+       (exists (ex ...)
+	 (lambda@ (sk fk subst cutk)
+	   (let ((short-cut (!! cutk)))
+	     (@ (all! (== g x) ... (all ant ...)) sk fk subst cutk)))))]
     [(_ short-cut exs (var ...) (x0 x1 ...) xs ant ...)
      (relation short-cut exs (var ... g) (x1 ...) xs ant ...)]))
 
@@ -479,11 +504,6 @@
   (syntax-rules (to-show)
     [(_ name short-cut (ex ...) (to-show x ...) ant ...)
      (trace-relation-aux name short-cut (ex ...) () (x ...) (x ...) ant ...)]))
-
-(define reify-cutters
-  (lambda (proc)
-    (lambda@ (sk fk subst cutk)
-      (@ (proc (!! fk) (!! cutk)) sk fk subst cutk))))
 
 (define-syntax trace-relation-aux
   (syntax-rules ()
@@ -499,7 +519,7 @@
 (define-syntax fact
   (syntax-rules ()
     [(_ (ex ...) x ...)
-     (relation cut (ex ...) (to-show x ...) (all))]))
+     (relation cut (ex ...) (to-show x ...))]))
 
 (define-syntax all
   (syntax-rules ()
@@ -2041,9 +2061,9 @@
   (fact (g v t) `(non-generic ,v ,t ,g) v t))
 
 (define non-generic-recursive-env
-  (relation cut (g v t w type-w)
+  (relation _ (g v t w type-w)
     (to-show `(non-generic ,w ,type-w ,g) v t)
-    (all! (cut) (unequal? w v) (instantiated g) (env g v t))))
+    (all! (unequal? w v) (instantiated g) (env g v t))))
 
 (define env (extend-relation (a1 a2 a3)
               non-generic-match-env non-generic-recursive-env))
@@ -2062,9 +2082,9 @@
     (e (lambda (z) ((fix e) z)))))
 
 (define generic-base-env
-  (relation cut (g v targ tresult t)
+  (relation _ (g v targ tresult t)
     (to-show `(generic ,v (--> ,targ ,tresult) ,g) v t)
-    (all! (cut) (fun-call instantiate t `(--> ,targ ,tresult)))))
+    (all! (fun-call instantiate t `(--> ,targ ,tresult)))))
 
 (define generic-recursive-env
   (relation cut (g v w type-w t)
@@ -2103,9 +2123,9 @@
 (define bool 'bool)
 
 (define var-rel
-  (relation cut (g v t)
+  (relation _ (g v t)
     (to-show g `(var ,v) t)
-    (all! (cut) (env g v t))))
+    (all! (env g v t))))
 
 (define int-rel
   (fact (g x) g `(intc ,x) int))
@@ -2114,46 +2134,46 @@
   (fact (g x) g `(boolc ,x) bool))
 
 (define zero?-rel
-  (relation cut (g x)
+  (relation _ (g x)
     (to-show g `(zero? ,x) bool)
-    (all! (cut) (!- g x int))))
+    (all! (!- g x int))))
 
 (define sub1-rel
-  (relation cut (g x)
+  (relation _ (g x)
     (to-show g `(sub1 ,x) int)
-    (all! (cut) (!- g x int))))
+    (all! (!- g x int))))
 
 (define +-rel
-  (relation cut (g x y)
+  (relation _ (g x y)
     (to-show g `(+ ,x ,y) int)
-    (all! (cut) (!- g x int) (!- g y int))))
+    (all! (!- g x int) (!- g y int))))
 
 (define if-rel
-  (relation cut (g t test conseq alt)
+  (relation _ (g t test conseq alt)
     (to-show g `(if ,test ,conseq ,alt) t)
-    (all! (cut) (!- g test bool) (!- g conseq t) (!- g alt t))))
+    (all! (!- g test bool) (!- g conseq t) (!- g alt t))))
 
 (define lambda-rel
-  (relation cut (g v t body type-v)
+  (relation _ (g v t body type-v)
     (to-show g `(lambda (,v) ,body) `(--> ,type-v ,t))
-    (all! (cut) (!- `(non-generic ,v ,type-v ,g) body t))))
+    (all! (!- `(non-generic ,v ,type-v ,g) body t))))
 
 (define app-rel
-  (relation cut (g t rand rator)
+  (relation _ (g t rand rator)
     (to-show g `(app ,rator ,rand) t)
     (exists (t-rand)
-      (all! (cut) (!- g rator `(--> ,t-rand ,t)) (!- g rand t-rand)))))
+      (all! (!- g rator `(--> ,t-rand ,t)) (!- g rand t-rand)))))
 
 (define fix-rel
-  (relation cut (g rand t)
+  (relation _ (g rand t)
     (to-show g `(fix ,rand) t)
-    (all! (cut) (!- g rand `(--> ,t ,t)))))
+    (all! (!- g rand `(--> ,t ,t)))))
 
 (define polylet-rel
-  (relation cut (g v rand body t)
+  (relation _ (g v rand body t)
     (to-show g `(let ([,v ,rand]) ,body) t)
     (exists (t-rand)
-      (all! (cut)
+      (all!
         (!- g rand t-rand)
         (!- `(generic ,v ,t-rand ,g) body t)))))
 
@@ -2469,43 +2489,46 @@
       ([!- (extend-relation (a1 a2 a3)
              (relation _ (g v t)
                (to-show g `(var ,v) t)
-               (all! (long-cut) (env g v t)))
+               (all (!! long-cut) (env g v t)))
              (relation _ (g x)
                (to-show g `(intc ,x) int)
-               (all! (long-cut)))
+               )
              (relation _ (g x)
                (to-show g `(boolc ,x) bool)
-               (all! (long-cut)))
+               )
              (relation _ (g x)
                (to-show g `(zero? ,x) bool)
-               (all! (long-cut) (!- g x int)))
+               (all (!! long-cut) (!- g x int)))
              (relation _ (g x)
                (to-show g `(sub1 ,x) int)
-               (all! (long-cut) (!- g x int)))
+               (all (!! long-cut) (!- g x int)))
              (relation _ (g x y)
                (to-show g `(+ ,x ,y) int)
-               (all! (long-cut) (!- g x int) (!- g y int)))
+               (all (!! long-cut) (all! (!- g x int) (!- g y int))))
              (relation _ (g t test conseq alt)
                (to-show g `(if ,test ,conseq ,alt) t)
-               (all! (long-cut) (!- g test bool) (!- g conseq t) (!- g alt t)))
+               (all (!! long-cut)
+		 (all! (!- g test bool) (!- g conseq t) (!- g alt t))))
              (relation _ (g v t body type-v)
                (to-show g `(lambda (,v) ,body) `(--> ,type-v ,t))
-               (all! (long-cut) (!- `(non-generic ,v ,type-v ,g) body t)))
+               (all (!! long-cut) (!- `(non-generic ,v ,type-v ,g) body t)))
              (relation _ (g t rand rator)
                (to-show g `(app ,rator ,rand) t)
                (exists (t-rand)
-                 (all! (long-cut)
+                 (all (!! long-cut)
+		   (all!
                    (!- g rator `(--> ,t-rand ,t))
-                   (!- g rand t-rand))))
+                   (!- g rand t-rand)))))
              (relation _ (g rand t)
                (to-show g `(fix ,rand) t)
-               (all! (long-cut) (!- g rand `(--> ,t ,t))))
+               (all (!! long-cut) (!- g rand `(--> ,t ,t))))
              (relation _ (g v rand body t)
                (to-show g `(let ([,v ,rand]) ,body) t)
                (exists (t-rand)
-                 (all! (long-cut)
+                 (all (!! long-cut)
+		   (all!
                    (!- g rand t-rand)
-                   (!- `(generic ,v ,t-rand ,g) body t)))))])
+                   (!- `(generic ,v ,t-rand ,g) body t))))))])
       !-)))
 
 (define !-
@@ -2571,7 +2594,7 @@
       (relation _ (x y)
         (to-show x y)
         (all (fails (instantiated x)) (fun-call inverted-op x y)))
-      (trace-relation third _ (x y)
+      (relation _ (x y)
         (to-show x y)
         (begin (pretty-print "Third rule") (fun-call op y x))))))
 
@@ -2601,34 +2624,24 @@
 
 (define father
   (lambda (dad child)
-    (lambda@ (sk fk subst cutk)
-      (let ([next (!! fk)])
-        (@ (all! (next)
-               (== dad 'john)
-               (== child 'sam))
-           sk fk subst cutk)))))
+    (all! 
+      (== dad 'john)
+      (== child 'sam))))
+
 
 (define father
   (extend-relation (a1 a2) father
     (lambda (dad child)
-      (lambda@ (sk fk subst cutk)
-        (let ([cut (!! cutk)]
-              [next (!! fk)])
-          (@ (all! (next)
-               (== dad 'sam)
-               (== child 'pete))
-             sk fk subst cutk))))))
+      (all! 
+	(== dad 'sam)
+	(== child 'pete)))))
 
 (define father
   (extend-relation (a1 a2) father
     (lambda (dad child)
-      (lambda@ (sk fk subst cutk)
-        (let ([cut (!! cutk)]
-              [next (!! fk)])
-          (@ (all! (next)
-               (== dad 'pete)
-               (== child 'sal))
-             sk fk subst cutk))))))
+      (all!
+	(== dad 'pete)
+	(== child 'sal)))))
 
 (define grandpa
   (lambda (grandfather child)
@@ -2653,7 +2666,7 @@
             [cut (!! cutk)])
         (exists (grandfather)
           (@ (all
-               (all! (next) (== grandfather 'sam))
+               (all next (== grandfather 'sam))
                cut
                (exists (x)
                  (all (father grandfather x) (father x child))))
@@ -2674,7 +2687,7 @@
 (define-syntax fact
   (syntax-rules ()
     [(_ (ex ...) x ...)
-     (relation cut (ex ...) (to-show x ...) (all))]))
+     (relation _ (ex ...) (to-show x ...))]))
 
 (define father-pete-sal (fact () 'pete 'sal))
 (define father-sam-pete (fact () 'sam 'pete))
