@@ -381,6 +381,9 @@
 ; scope is ended, we stop at the shared retained substitution, and we know
 ; that anything below the retained substitution can't possibly contain the
 ; reference to the variables we're about to remove.
+;
+; Pruning of substitutions is analogous to environment pruning (aka tail-call
+; optimization) in WAM on _forward_ execution.
 
 (define-syntax exists
   (syntax-rules ()
@@ -654,6 +657,16 @@
 ;   (if-only COND THEN ELSE) ==> (any (all (all! COND) THEN)
 ;                                     (all (fails COND) ELSE))
 ; Operationally, we try to generate a good code.
+
+; "The majority of predicates written by human programmers are
+; intended to give at most one solution, i.e., they are
+; deterministic. These predicates are in effect case statements
+; [sic!], yet they are too often compiled in an inefficient manner
+; using the full generality of backtracking (which implies saving the
+; machine state and repeated failure and state restoration)." (Peter
+; Van Roy, 1983-1993: The Wonder Years of Sequential Prolog
+; Implementation).
+
 
 (define-syntax if-only
   (syntax-rules ()
@@ -964,6 +977,9 @@
 
 ; Relations...........................
 
+; The current incremented unification of argument passing is quite similar to
+; the compilation of argument unifications in WAM.
+
 (define-syntax relation
   (syntax-rules (to-show head-let)
     [(_ (head-let head-term ...) ant)
@@ -1021,6 +1037,18 @@
 ; The same as above, but using a lexical Scheme variable.
 ; The binding procedure is justified by Proposition 9 of
 ; the Properties of Substitutions.
+;
+; 'head-let' is an example of "compile-time" simplifications. 
+; For example, we distinguish constants in the term head at
+; "compile time" and so we re-arrange the argument-passing
+; unifications to handle the constants first.
+; The test for the anonymous variable (eq? gvv0 _) below
+; is an example of a global simplification with a run-time
+; test. A compiler could have inferred the result of the test -- but only
+; upon the global analysis of all the clauses.
+; Replacing a logical variable with an ordinary variable, which does 
+; not have to be pruned, is equivalent to the use of temporary and
+; unsafe variables in WAM.
 
 (define-syntax relation-head-let
   (syntax-rules ()
@@ -2389,6 +2417,11 @@
 ; So, we have in general 25 possibilities to consider.
 ; actually, a pair or components of a pair can be variable-free
 ; or not. In the latter case, we have got to traverse them.
+;
+; "Measurements of the dynamic behavior of unification on four real
+; programs show that one or both of the arguments are variables about
+; 85% of the time [63]. A subroutine call is made only if both arguments
+; are nonvariables." (Peter Van Roy, The Wonder Years ...)
 
 (define unify
   (lambda (t u subst)
@@ -2416,6 +2449,8 @@
       [else (and (equal? t u) subst)])))
 
 ; t-var is a free variable, u can be anything
+; This is analogous to get_variable instruction of Warren Abstract Machine
+; (WAM).
 (define unify-free/any
   (lambda (t-var u subst)
     (cond
