@@ -32,7 +32,7 @@
     (all 
       (typeclass-C a b c1)
       (typeclass-C a b c2)
-      (fails (predicate/no-check (c1 c2) (*equal? c1 c2))))))
+      (fails (project/no-check (c1 c2) (predicate (*equal? c1 c2)))))))
 
 (printf "~%Counter-example: ~s~%"
   (solution (a b c1 c2)
@@ -85,7 +85,7 @@
     (all 
       (typeclass-F a b1)
       (typeclass-F a b2)
-      (fails (predicate/no-check (b1 b2) (*equal? b1 b2))))))
+      (fails (project/no-check (b1 b2) (predicate (*equal? b1 b2)))))))
 
  (printf "~%Counter-example: ~s~%" 
    (solve 4 (a b1 b2) (typeclass-F-counter-example-query a b1 b2)))
@@ -132,7 +132,7 @@
 	   (fails
 	     (all!
 	       (typeclass-F a b2)
-	       (fails (predicate/no-check (b1 b2) (*equal? b1 b2))))))
+	       (fails (project/no-check (b1 b2) (predicate (*equal? b1 b2)))))))
          a b)))))
 
 (printf "~%Typechecking (open world): ~s~%" 
