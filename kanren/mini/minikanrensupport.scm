@@ -165,25 +165,23 @@
 
 (define unify-free/list
   (lambda (t u subst)
-    (extend-subst t (remove-anon u) subst)))
-  
-(define remove-anon
-  (letrec
-    ([contains-anon?
-       (lambda (t)
-         (or (eq? t _)
-             (and (pair? t)
-                  (or (contains-anon? (car t)) (contains-anon? (cdr t))))))]
-     [copy-no-anon
-       (lambda (t)
-         (cond
-           [(eq? t _) (logical-variable 'anon)]
-           [(pair? t) (cons (copy-no-anon (car t)) (copy-no-anon (cdr t)))]
-           [else t]))])
-  (lambda (t)
-    (if (contains-anon? t)
-      (copy-no-anon t)
-      t))))
+    (extend-subst t (or (rebuild-without-anons u) u) subst)))
+
+(define rebuild-without-anons
+  (lambda (lst)
+    (cond
+      [(eq? lst _) (logical-variable '*anon)]
+      [(not (pair? lst)) #f]
+      [(null? (cdr lst))
+	(let [(new-car (rebuild-without-anons (car lst)))]
+	  (and new-car (cons new-car '())))]
+      [else
+	(let [(new-car (rebuild-without-anons (car lst)))
+              (new-cdr (rebuild-without-anons (cdr lst)))]
+	  (if new-car
+	    (cons new-car (or new-cdr (cdr lst)))
+	    (and new-cdr (cons (car lst) new-cdr))))])))
+
 
 
 
