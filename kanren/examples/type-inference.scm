@@ -57,7 +57,6 @@
   (relation (g v t)
     (to-show `(non-generic ,_ ,_ ,g) v t)
     (all!! (env g v t))))
-    ;(all!! (instantiated g) (env g v t))))
 
 (define env (extend-relation (a1 a2 a3)
               non-generic-match-env non-generic-recursive-env))
@@ -70,37 +69,75 @@
   (relation (g v targ tresult t)
     (to-show `(generic ,v (--> ,targ ,tresult) ,g) v t)
     (project/no-check (targ tresult)
-      (== t (instantiate `(--> ,targ ,tresult))))))
+      (== t (copy-term `(--> ,targ ,tresult))))))
 
 (define generic-recursive-env
   (relation (g v t)
     (to-show `(generic ,_ ,_ ,g) v t)
     (all! (env g v t))))
 
+
+; copy-term TERM -> TERM
+; return a TERM that is identical to the input term modulo the replacement
+; of free variables in TERM with fresh logical variables. 
+; If a logical variable occurs several times in TERM, the result
+; will have the same number of occurrences of the replacement fresh
+; variable.
+(define copy-term
+  (lambda (t)
+    (let* ((fv (free-vars t))
+	   (subst
+	     (map (lambda (old-var)
+		    (commitment old-var
+		      (logical-variable (logical-variable-id old-var))))
+	       fv)))
+      (subst-in t subst))))
+
+; Now, we do the same but entirely within KANREN
+(define generic-base-env
+  (relation (g v targ tresult t)
+    (to-show `(generic ,v (--> ,targ ,tresult) ,g) v t)
+    (copy-term-kanren `(--> ,targ ,tresult) t)))
+
+; logical-assq VAR LST BINDING NEW-LST
+; if VAR is found in LST, return its binding. NEW-LST would be the same
+; as LST
+; If var is not found, add a binding to a fresh variable and
+; append to NEW-LST
+(define logical-assq
+  (extend-relation (a b c d)
+    (relation (var lst)			; non var map to themselves
+      (to-show var lst var lst)
+      (instantiated var))
+    (relation (var lst var1 binding)
+      (to-show var lst binding lst)
+      (all!!
+	(== lst `((,var1 . ,binding) . ,_))
+	(predicate (*equal? var var1))))
+    (relation (var h lst binding1 lst1)
+      (to-show var `(,h . ,lst) binding1 `(,h . ,lst1))
+      (logical-assq var lst binding1 lst1))
+    (fact (var new-var) var '() new-var `((,var . ,new-var)))
+    ))
+
+(define copy-term-kanren
+  (relation (x y varmap)
+    (to-show x y)
+    (copy-term-kanren-raw x y '() varmap)))
+
+(define copy-term-kanren-raw
+  (relation (head-let t tnew lst new-lst)
+    (exists (th tt)
+      (if-only (all!! (instantiated t) (== t `(,th . ,tt)))
+	(exists (th-new tt-new new-lst1)
+	  (all!!
+	    (copy-term-kanren-raw th th-new lst new-lst1)
+	    (copy-term-kanren-raw tt tt-new new-lst1 new-lst)
+	    (== tnew `(,th-new . ,tt-new))))
+	(logical-assq t lst tnew new-lst)))))
+
 (define generic-env
   (extend-relation (a1 a2 a3) generic-base-env generic-recursive-env))
-
-(define instantiate
-  (letrec
-      ([instantiate-term
-         (lambda (t env)
-           (cond
-             [(var? t)
-              (cond
-                [(assq t env)
-                 => (lambda (pr)
-                      (values (cdr pr) env))]
-                [else (let ([new-var (logical-variable (logical-variable-id t))])
-                        (values new-var (cons `(,t . ,new-var) env)))])]
-             [(pair? t)
-              (let*-values
-		([(a-t env) (instantiate-term (car t) env)]
-		 [(d-t env) (instantiate-term (cdr t) env)])
-		(values (cons a-t d-t) env))]
-             [else (values t env)]))])
-    (lambda (t)
-      (let*-values ([(ct env) (instantiate-term t '())])
-        ct))))
 
 (define env (extend-relation (a1 a2 a3) env generic-env))
 
