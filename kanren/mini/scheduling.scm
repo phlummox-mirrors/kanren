@@ -474,6 +474,58 @@
              (raw-run (prefix n) (var 'x)
                (lambda (x) (all g0 g ...))))))))))
 
+
+; Another version of run/run* predicates
+; Produces an _even_ stream (that is, thunk first)
+(define run-to-stream
+  (lambda (x f)
+    (lambda ()
+      (case-ans (f)
+	(quote ())
+	((a) (cons (walk* x a) (quote ())))
+	((a f) (cons (walk* x a) (run-to-stream x f)))))))
+
+(define stream->list
+  (lambda (s)
+    (let ((s^ (s)))
+      (cond
+	((null? s^) s^)
+	((null? (cdr s^)) s^)
+	(else (cons (car s^) (stream->list (cdr s^))))))))
+
+(define-syntax new-run* 
+  (syntax-rules ()
+    ((_ (x) g0 g ...)
+     (map reify
+       (stream->list
+	 (let ((x (var 'x)))
+	   (run-to-stream x
+	     (lambdaf@ ()
+	       (scheduler (lambdaf@ () (bind (unit empty-s)
+					 (all g0 g ...))))))))))))
+   
+(define stream->list-n
+  (lambda (n s)
+    (if (zero? n) (quote ())
+      (let ((s^ (s)))
+	(cond
+	  ((null? s^) s^)
+	  ((null? (cdr s^)) s^)
+	  (else (cons (car s^) (stream->list-n (- n 1) (cdr s^)))))))))
+
+
+(define-syntax new-run 
+  (syntax-rules ()
+    ((_ n (x) g0 g ...)
+     (map reify
+       (stream->list-n n
+	 (let ((x (var 'x)))
+	   (run-to-stream x
+	     (lambdaf@ ()
+	       (scheduler (lambdaf@ () (bind (unit empty-s)
+					 (all g0 g ...))))))))))))
+
+
 (define == 
   (lambda (v w)
     (lambdag@ (s)
