@@ -24,7 +24,7 @@
 (define (statistics)
   (vector
     #f
-    (OS:time::double) ; CPU-time
+    (OS:time) ; CPU-time
     ))
 
 ;(load "plshared.ss")
@@ -526,8 +526,16 @@
     [(_) (lambda (sk) sk)]
     [(_ ant) ant]
     [(_ ant0 ant1 ...)
-     (lambda (sk)
-       (ant0 ((all ant1 ...) sk)))]))
+     (lambda@ (sk)
+       (letrec-syntax
+	 ((splice-in-ants 
+	    (syntax-rules ()
+	      ((_) sk)
+	      ((_ ant . other-ants)
+		(ant (splice-in-ants . other-ants)))))
+	    )
+	 (ant0 (splice-in-ants ant1 ...))))]
+    ))
 
 (define !!
   (lambda (exiting-fk)
