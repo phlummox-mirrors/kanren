@@ -78,22 +78,22 @@
   (syntax-rules ()
     ((_) succeed)
     ((_ g) g)
-    ((_ g0 g ...) (lambda (s) (bind (g0 s) (all g ...))))))
+    ((_ g0 g ...)
+     (let ((g^ g0))
+       (lambda (s) (bind (g^ s) (lambda (s) ((all g ...) s))))))))
 
-(define-syntax ==
-  (syntax-rules ()
-    ((_ v w)
-     (lambda (s)
-       (cond
-         ((unify v w s) => unit)
-         (else mzero))))))
+(define ==
+  (lambda (v w)
+    (lambda (s)
+      (cond
+        ((unify v w s) => unit)
+        (else mzero)))))
 
 (define-syntax fresh
   (syntax-rules ()
     ((_ (x ...) g0 g ...)
-     (lambda (s)
-       (let ((x (var 'x)) ...)
-         ((all g0 g ...) s))))))
+     (let ((x (var 'x)) ...)
+       (all g0 g ...)))))
 
 (define-syntax project
   (syntax-rules ()
@@ -104,51 +104,64 @@
 
 (define-syntax cond@
   (syntax-rules ()
-   ((_ c0 c ...) (lambda (s) (c@ s mplus c0 c ...)))))
+    ((_ c ...) (c@ mplus c ...))))
 
 (define-syntax condi
   (syntax-rules ()
-   ((_ c0 c ...) (lambda (s) (c@ s interleave c0 c ...)))))
+    ((_ c ...) (c@ interleave c ...))))
 
 (define-syntax c@
   (syntax-rules (else)
-    ((_ s a (else g ...)) ((all g ...) s))
-    ((_ s a (g ...)) ((all g ...) s))
-    ((_ s a (g ...) c ...)
-     (a (freeze ((all g ...) s)) (freeze (c@ s a c ...))))))
-
-(define-syntax condo
-  (syntax-rules ()
-    ((_ c0 c ...) 
-     (lambda (s)
-       (co s (lambda (r) r) c0 c ...)))))
+    ((_ combine) fail)
+    ((_ combine (else g ...)) (all g ...))
+    ((_ combine (g ...)) (all g ...))
+    ((_ combine (g ...) c ...)
+     (let ((g^ (all g ...)))
+       (lambda (s) (combine (g^ s) (freeze ((c@ combine c ...) s))))))))
 
 (define-syntax cond1
   (syntax-rules ()
-    ((_ c0 c ...) 
-     (lambda (s)
-       (co s (lambda (r) mzero) c0 c ...)))))
+    ((_ c ...)
+     (let-syntax ((chop (syntax-rules ()
+                          ((chop s r k) (k s)))))
+       (c1 chop c ...)))))
 
-(define-syntax co
+(define-syntax condo
+  (syntax-rules ()
+    ((_ c ...)
+     (let-syntax ((chop (syntax-rules ()
+                          ((chop s r k) (bind (mplus (unit s) r) k)))))
+       (c1 chop c ...)))))
+
+(define-syntax c1
   (syntax-rules (else)
-    ((_ s l (else g ...)) ((all g ...) s))
-    ((_ s l (g ...)) ((all g ...) s))
-    ((_ s l (g0 g ...) c0 c ...)
-     (open (g0 s) (co s l c0 c ...)
-       ((s r) (bind (mplus (unit s) (l r)) (all g ...)))))))
+    ((_ chop) fail)
+    ((_ chop (else g ...)) (all g ...))
+    ((_ chop (g0 g ...))
+     (let ((g^ g0))
+       (lambda (s)
+         (open (g^ s) mzero
+           ((s r) (chop s r (all g ...)))))))
+    ((_ chop (g0 g ...) c ...)
+     (let ((g^ g0))
+       (lambda (s)
+         (open (g^ s) ((c1 chop c ...) s)
+           ((s r) (chop s r (all g ...)))))))))
 
 (define-syntax alli
   (syntax-rules ()
     ((_) succeed)
     ((_ g) g)
     ((_ g0 g ...)
-     (lambda (s) (ai (g0 s) (alli g ...))))))
+     (let ((g^ g0))
+       (lambda (s)
+         (ai (g^ s)
+             (lambda (s) ((alli g ...) s))))))))
 
 (define ai
   (lambda (r g)
     (open r mzero
-      ((s r) (interleave (freeze (g s))
-                         (freeze (ai r g)))))))
+      ((s r) (interleave (g s) (freeze (ai r g)))))))
 
 (define-syntax lambda-limited
   (syntax-rules ()
@@ -177,7 +190,7 @@
     (cond
       ((null? r) '())
       (else
-	(let ((p (r '())))
+        (let ((p (r '())))
           (cond
             ((not p) '())
             (else
