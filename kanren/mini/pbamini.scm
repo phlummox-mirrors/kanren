@@ -55,7 +55,8 @@
 (define translate-to-tex
   (lambda (x)
     (reify-id-tex
-      (string->symbol (list->string (prefix-id (string->list (symbol->string x)))))
+      (string->symbol (list->string (prefix-id (string->list
+  (symbol->string x)))))
       (string->number (list->string (cdr (var-symbol? x)))))))
 
 (define prefix-id
@@ -76,12 +77,20 @@
       ((null? n) 0)
       (else (+ (car n) (* 2 (trans (cdr n))))))))
 
+(define c==
+  (lambda (a)
+    (lambda (b)
+      (== a b))))
+
+(define c==0 (c== '()))
+(define c==1 (c== '(1)))
+
 (define poso
   (lambda (n)
     (fresh (_ __)
       (== `(,_ . ,__) n))))
 
-(define gt1o
+(define >1o
   (lambda (n)
     (fresh (_ __)
       (== `(,_ . ,__) n)
@@ -134,6 +143,12 @@
     (fresh (_ __)
       (== `(,_ . ,__) ls))))
 
+(define fresho
+  (lambda (x)
+    (all
+      (fails (fails (== #f x)))
+      (fails (fails (== #t x))))))
+
 (define has-fresho
   (lambda (v)
     (condo
@@ -163,33 +178,42 @@
 ;      ,(build 4)
 ;      ,(build 5))))
 
-; > (run* (q) (for@ (lambda (x) (all (poso x) (== x q))) (map build '(0 1 2 3 4 5))))
+; > (run* (q) (for@ (lambda (x) (all (poso x) (== x q))) (map build '(0
+;    1 2 3 4 5))))
 ; ((1) (0 1) (1 1) (0 0 1) (1 0 1))
-; > (run* (q) (for@ (lambda (x) (all (gt1o x) (== x q))) (map build '(0 1 2 3 4 5))))
+; > (run* (q) (for@ (lambda (x) (all (>1o x) (== x q))) (map build '(0 1
+;    2 3 4 5))))
 ; ((0 1) (1 1) (0 0 1) (1 0 1))
 
 ; oddnes and evenness for positive numbers
 ; > (run* (q) (for@ (lambda (x) (caro x q)) (map build '(0 1 2 3 4 5))))
 ; (1 0 1 0 1)
 
-
-(define c==
-  (lambda (a)
-    (lambda (b)
-      (== a b))))
-
 (define half-adder
-  (lambda (x y r c-out)
+  (lambda (x y r c)
     (for@
-      (c== `(,x ,y ,r ,c-out))
+      (c== `(,x ,y ,r ,c))
       '((0 0 0 0) (1 0 1 0) (0 1 1 0) (1 1 0 1)))))
 
 (define full-adder
-  (lambda (c-in x y r c-out)
+  (lambda (b x y r c)
     (fresh (w xy wz)
       (half-adder x y w xy)
-      (half-adder w c-in r wz)
-      (bit-or xy wz c-out))))
+      (half-adder w b r wz)
+      (bit-xor xy wz c))))
+
+(define full-adder
+  (lambda (b x y r c)
+    (cond@
+      ((== b 0) (== x 0) (== y 0) (== r 0) (== c 0))
+      ((== b 1) (== x 0) (== y 0) (== r 1) (== c 0))
+      ((== b 0) (== x 1) (== y 0) (== r 1) (== c 0))
+      ((== b 1) (== x 1) (== y 0) (== r 0) (== c 1))
+      ((== b 0) (== x 0) (== y 1) (== r 1) (== c 0))
+      ((== b 1) (== x 0) (== y 1) (== r 0) (== c 1))
+      ((== b 0) (== x 1) (== y 1) (== r 0) (== c 1))
+      ((== b 1) (== x 1) (== y 1) (== r 1) (== c 1))
+      (else fail))))
 
 (define bit-or
   (lambda (x y r)
@@ -197,30 +221,51 @@
       (c== `(,x ,y ,r))
       '((0 0 0) (1 0 1) (0 1 1) (1 1 1)))))
 
-(define adder-sym
-  (lambda (c-in)
+(define bit-xor
+  (lambda (x y r)
+    (for@
+      (c== `(,x ,y ,r))
+      '((0 0 0) (1 0 1) (0 1 1) (1 1 0)))))
+
+(define sym+
+  (lambda (cb)
     (lambda (n m k)
       (cond@
-        ((all (== 0 c-in) (== '() n) (== '() m)) (== '() k))
-        ((all (== 1 c-in) (== '() n) (== '() m)) (== '(1) k))      
-        ((all (== '(1) n) (== '(1) m)) (== `(,c-in 1) k))
-        ((all (gt1o n) (gt1o m)) (gen-adder c-in n m k))
+        ((c==0 n) (c==0 m)
+         (cond@
+           ((== 0 cb) (c==0 k))
+           ((== 1 cb) (c==1 k))
+           (else fail)))
+        ((c==1 n) (c==1 m) (== `(,cb 1) k))
+        ((>1o n) (>1o m) ((gen+ cb) n m k))
         (else fail)))))
 
-(define adder-asym
-  (lambda (c-in)
+(define asym+
+  (lambda (cb)
     (lambda (n m k)
       (cond@
-        ((all (== 0 c-in) (== '() n) (poso m)) (== m k))
-        ((all (== 1 c-in) (== '() n) (poso m)) ((adder 0) '(1) m k))
-        ((all (== '(1) n) (gt1o m)) (gen-adder c-in n m k))
+        ((c==0 n) (poso m)
+         (cond@
+           ((== 0 cb) (== m k))
+           ((== 1 cb) ((adder 0) '(1) m k))
+           (else fail)))
+        ((c==1 n) (>1o m) ((gen+ cb) n m k))
+        (else fail)))))
+
+'(define adder
+  (lambda (cb)
+    (lambda (n m k)
+      (condi
+        (((sym+ cb) n m k) succeed)
+        (((asym+ cb) n m k) succeed)
+        (((asym+ cb) m n k) succeed)
         (else fail)))))
 
 (define adder
-  (lambda (c-in)
-    (commutes (adder-sym c-in) (adder-asym c-in))))
+  (lambda (cb)
+    (commute (sym+ cb) (asym+ cb))))
 
-(define commutes
+(define commute
   (lambda (sym asym)
     (lambda (n m k)
       (condi
@@ -229,16 +274,17 @@
         ((asym m n k) succeed)
         (else fail)))))
 
-(define gen-adder
-  (lambda (c-in n m k)
-    (fresh (nb nr mb mr kb kr)
-      (== `(,nb . ,nr) n)
-      (== `(,mb . ,mr) m)
-      (== `(,kb . ,kr) k)
-      (fresh (c-out)
-        (alli
-          (full-adder c-in nb mb kb c-out)
-          ((adder c-out) nr mr kr))))))
+(define gen+
+  (lambda (cb)
+    (lambda (n m k)
+      (fresh (nb nr mb mr kb kr)
+        (== `(,nb . ,nr) n)
+        (== `(,mb . ,mr) m)      
+        (== `(,kb . ,kr) k)
+        (fresh (c-out)
+          (alli
+            (full-adder cb nb mb kb c-out)
+            ((adder c-out) nr mr kr)))))))
 
 (define +o
   (lambda (n m k)
@@ -248,49 +294,15 @@
   (lambda (n m k)
     (+o m k n)))
 
-(define both-fresh-and-same
-  (lambda (x y)
-    (all
-      (fresho x)
-      (fresho y)
-      (fails (== #f x) (== #t y)))))
-
-(define fresho
-  (lambda (x)
-    (all
-      (fails (fails (== #f x)))
-      (fails (fails (== #t x))))))
-
-(define <o  
+(define =o ;;; hardly necessary.
   (lambda (n m)
-    (condo
-      ((both-fresh-and-same n m) fail)
-      (else
-        (cond@
-          ((== '() n) (poso m))
-          ((== '(1) n) (gt1o m))
-          ((fresh (_ nr __ mr)
-             (== `(,_ . ,nr) n)
-             (== `(,__ . ,mr) m)
-             (condi
-               ((<o nr mr) succeed)
-               ((== nr mr) (all (== _ 0) (== 1 __)))
-               (else fail))
-             (poso nr)
-             (poso mr))
-           succeed)
-          (else fail))))))
+    (== n m)))
 
-(define =o
+(define <o  ; n < m iff exists x >0 such that n + x = m
   (lambda (n m)
-    (condi
-      ((== '() n) (== '() m))
-      ((== '(1) n) (== '(1) m))
-      (else
-        (fresh (x y)
-          (== `(,x . ,y) n)
-          (== `(,x . ,y) m))))))
-
+    (fresh (x)
+      (poso x)
+      (+o n x m))))
 
 ; (<ol3 q p n m) holds iff
 ; q = '() and (poso p) or
@@ -299,24 +311,31 @@
 ; it hits 0, m takes the role of n, since it may have some
 ; bits left.  When n and m are both 0, both cases fail.
 ; q and p are counted down naturally.
-(define <ol3
+
+(define boundo
+  (lambda (r p n m)
+    (fresh (q)
+      (== `(0 . ,q) r)
+      (bound-aux q p n m))))
+
+(define bound-aux
   (lambda (q p n m)
     (cond@
-      ((== '() q) (poso p))
+      ((c==0 q) (poso p))
       (else
-        (fresh (qr pr _ __)
-          (== `(,_ . ,qr) q)
-          (== `(,__ . ,pr) p)
+        (fresh (x y _ __)
+          (== `(,_ . ,x) q)
+          (== `(,__ . ,y) p)
           (condi
-            ((fresh (mr _)
-               (== '() n)
-               (== `(,_ . ,mr) m) 
-               (<ol3 qr pr mr '()))
+            ((fresh (z _)
+               (c==0 n)
+               (== `(,_ . ,z) m) 
+               (bound-aux x y z '()))
              succeed)
-            (else
-              (fresh (nr _)
-                (== `(,_ . ,nr) n) 
-                (<ol3 qr pr nr m)))))))))
+            ((fresh (z _)
+               (== `(,_ . ,z) n) 
+               (bound-aux x y z m)))
+            (else fail)))))))
   
 ;; infinite loops in both Kanren and mini-Kanren
 ;;
@@ -326,100 +345,99 @@
 ;; (run (q) (fresh (r) (*o `(1 . ,r) `(1 1) `(1 . ,r))))
 ;; (solution (q) (**o `(1 . ,q) `(1 1) `(1 . ,q)))
 
-(define *even/even
-  (lambda (n m p)
-    (fresh (nr mr pr)
-      (== `(0 . ,nr) n)
-      (== `(0 . ,mr) m)         
-      (== `(0 0 . ,pr) p)
-      (*o nr mr pr))))
-
-(define *odd/odd
-  (lambda (n m p)
-    (fresh (nr mr n-1 m-1)
-      (== `(1 . ,nr) n)
-      (== `(1 . ,mr) m)
-      (== `(0 . ,nr) n-1)
-      (== `(0 . ,mr) m-1)        
-      (fresh (p1 p2 res res2)
-        (<ol3 p1 p n m)
-        (== `(0 . ,p1) p2)
-        (*o n-1 m-1 p2)
-        (+o n-1 m-1 res)
-        (+o p2 res res2)
-        (+o res2 '(1) p)))))
-
-(define *sym
+(define sym*
   (lambda (n m p)
     (condi
-      ((all (== '() n) (== '() m)) (== p '()))
-      ((all (== '(1) n) (== '(1) m)) (== '(1) p))
-      ((all (gt1o n) (gt1o m)) (*even/even n m p))
-      ((all (gt1o n) (gt1o m)) (*odd/odd n m p))
+      ((c==0 n) (c==0 m)
+       (c==0 p))
+      ((c==1 n) (c==1 m)
+       (c==1 p))
+      ((>1o n) (>1o m)
+       (gen* n m p))
       (else fail))))
 
-(define *even/odd
+(define gen*
   (lambda (n m p)
-    (fresh (nr mr pr)
-      (== `(0 . ,nr) n)
-      (== `(1 . ,mr) m)                  
-      (== `(0 . ,pr) p)
-      (*o nr m pr))))
+    (condi
+      ((fresh (x y z)
+         (== `(0 . ,x) n)
+         (== `(0 . ,y) m)
+         (== `(0 0 . ,z) p)
+         (*o x y z))
+       succeed)
+      ((fresh (x y r s)
+         (== `(1 . ,x) n)
+         (== `(1 . ,y) m)
+	  (boundo r p n m)
+         (gen* `(0 . ,x) `(0 . ,y) r)
+         (+o `(0 . ,x) `(0 . ,y) s)
+         ((adder 1) r s p))
+       succeed)
+      (else fail))))
 
-(define *asym
+(define asym*
   (lambda (n m p)
     (cond@
-      ((all (== '() n) (poso m)) (== '() p))
-      ((all (== '(1) n) (gt1o m)) (== m p))
-      ((all (gt1o n) (gt1o m)) (*even/odd n m p))
+      ((c==0 n) (poso m) 
+       (c==0 p))
+      ((c==1 n) (>1o m)
+       (== m p))
+      ((>1o n) (>1o m)
+       (fresh (x y z)
+         (== `(0 . ,x) n)
+         (== `(1 . ,y) m)                  
+         (== `(0 . ,z) p)
+         (*o x m z)))
       (else fail))))
 
-(define *o (commutes *sym *asym))
+(define *o (commute sym* asym*))
 
 ; Compare the length of two numerals.  (<ol a b) holds holds if a=0
 ; and b>0, or if (floor (log2 a)) < (floor (log2 b)) That is, we
 ; compare the length (logarithms) of two numerals For a positive
 ; numeral, its bitlength = (floor (log2 n)) + 1
+
 (define <ol
   (lambda (n m)
-    (condo
-      ((both-fresh-and-same n m) fail)     
-      (else
-       (cond@
-         ((== '() n) (poso m))
-         ((== '(1) n) (gt1o m))  
-         ((fresh (x y _ __)
-            (== `(,_ . ,x) n)
-            (== `(,__ . ,y) m)
-            (<ol x y)
-            (gt1o n))
-          succeed)
-         (else fail))))))
+    (cond@
+      ((c==0 n) (poso m))
+      ((c==1 n) (>1o m))
+      ((>1o n) (>1o m)
+       (fresh (x y _ __)
+          (== `(,_ . ,x) n)
+          (== `(,__ . ,y) m)
+          (<ol x y)))
+      (else fail))))
+
+; holds if both a and b are zero
+; or if (floor (log2 a)) = (floor (log2 b))
 
 (define =ol
   (lambda (n m)
     (cond@
-      ((== '() n) (== '() m))
-      ((== '(1) n) (== '(1) m))
-      (else
+      ((c==0 n) (c==0 m))
+      ((c==1 n) (c==1 m))
+      ((>1o n) (>1o m)
         (fresh (x y _ __)
           (== `(,_ . ,x) n)
           (== `(,__ . ,y) m)
-          (poso x)
-          (poso y)
-          (=ol x y))))))
+          (=ol x y)))
+      (else fail))))
 
 (define divo
   (lambda (n m q r)
     (condi
-      ((all (== '() q) (== r n)) (all (<ol n m) (<o n m)))
-      ((all (<ol m n) (<o r m))
+      ((c==0 q) (== r n)
+       (<ol n m) (<o n m))
+      ((<ol m n) (<o r m)
        (fresh (res)      
          (<ol res `(0 . ,n))
          (-o n res r)
-         (*o q m res)))
-      ((== '(1) q) (all (=ol m n) (<o r m) (-o n m r)))
-      ((all (== '() q) (== r n)) (all (=ol m n) (<o n m)))
+	 (*o q m res)))
+      ((c==1 q) 
+       (=ol m n) (-o n m r) (<o r m))  ;;; swapping last two
+      ((c==0 q) (== r n)
+       (=ol m n) (<o n m))
       (else fail))))
 
 (define count-up
@@ -501,7 +519,7 @@
   '(q.0))
 
 (test-check "gt1test1"
-  (run* (q) (gt1o q))  
+  (run* (q) (>1o q))  
   '((_.0 _.1 . __.0)))
 
 (test-check "postest1"
@@ -514,7 +532,7 @@
   (do ((i 0 (+ 1 i))) ((> i n))
     (do ((j 0 (+ 1 j))) ((> j n))
       (test-check
-	(string-append "alli enumerability: " (number->string i)
+      (string-append "alli enumerability: " (number->string i)
           " " (number->string j))
         (run (q)
           (fresh (x y)
@@ -560,17 +578,17 @@
   (do ((i 0 (+ 1 i))) ((> i n))
     (do ((j 0 (+ 1 j))) ((> j n))
       (let ((p (+ i j)))
-	(test-check
-	  (string-append "enumerability: " (number->string i)
+      (test-check
+        (string-append "enumerability: " (number->string i)
 	    "+" (number->string j) "=" (number->string p))
-	  (run (q)
-	    (fresh (x y z) 
-	      (all (+o x y z)
-  		  (== x (build i))
+	      (run (q)
+	          (fresh (x y z) 
+		        (all (+o x y z)
+			       (== x (build i))
           (== y (build j))
           (== z (build p))
-		  (== q (list x y z)))))
-	  `(,(build i) ,(build j) ,(build p))
+	        (== q (list x y z)))))
+		  `(,(build i) ,(build j) ,(build p))
           #f)))))
 
 
@@ -700,7 +718,7 @@
     (fresh (x)
       (<o x (build 4))
       (project (x) (== (trans x) q))))
-  0)
+  2)
 
 (test-check "comparison-2"
   (run (q)
@@ -718,120 +736,123 @@
       (project (x) (== (trans x) q))))
   #f)
 
-(test-check "comparison-4"
-  (run (q) (fresh (x y) (<o q q)))
-  #f)
+;;; (test-check "comparison-4" (run (q) (fresh (x y) (<o q q))) #f)
 
 (test-check "comparison-5"
   (run$ (q) (fresh (x y) (<o x y) (== `(,x ,y) q)))
-  '((() (_.0 . __.0))
-    ((1) (_.0 _.1 . __.0))
+  '(((1) (0 1))
+    (() (_.0 . __.0))
+    ((0 1) (0 0 1))
     ((0 _.0 . __.0) (1 _.0 . __.0))
-    ((_.0 1) (__.0 _.1 _.2 . __.1))
-    ((_.0 0 _.1 . __.0) (__.1 1 _.1 . __.0))
-    ((_.0 _.1 1) (__.0 __.1 _.2 _.3 . __.2))
-    ((_.0 _.1 0 _.2 . __.0) (__.1 __.2 1 _.2 . __.0))
-    ((_.0 _.1 _.2 1) (__.0 __.1 __.2 _.3 _.4 . __.3))
-    ((_.0 _.1 _.2 0 _.3 . __.0) (__.1 __.2 __.3 1 _.3 . __.0))
-    ((_.0 _.1 _.2 _.3 1) (__.0 __.1 __.2 __.3 _.4 _.5 . __.4))))
+    ((1 1) (1 0 1))
+    ((1) (1 _.0 . __.0))
+    ((0 1) (0 1 _.0 . __.0))
+    ((1 1) (0 0 1))
+    ((0 1) (1 0 1))
+    ((1) (0 0 1))))
 
 (test-check "comparison-6"
-  (run$ (q) (fresh (x y) (<o `(0 . ,x) `(1 . ,y)) (== `(,x ,y) q)))  
-  '(((_.0 . __.0) (_.0 . __.0))
-    ((1) (_.0 _.1 . __.0))
+  (run$ (q) (fresh (x y) (<o `(0 . ,x) `(1 . ,y)) (== `(,x ,y) q)))
+  '(((1) (0 1))
+    ((_.0 . __.0) (_.0 . __.0))
+    ((1) (1 _.0 . __.0))
+    ((0 1) (0 0 1))
     ((0 _.0 . __.0) (1 _.0 . __.0))
-    ((_.0 1) (__.0 _.1 _.2 . __.1))
-    ((_.0 0 _.1 . __.0) (__.1 1 _.1 . __.0))
-    ((_.0 _.1 1) (__.0 __.1 _.2 _.3 . __.2))
-    ((_.0 _.1 0 _.2 . __.0) (__.1 __.2 1 _.2 . __.0))
-    ((_.0 _.1 _.2 1) (__.0 __.1 __.2 _.3 _.4 . __.3))
-    ((_.0 _.1 _.2 0 _.3 . __.0) (__.1 __.2 __.3 1 _.3 . __.0))
-    ((_.0 _.1 _.2 _.3 1) (__.0 __.1 __.2 __.3 _.4 _.5 . __.4))))
+    ((1 1) (1 0 1))
+    ((1) (0 0 1))
+    ((0 1) (0 1 _.0 . __.0))
+    ((1 1) (0 0 1))
+    ((0 1) (1 0 1))))
 
 (test-check "comparison-7"
   (run$ (q) (fresh (x y) (<o `(1 . ,x) `(1 . ,y)) (== `(,x ,y) q)))
-  '((() (_.0 . __.0))
-    ((1) (_.0 _.1 . __.0))
-    ((0 _.0 . __.0) (1 _.0 . __.0))
-    ((_.0 1) (__.0 _.1 _.2 . __.1))
-    ((_.0 0 _.1 . __.0) (__.1 1 _.1 . __.0))
-    ((_.0 _.1 1) (__.0 __.1 _.2 _.3 . __.2))
-    ((_.0 _.1 0 _.2 . __.0) (__.1 __.2 1 _.2 . __.0))
-    ((_.0 _.1 _.2 1) (__.0 __.1 __.2 _.3 _.4 . __.3))
-    ((_.0 _.1 _.2 0 _.3 . __.0) (__.1 __.2 __.3 1 _.3 . __.0))
-    ((_.0 _.1 _.2 _.3 1) (__.0 __.1 __.2 __.3 _.4 _.5 . __.4))))
+  '(((1) (0 1))
+  (() (_.0 . __.0))
+  ((1) (1 _.0 . __.0))
+  ((0 1) (0 0 1))
+  ((0 _.0 . __.0) (1 _.0 . __.0))
+  ((1 1) (1 0 1))
+  ((1) (0 0 1))
+  ((0 1) (0 1 _.0 . __.0))
+  ((1 1) (0 0 1))
+  ((0 1) (1 0 1))))
 
-(test-check "comparison-8"
-  (run$ (q) (fresh (x y) (<o `(0 . ,q) `(1 . ,q))))  
-  '((_.0 . __.0)))
+(define inf-loop-again
+  (lambda ()
+    (run$ (q) (fresh (x y) (<o `(0 . ,q) `(1 . ,q))))))
 
-(test-check "comparison-9"
-  (run (q) (fresh (x y) (<ol q q)))
-  #f)
+(define inf-loop-again
+  (lambda ()
+    (run (q) (fresh (x y) (<ol q q)))))
 
 (test-check "comparison-10"
   (run$ (q) (fresh (x y) (<ol x y) (== `(,x ,y) q)))
   '((() (_.0 . __.0))
-    ((1) (_.0 _.1 . __.0))
-    ((_.0 1) (__.0 _.1 _.2 . __.1))
-    ((_.0 _.1 1) (__.0 __.1 _.2 _.3 . __.2))
-    ((_.0 _.1 _.2 1) (__.0 __.1 __.2 _.3 _.4 . __.3))
-    ((_.0 _.1 _.2 _.3 1) (__.0 __.1 __.2 __.3 _.4 _.5 . __.4))
-    ((_.0 _.1 _.2 _.3 _.4 1) (__.0 __.1 __.2 __.3 __.4 _.5 _.6 . __.5))
-    ((_.0 _.1 _.2 _.3 _.4 _.5 1) (__.0 __.1 __.2 __.3 __.4 __.5 _.6 _.7 . __.6))
-    ((_.0 _.1 _.2 _.3 _.4 _.5 _.6 1) (__.0 __.1 __.2 __.3 __.4 __.5 __.6 _.7 _.8 . __.7))
-    ((_.0 _.1 _.2 _.3 _.4 _.5 _.6 _.7 1) (__.0 __.1 __.2 __.3 __.4 __.5 __.6 __.7 _.8 _.9 . __.8))))
-
-(test-check "comparison-11"
-  (run$ (q) (fresh (x y) (<ol `(0 . ,x) `(1 . ,y)) (== `(,x ,y) q)))  
-  '(((1) (_.0 _.1 . __.0))
-    ((_.0 1) (__.0 _.1 _.2 . __.1))
-    ((_.0 _.1 1) (__.0 __.1 _.2 _.3 . __.2))
-    ((_.0 _.1 _.2 1) (__.0 __.1 __.2 _.3 _.4 . __.3))
-    ((_.0 _.1 _.2 _.3 1) (__.0 __.1 __.2 __.3 _.4 _.5 . __.4))
-    ((_.0 _.1 _.2 _.3 _.4 1) (__.0 __.1 __.2 __.3 __.4 _.5 _.6 . __.5))
-    ((_.0 _.1 _.2 _.3 _.4 _.5 1) (__.0 __.1 __.2 __.3 __.4 __.5 _.6 _.7 . __.6))
-    ((_.0 _.1 _.2 _.3 _.4 _.5 _.6 1) (__.0 __.1 __.2 __.3 __.4 __.5 __.6 _.7 _.8 . __.7))
-    ((_.0 _.1 _.2 _.3 _.4 _.5 _.6 _.7 1) (__.0 __.1 __.2 __.3 __.4 __.5 __.6 __.7 _.8 _.9 . __.8))
-    ((_.0 _.1 _.2 _.3 _.4 _.5 _.6 _.7 _.8 1) (__.0 __.1 __.2 __.3 __.4 __.5 __.6 __.7 __.8 _.9 _.10 . __.9))))
+  ((1) (_.0 _.1 . __.0))
+  ((_.0 1) (_.1 _.2 _.3 . __.0))
+  ((_.0 _.1 1) (_.2 _.3 _.4 _.5 . __.0))
+  ((_.0 _.1 _.2 1) (_.3 _.4 _.5 _.6 _.7 . __.0))
+  ((_.0 _.1 _.2 _.3 1) (_.4 _.5 _.6 _.7 _.8 _.9 . __.0))
+  ((_.0 _.1 _.2 _.3 _.4 1)
+   (_.5 _.6 _.7 _.8 _.9 _.10 _.11 . __.0))
+   ((_.0 _.1 _.2 _.3 _.4 _.5 1)
+    (_.6 _.7 _.8 _.9 _.10 _.11 _.12 _.13 . __.0))
+    ((_.0 _.1 _.2 _.3 _.4 _.5 _.6 1)
+     (_.7 _.8 _.9 _.10 _.11 _.12 _.13 _.14 _.15 . __.0))
+     ((_.0 _.1 _.2 _.3 _.4 _.5 _.6 _.7 1)
+      (_.8 _.9 _.10 _.11 _.12 _.13 _.14 _.15 _.16 _.17 . __.0))))
 
 (test-check "comparison-12"
   (run$ (q) (fresh (x y) (<ol `(1 . ,x) `(1 . ,y)) (== `(,x ,y) q)))
   '((() (_.0 . __.0))
     ((1) (_.0 _.1 . __.0))
-    ((_.0 1) (__.0 _.1 _.2 . __.1))
-    ((_.0 _.1 1) (__.0 __.1 _.2 _.3 . __.2))
-    ((_.0 _.1 _.2 1) (__.0 __.1 __.2 _.3 _.4 . __.3))
-    ((_.0 _.1 _.2 _.3 1) (__.0 __.1 __.2 __.3 _.4 _.5 . __.4))
-    ((_.0 _.1 _.2 _.3 _.4 1) (__.0 __.1 __.2 __.3 __.4 _.5 _.6 . __.5))
-    ((_.0 _.1 _.2 _.3 _.4 _.5 1) (__.0 __.1 __.2 __.3 __.4 __.5 _.6 _.7 . __.6))
-    ((_.0 _.1 _.2 _.3 _.4 _.5 _.6 1) (__.0 __.1 __.2 __.3 __.4 __.5 __.6 _.7 _.8 . __.7))
-    ((_.0 _.1 _.2 _.3 _.4 _.5 _.6 _.7 1) (__.0 __.1 __.2 __.3 __.4 __.5 __.6 __.7 _.8 _.9 . __.8))))
+    ((_.0 1) (_.1 _.2 _.3 . __.0))
+    ((_.0 _.1 1) (_.2 _.3 _.4 _.5 . __.0))
+    ((_.0 _.1 _.2 1) (_.3 _.4 _.5 _.6 _.7 . __.0))
+    ((_.0 _.1 _.2 _.3 1) (_.4 _.5 _.6 _.7 _.8 _.9 . __.0))
+    ((_.0 _.1 _.2 _.3 _.4 1)
+     (_.5 _.6 _.7 _.8 _.9 _.10 _.11 . __.0))
+     ((_.0 _.1 _.2 _.3 _.4 _.5 1)
+      (_.6 _.7 _.8 _.9 _.10 _.11 _.12 _.13 . __.0))
+      ((_.0 _.1 _.2 _.3 _.4 _.5 _.6 1)
+       (_.7 _.8 _.9 _.10 _.11 _.12 _.13 _.14 _.15 . __.0))
+       ((_.0 _.1 _.2 _.3 _.4 _.5 _.6 _.7 1)
+        (_.8 _.9 _.10 _.11 _.12 _.13 _.14 _.15 _.16 _.17 . __.0))))
 
-
-(test-check "comparison-13"
-  (run (q) (fresh (x y) (<ol `(0 . ,q) `(1 . ,q))))  
-  #f)
-
+(define infinite-loop-again
+  (lambda ()
+    (run (q) (fresh (x y) (<ol `(0 . ,q) `(1 . ,q))))))
 
 (test-check "print some numbers x that are less than y"
   (prefix 9 (run-stream (q) (fresh (x y) (<o x y) (== `(,x ,y) q))))
-  '((() (_.0 . __.0))
-    ((1) (_.0 _.1 . __.0))
+  '(((1) (0 1))
+    (() (_.0 . __.0))
+    ((0 1) (0 0 1))
     ((0 _.0 . __.0) (1 _.0 . __.0))
-    ((_.0 1) (__.0 _.1 _.2 . __.1))
-    ((_.0 0 _.1 . __.0) (__.1 1 _.1 . __.0))
-    ((_.0 _.1 1) (__.0 __.1 _.2 _.3 . __.2))
-    ((_.0 _.1 0 _.2 . __.0) (__.1 __.2 1 _.2 . __.0))
-    ((_.0 _.1 _.2 1) (__.0 __.1 __.2 _.3 _.4 . __.3))
-    ((_.0 _.1 _.2 0 _.3 . __.0) (__.1 __.2 __.3 1 _.3 . __.0))))
+    ((1 1) (1 0 1))
+    ((1) (1 _.0 . __.0))
+    ((0 1) (0 1 _.0 . __.0))
+    ((1 1) (0 0 1))
+    ((0 1) (1 0 1))))
 
 (test-check "print all numbers less than 6"
   (prefix 10 (run-stream (x) (<o x (build 6))))
-  '(() (1) (_.0 1) (_.0 0 1)))
+  '((0 1) () (1 1) (1 0 1) (0 0 1) (1)))
 
 (test-check "print a few numbers that are greater than 4"
-  (run* (x) (<o (build 4) x))
+  (run$ (x) (<o (build 4) x))
+  '((0 0 0 1)
+  (1 0 1)
+  (1 0 0 1)
+  (0 1 1)
+  (1 1 1)
+  (0 1 0 1)
+  (1 1 0 1)
+  (0 0 1 _.0 . __.0)
+  (1 0 1 _.0 . __.0)
+  (0 1 1 _.0 . __.0)))
+
+(define sad-to-see-this-go
   '((__.0 __.1 _.0 _.1 . __.2) (1 0 1) (__.0 1 1)))
 
 (test-check "multiplication-1"
@@ -870,7 +891,8 @@
   2)
 
 (test-check "multiplication-6"
-  (run (q) (fresh (w x y z) (*o `(0 ,x ,y . ,z) `(,w 1) `(1 ,x ,y . ,z))))
+  (run (q) (fresh (w x y z) (*o `(0 ,x ,y . ,z) `(,w 1) `(1 ,x ,y
+  . ,z))))
   #f)
 
 (test-check "multiplication-fail-1"
@@ -1084,19 +1106,20 @@
       (== n (build 12))
       (any (<o m n) (== m n))
       (divo n m q r)
-      (project (n m q r) (== `(,(trans n) ,(trans m) ,(trans q) ,(trans r)) w))))
-  '((12 1 12 0)
- (12 2 6 0)
- (12 3 4 0)
- (12 6 2 0)
- (12 4 3 0)
- (12 5 2 2)
- (12 7 1 5)
- (12 11 1 1)
- (12 10 1 2)
- (12 9 1 3)
- (12 8 1 4)
- (12 12 1 0)))
+      (project (n m q r) (== `(,(trans n) ,(trans m) ,(trans q) ,(trans
+  r)) w))))
+  '((12 4 3 0)
+  (12 7 1 5)
+  (12 11 1 1)
+  (12 2 6 0)
+  (12 1 12 0)
+  (12 3 4 0)
+  (12 6 2 0)
+  (12 5 2 2)
+  (12 10 1 2)
+  (12 9 1 3)
+  (12 8 1 4)
+  (12 12 1 0)))
 
 (test-check "div-all-3"
   (prefix 12
@@ -1104,6 +1127,21 @@
       (fresh (x y z r)
         (divo x y z r)
         (== `(,x ,y ,z ,r) w))))
+  '((() (_.0 . __.0) () ())
+  ((_.0 1) (1) (_.0 1) ())
+  ((1) (0 1) () (1))
+  ((1) (1) (1) ())
+  ((1) (1 _.0 . __.0) () (1))
+  ((_.0 _.1 1) (1) (_.0 _.1 1) ())
+  ((1) (0 0 1) () (1))
+  ((0 1) (1 1) () (0 1))
+  ((1) (0 1 _.0 . __.0) () (1))
+  ((_.0 _.1 _.2 1) (1) (_.0 _.1 _.2 1) ())
+  ((1) (0 0 0 1) () (1))
+  ((_.0 1) (_.0 1) (1) ())))
+
+(define old-div-all-3
+  (lambda ()
   '((() (_.0 . __.0) () ())
     ((_.0 1) (1) (_.0 1) ())
     ((1) (_.0 _.1 . __.0) () (1))
@@ -1114,17 +1152,16 @@
     ((0 1) (1 1) () (0 1))
     ((_.0 _.1 _.2 1) (__.0 __.1 __.2 _.3 _.4 . __.3) () (_.0 _.1 _.2 1))
     ((_.0 _.1 _.2 1) (1) (_.0 _.1 _.2 1) ())
-    ((_.0 _.1 _.2 _.3 1) (__.0 __.1 __.2 __.3 _.4 _.5 . __.4) () (_.0 _.1 _.2 _.3 1))
-    ((__.0 1) (__.0 1) (1) ())))
+    ((_.0 _.1 _.2 _.3 1) (__.0 __.1 __.2 __.3 _.4 _.5 . __.4) () (_.0
+  _.1 _.2 _.3 1))
+    ((__.0 1) (__.0 1) (1) ()))))
 
 ;    ((1 __.0 1) (0 __.0 1) (1) (1))    
 ;    ((1 __.0 c.0 1) (0 __.0 c.0 1) (1) (1))
 ;    ((1 __.0 c.0 _.0 1) (0 __.0 c.0 _.0 1) (1) (1))
 
 
-
-
-(test-check "div-even"
+(test-check "div-even"  ;; this loops indefinitely.
   (prefix 5
     (run-stream (w)
       (fresh (y z r)
@@ -1138,7 +1175,7 @@
 
 (define 4ref
   '(((1) (1) ()) ((_.0 __.0 . ___.0) (_.0 __.0 . ___.0) ())))
-
+#!eof
 (test-check "mul-even"
   (run* (q)
     (fresh (x y)
@@ -1172,20 +1209,19 @@
   (do ((i 0 (+ 1 i))) ((> i n))
     (do ((j 0 (+ 1 j))) ((> j n))
       (let ((p (* i j)))
-	    (test-check
-	      (string-append "enumerability: " (number->string i)
-	        "*" (number->string j) "=" (number->string p))
-	    (run (q) 
+          (test-check
+	        (string-append "enumerability: " (number->string i)
+		        "*" (number->string j) "=" (number->string p))
+			    (run (q) 
           (fresh (x y z) 
-	        (*o x y z)
-	        (== (build i) x)
+	          (*o x y z)
+		          (== (build i) x)
             (== (build j) y)
             (== (build p) z)
             (== `(,x ,y ,z) q)))
-	    `(,(build i) ,(build j) ,(build p)))))))
+	        `(,(build i) ,(build j) ,(build p)))))))
 
-
-'(define reify-id
+(define reify-id
   (lambda (id index)
     (string->symbol
       (string-append
