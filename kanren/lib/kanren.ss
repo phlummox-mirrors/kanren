@@ -88,8 +88,9 @@
 ;   (lambda (x)
 ;     (if (var? x) (cdr x) 
 ;       (error 'logical-variable-id "Invalid Logic Variable: ~s" x))))
-
-; (define (pair? x) (and (native-pair? x) (not (eq? (car x) logical-var-tag))))
+; (define pair?
+;   (lambda (x)
+;     (and (native-pair? x) (not (eq? (car x) logical-var-tag)))))
 
 ;;; ------------------------------------------------------
 
@@ -124,24 +125,16 @@
 
 (define compose-subst
   (lambda (base refining)
-    (compose-subst/own-survivors base refining
-      (let survive ([r* refining])
-        (cond
-          [(null? r*) '()]
-          [(assq (commitment->var (car r*)) base) (survive (cdr r*))]
-          [else (cons (car r*) (survive (cdr r*)))])))))
-
-; relatively-ground? TERM (VAR ...) -> BOOL
-; Returns #t if none of the VARs occur in TERM
-(define relatively-ground?
-  (lambda (term vars)
     (cond
-      [(var? term) (not (memq term vars))]
-      [(pair? term)
-       (and (relatively-ground? (car term) vars)
-            (relatively-ground? (cdr term) vars))]
-      [else #t])))
-
+      [(null? base) refining]
+      [(null? refining) base]
+      [else
+        (compose-subst/own-survivors base refining
+          (let survive ([r* refining])
+            (cond
+              [(null? r*) '()]
+              [(assq (commitment->var (car r*)) base) (survive (cdr r*))]
+              [else (cons (car r*) (survive (cdr r*)))])))])))
 
 (define subst-in  ;;; This definition will change several times.
   (lambda (t subst)
@@ -154,19 +147,12 @@
 
 (define unify
   (lambda (t u subst)
-    (cond
-      [(unify* (subst-in t subst) (subst-in u subst))
-       => (lambda (refining-subst)
-            (compose-subst subst refining-subst))]
-      [else #f])))
-
-(define unify*
-  (lambda (t u)
-    (cond
-      [(trivially-equal? t u) empty-subst]
-      [(var? t) (unit-subst t u)]
-      [(var? u) (unit-subst u t)]
-      [else #f])))
+    (let ([t (subst-in t subst)] [u (subst-in u subst)])
+      (cond
+        [(trivially-equal? t u) subst]
+        [(var? t) (compose-subst subst (unit-subst t u))]
+        [(var? u) (compose-subst subst (unit-subst u t))]
+        [else #f]))))
 
 (define trivially-equal?
   (lambda (t u)
@@ -210,8 +196,8 @@
   (syntax-rules ()
     [(_ t u)
      (lambda@ (sk fk subst)
-       (let ([subst (unify t u subst)])
-         (if subst (@ sk fk subst) (fk))))]))
+       (let*-and (fk) ([subst (unify t u subst)])
+         (@ sk fk subst)))]))
 
 ;(load "plprelims.ss")
 
@@ -385,35 +371,11 @@
 ; Pruning of substitutions is analogous to environment pruning (aka tail-call
 ; optimization) in WAM on _forward_ execution.
 
-(define-syntax exists
-  (syntax-rules ()
-    [(_ () ant) ant]
-    [(_ (id) ant)			; Handle one id in a special way
-     (let-lv (id)
-       (lambda@ (sk fk in-subst)
-	 (@ ant
-	   (lambda@ (fk out-subst)
-	     (@ sk fk (prune-subst-1 id in-subst out-subst)))
-            fk in-subst)))]
-    [(_ (id ...) ant)
-     (let-lv (id ...)
-       (lambda@ (sk fk in-subst)
-	 (@ ant
-            (lambda@ (fk out-subst)
-              (@ sk fk (prune-subst (list id ...) in-subst out-subst)))
-            fk in-subst)))]))
-
 ; PRUNE IN-SUBST SUBST ID ....
 ; remove the bindings of ID ... from SUBST (by composing with the
 ; rest of subst). IN-SUBST is the mark.
 ; If we locate IN-SUBST in SUBST, we know that everything below the
 ; mark can't possibly contain ID ...
-
-(define rev-append
-  (lambda (ls1 ls2)
-    (cond
-      [(null? ls1) ls2]
-      [else (rev-append (cdr ls1) (cons (car ls1) ls2))])))
 
 ; prune-subst-1 VAR IN-SUBST SUBST
 ; VAR is a logical variable, SUBST is a substitution, and IN-SUBST
@@ -507,7 +469,23 @@
 
 ; when the unifier is moved up, move prune-subst test from below up...
 
-
+(define-syntax exists
+  (syntax-rules ()
+    [(_ () ant) ant]
+    [(_ (ex-id) ant)
+     (let-lv (ex-id)
+       (lambda@ (sk fk in-subst)
+         (@ ant
+           (lambda@ (fk out-subst)
+             (@ sk fk (prune-subst-1 ex-id in-subst out-subst)))
+           fk in-subst)))]
+    [(_ (ex-id ...) ant)
+     (let-lv (ex-id ...) 
+       (lambda@ (sk fk in-subst)
+         (@ ant
+           (lambda@ (fk out-subst)
+             (@ sk fk (prune-subst (list ex-id ...) in-subst out-subst)))
+           fk in-subst)))]))
 
 ;-----------------------------------------------------------
 ; Sequencing of relations
@@ -1012,14 +990,14 @@
      (relation-head-let (head-term ...) ant)]
     [(_ (head-let head-term ...))	; not particularly useful without body
      (relation-head-let (head-term ...))]
-    [(_ () (to-show x ...) ant)		; pattern with no vars _is_ linear
-     (relation-head-let (`,x ...) ant)]
-    [(_ () (to-show x ...))		; the same without body: not too useful
-     (relation-head-let (`,x ...))]
-    [(_ (ex-id ...) (to-show x ...) ant)  ; body present
-     (relation "a" () () (ex-id ...) (x ...) ant)]
-    [(_ (ex-id ...) (to-show x ...))      ; no body
-     (relation "a" () () (ex-id ...) (x ...))]
+    [(_ () (to-show term ...) ant)		; pattern with no vars _is_ linear
+     (relation-head-let (`,term ...) ant)]
+    [(_ () (to-show term ...))		; the same without body: not too useful
+     (relation-head-let (`,term ...))]
+    [(_ (ex-id ...) (to-show term ...) ant)  ; body present
+     (relation "a" () () (ex-id ...) (term ...) ant)]
+    [(_ (ex-id ...) (to-show term ...))      ; no body
+     (relation "a" () () (ex-id ...) (term ...))]
     ; process the list of variables and handle annotations
     [(_ "a" vars once-vars ((once id) . ids) terms . ant)
      (relation "a" vars (id . once-vars) ids terms . ant)]
@@ -1030,12 +1008,12 @@
     ; generating temp names for each term in the head
     ; don't generate if the term is a variable that occurs in
     ; once-vars
-    [(_ "g" vars once-vars (gs ...) gunis (term . terms) . ant)
+    [(_ "g" vars once-vars (gs ...) (gunis ...) (term . terms) . ant)
      (id-memv?? term once-vars 
        ; success continuation: term is a once-var
-       (relation "g" vars once-vars (gs ... term) gunis terms . ant)
+       (relation "g" vars once-vars (gs ... term) (gunis ...) terms . ant)
        ; failure continuation: term is not a once-var
-       (relation "g" vars once-vars  (gs ... g) ((g . term) . gunis) 
+       (relation "g" vars once-vars (gs ... g) (gunis ... (g . term))
 	 terms . ant))]
     [(_ "g" vars once-vars gs gunis () . ant)
      (relation "f" vars gs gunis . ant)]
@@ -1057,7 +1035,6 @@
      (lambda (g ...)
        (exists (ex-id ...)
  	 (if-all! ((promise-one-answer (== gv term)) ...) ant)))]))
-
 
 ; A macro-expand-time memv function for identifiers
 ;	id-memv?? FORM (ID ...) KT KF
@@ -1166,10 +1143,10 @@
 
     [(_ "f" (var0 ...) ((gvo term) ...) gvs ant)
      (lambda gvs
-       (let ([var0 (if (eq? var0 _) (logical-variable '?) var0)] ...)
-	 (lambda@ (sk fk subst)			; first unify the constants
-	   (let*-and (fk) ([subst (unify gvo term subst)] ...)
-	     (@ ant sk fk subst)))))]))
+       (lambda@ (sk fk subst)			; first unify the constants
+	 (let*-and (fk) ([subst (unify gvo term subst)] ...)
+           (let ([var0 (if (eq? var0 _) (logical-variable '?) var0)] ...)
+             (@ ant sk fk subst)))))]))
 
 ; (define-syntax relation/cut
 ;   (syntax-rules (to-show)
@@ -1187,8 +1164,8 @@
 
 (define-syntax fact
   (syntax-rules ()
-    [(_ (ex-id ...) x ...)
-     (relation (ex-id ...) (to-show x ...))]))
+    [(_ (ex-id ...) term ...)
+     (relation (ex-id ...) (to-show term ...))]))
 
 ; Lifting from antecedents to relations
 ; (define-rel-lifted-comb rel-syntax ant-proc-or-syntax)
@@ -1603,7 +1580,7 @@
 
 ; (define-syntax trace-fact
 ;   (syntax-rules ()
-;    [(_ id (var0 ...) x ...) (trace-relation id (to-show (var0 ...) x ...))]))
+;    [(_ id (var0 ...) term ...) (trace-relation id (to-show (var0 ...) term ...))]))
 
 (define father
   (extend-relation (a1 a2)
@@ -1845,56 +1822,6 @@
        (let ([id (subst-in id subst)] ...)
 	 (@ ant sk fk subst)))]))
 
-; (define-syntax if/bc
-;   (syntax-rules ()
-;     [(_ #t conseq alt) conseq]
-;     [(_ #f conseq alt) alt]))
-
-; (define-syntax let-inject/everything
-;   (syntax-rules ()
-;     [(_ ([t ([var0 bool] ...) scheme-expression] ...) body ...)
-;      (lambda@ (sk fk subst)
-;        (@ (exists (t ...)
-; 	    (all
-; 	      (all!! (promise-one-answer
-; 		       (== t (let ([var0 (let ([x (subst-in var0 subst)])
-; 					  (if/bc bool (nonvar! x) x))]
-; 				   ...)
-; 			       scheme-expression)))
-; 		...)
-; 	      body ...))
-; 	 sk fk subst))]))
-
-; (define-syntax let*-inject/everything
-;   (syntax-rules ()
-;     [(_ () body0 body1 ...) (all body0 body1 ...)]
-;     [(_ ([t0 ([var0 bool0] ...) scheme-expression0]
-;          [t1 ([var1 bool1] ...) scheme-expression1]
-;          ...) body0 body1 ...)
-;      (let-inject/everything ([t0 ([var0 bool0] ...) scheme-expression0])
-;        (let*-inject/everything ([t1 ([var1 bool1] ...) scheme-expression1] ...)
-;          body0 body1 ...))]))
-
-; (define-syntax let-inject
-;   (syntax-rules ()
-;     [(_ ([t (var0 ...) exp] ...) body ...)
-;      (let-inject/everything ([t ([var0 #t] ...) exp] ...) body ...)]))
-
-; (define-syntax let-inject/no-check
-;   (syntax-rules ()
-;     [(_ ([t (var0 ...) exp] ...) body ...)
-;      (let-inject/everything ([t ([var0 #f] ...) exp] ...) body ...)]))
-
-; (define-syntax let*-inject
-;   (syntax-rules ()
-;     [(_ ([t (var0 ...) exp] ...) body ...)
-;      (let*-inject/everything ([t ([var0 #t] ...) exp] ...) body ...)]))
-
-; (define-syntax let*-inject/no-check
-;   (syntax-rules ()
-;     [(_ ([t (var0 ...) exp] ...) body ...)
-;      (let*-inject/everything ([t ([var0 #f] ...) exp] ...) body ...)]))
-
 (define-syntax predicate
   (syntax-rules ()
     [(_ (var0 ...) scheme-expression)
@@ -1916,7 +1843,8 @@
 (define nonvar!
   (lambda (t)
     (if (var? t)
-      (error 'nonvar! "Logic variable ~s found after substituting." (concretize t))
+      (error 'nonvar! "Logic variable ~s found after substituting."
+	(concretize t))
       t)))
 
 ; TRACE-VARS TITLE (VAR ...)
@@ -2226,19 +2154,20 @@
 	`(p (f ,y) b (g b)))))
   #t)
 
-(define unify*
-  (lambda (t u)
-    (cond
-      [(trivially-equal? t u) empty-subst]
-      [(var? t) (if (occurs? t u) #f (unit-subst t u))]
-      [(var? u) (if (occurs? u t) #f (unit-subst u t))]
-      [(and (pair? t) (pair? u))
-       (let ([s-car (unify* (car t) (car u))])
-         (if s-car
-           (let ([s-cdr (unify* (subst-in (cdr t) s-car) (subst-in (cdr u) s-car))])
-             (if s-cdr (compose-subst s-car s-cdr) #f))
-           #f))]
-      [else #f])))
+(define unify
+  (lambda (t u subst)
+    (let loop ([t (subst-in t subst)][u (subst-in u subst)] [subst subst])
+      (cond
+        [(trivially-equal? t u) subst]
+        [(var? t)
+         (if (occurs? t u) #f (compose-subst subst (unit-subst t u)))]
+        [(var? u)
+         (if (occurs? u t) #f (compose-subst subst (unit-subst u t)))]
+        [(and (pair? t) (pair? u))
+         (let*-and #f ([subst (loop (car t) (car u) subst)]
+                       [subst (unify (cdr t) (cdr u) subst)])
+           subst)]
+        [else #f]))))
 
 (define occurs?
   (lambda (var term)
@@ -2372,9 +2301,17 @@
       [(var? t) (unify/var t (subst-in u subst) subst)]
       [(var? u) (unify/var u (subst-in t subst) subst)]
       [(and (pair? t) (pair? u))
-       (let ([subst (unify (car t) (car u) subst)])
-         (if subst (unify (cdr t) (cdr u) subst) #f))]
+       (let*-and #f ([subst (unify (car t) (car u) subst)]
+                     [subst (unify (cdr t) (cdr u) subst)])
+         subst)]
       [else #f])))
+
+(define unify/var
+  (lambda (t-var u subst)
+    (cond
+      [(assq t-var subst) (unify (subst-in t-var subst) u subst)] 
+      [(occurs? t-var u) #f]
+      [else (compose-subst subst (unit-subst t-var u))])))
 
 (define unify/var
   (lambda (t-var u subst)
@@ -3599,4 +3536,5 @@
             fk in-subst)))]))
 
 ;(exit 0)
+
 
