@@ -69,19 +69,17 @@
 
 (define-syntax exists
   (syntax-rules ()
-    [(_ () body) body]
-    [(_ () body0 body1 body2 ...)
-     (all body0 body1 body2 ...)]
-    [(_ (id ...) body0 body1 ...)
+    [(_ () ant0 ant1 ...)
+     (all ant0 ant1 ...)]
+    [(_ (id ...) ant0 ant1 ...)
      (naive-exists (id ...)
        (lambda@ (sk fk in-subst)
-	 (@ (all body0 body1 ...)
-            (lambda@ (fk subst)
-              (@ sk fk (prune-subst (list id ...) in-subst subst)))
+	 (@ (all ant0 ant1 ...)
+            (lambda@ (fk out-subst)
+              (@ sk fk (prune-subst (list id ...) in-subst out-subst)))
             fk in-subst)))]))
 
 ; check if any of vars occur in a term
-; perhaps we should use memq and eq when applied to vars ...
 (define relatively-ground?
   (lambda (term vars)
     (cond
@@ -304,17 +302,6 @@
            (check #'whatever)
            #'(quasiquote . whatever))]))))
 
-(define-syntax concretize-sequence
-  (syntax-rules ()
-    [(_ t0 ...) (concretize-sequence-aux '() t0 ...)]))
-
-(define-syntax concretize-sequence-aux
-  (syntax-rules ()
-    [(_ env) '()]
-    [(_ env t0 t1 ...)
-     (let-values (ct new-env) (concretize-term t0 env)
-       (cons ct (concretize-sequence-aux new-env t1 ...)))]))
-
 (define concretize-var    ;;; returns two values
   (lambda (var env)
     (cond
@@ -509,7 +496,9 @@
        (extend-relation (id ...) rel-exp1 rel-exp2 ...))]))
 
 (define-syntax all
-  (syntax-rules ()
+  (syntax-rules (all! any)
+    [(_ ant ... (any)) (all ant ...)]
+    [(_ ant ... (all!)) (all ant ...)]
     [(_) (lambda (sk) sk)]
     [(_ ant) ant]
     [(_ ant0 ant1 ant2 ...)
@@ -523,7 +512,9 @@
      (ant0 (splice-in-ants/all sk ant1 ...))]))
 
 (define-syntax all!
-  (syntax-rules ()
+  (syntax-rules (all any)
+    [(_ ant ... (any)) (all! ant ...)]
+    [(_ ant ... (all)) (all! ant ...)]
     [(_) (lambda (sk) sk)]
     [(_ ant) ant]
     [(_ ant0 ant1 ant2 ...)
@@ -540,13 +531,9 @@
        (@ ant0 (splice-in-ants/all! sk fk ant1 ...) fk))]))
 
 (define-syntax relation
-  (syntax-rules (to-show _ cut) ;;; _ and cut disappear when semester is over.
+  (syntax-rules (to-show)
     [(_ (ex-id ...) (to-show x ...) ant ...)     
      (relation (ex-id ...) () (x ...) (x ...) ant ...)]
-    [(_ _ (ex-id ...) (to-show x ...) ant ...) ;;; disappears when semester is over.
-     (relation (ex-id ...) (to-show x ...) ant ...)]
-    [(_ cut (ex-id ...) (to-show x ...) ant ...) ;;; disappears when semester is over.
-     (relation/cut cut (ex-id ...) (to-show x ...) ant ...)]
     [(_ (ex-id ...) (var ...) (x0 x1 ...) xs ant ...)
      (relation (ex-id ...) (var ... g) (x1 ...) xs ant ...)]
     [(_ (ex-id ...) (g ...) () (x ...))
@@ -665,8 +652,9 @@
     (equal?
       (let ([answer (query (new-father 'pete x))])
 	(let ([subst (caar answer)])
-	  (concretize-sequence (subst-in 'pete subst) (subst-in x subst))))
-        '(pete sal)))
+	  (list (concretize (subst-in 'pete subst))
+            (concretize (subst-in x subst)))))
+      '(pete sal)))
   #t)
 
 (test-check 'test-father-4
@@ -674,7 +662,7 @@
     (equal?
       (let ([answer (query (new-father x y))])
 	(let ([subst (caar answer)])
-	  (concretize-sequence (subst-in x subst) (subst-in y subst))))
+	  (list (concretize (subst-in x subst)) (concretize (subst-in y subst)))))
       '(john sam)))
   #t)
 
@@ -693,33 +681,33 @@
 	  (pretty-print answer1)
 	  (let ([subst (caar answer1)])
 	    (list
-	      (concretize-sequence
-		(subst-in 'pete subst) (subst-in x subst))
+              (list (concretize (subst-in 'pete subst))
+                (concretize (subst-in x subst)))
 	      (let ([answer2 ((cdr answer1))])
 		(pretty-print answer2)
 		(let ([subst (caar answer2)])
-		  (concretize-sequence
-		    (subst-in 'pete subst) (subst-in x subst)))))))
+		  (list (concretize (subst-in 'pete subst))
+                    (concretize (subst-in x subst))))))))
 	'((pete sal) (pete pat)))
       (equal?
 	(let ([answer1 (query (newer-father 'pete x))])
 	  (let ([subst (caar answer1)])
 	    (cons
-	      (concretize-sequence
-		(subst-in 'pete subst) (subst-in x subst))
+              (list (concretize (subst-in 'pete subst))
+                (concretize (subst-in x subst)))
 	      (let ([answer2 ((cdr answer1))])
 		(let ([subst (caar answer2)])
 		  (cons
-		    (concretize-sequence
-		      (subst-in 'pete subst) (subst-in x subst))
+		    (list (concretize (subst-in 'pete subst))
+                      (concretize (subst-in x subst)))
 		    (let ([answer3 ((cdr answer2))])
 		      (if (null? answer3)
-			'()
-			(let ([subst (car answer3)])
-			  (cons
-			    (concretize-sequence
-			      (subst-in 'pete subst) (subst-in x subst))
-			    '()))))))))))
+                          '()
+                          (let ([subst (car answer3)])
+                            (cons
+                              (list (concretize (subst-in 'pete subst))
+                                (concretize (subst-in x subst)))
+                              '()))))))))))
 	'((pete sal) (pete pat)))))
   #t)
       
@@ -741,8 +729,11 @@
      (naive-exists (var ...)
        (map (lambda (subst/cutk)
               (let ([subst (car subst/cutk)])
-                (concretize-sequence (list (concretize var)
-                                       (concretize (subst-in var subst))) ...)))
+                (map (lambda (v)
+                       (list
+                         (concretize v)
+                         (concretize (subst-in v subst))))
+                  (list var ...))))
          (stream-prefix (- n 1) (query ant))))]))
 
 (define sam/pete
@@ -1860,17 +1851,17 @@
             (unify (commitment->term ct) u-value subst))]
       [(ground? u-value) (extend-subst t-var u-value subst)]
       [(pair? u-value)
-       (let ([car-val (car u-value)])
+       (let ([car-val (car u-value)]
+             [cdr-val (cdr u-value)])
          (cond
            [(ground? car-val)
-            (let ([cdr-val (cdr u-value)])
-              (cond
-                [(ground? cdr-val)
-                 (extend-subst t-var (cons car-val cdr-val) subst)]
-                [else (let ([d-var (var 'd*)])
-                        (unify d-var cdr-val
-                          (extend-subst t-var
-                            (cons car-val d-var) subst)))]))]
+            (cond
+              [(ground? cdr-val)
+               (extend-subst t-var (cons car-val cdr-val) subst)]
+              [else (let ([d-var (var 'd*)])
+                      (unify d-var cdr-val
+                        (extend-subst t-var
+                          (cons car-val d-var) subst)))])]
            [else
              (let ([a-var (var 'a*)]
 		   [cdr-val (cdr u-value)])
@@ -1882,11 +1873,10 @@
                          (cond
                            [(unify a-var car-val
                               (extend-subst t-var (cons a-var d-var) subst))
-                            => (lambda (s)
-                                 (unify d-var cdr-val s))]
+                            => (lambda (subst)
+                                 (unify d-var cdr-val subst))]
                            [else #f]))]))]))]
       [else (extend-subst t-var u-value subst)])))
-
 ;------------------------------------------------------------------------
 (test-check 'test-unify/pairs-oleg1
   (naive-exists (x y)
@@ -2205,8 +2195,8 @@
   (fact (g v t) `(non-generic ,v ,t ,g) v t))
 
 (define non-generic-recursive-env
-  (relation (g v t w type-w)
-    (to-show `(non-generic ,w ,type-w ,g) v t)
+  (relation (g v t)
+    (to-show `(non-generic ,_ ,_ ,g) v t)
     (all! (instantiated g) (env g v t))))
 
 (define env (extend-relation (a1 a2 a3)
@@ -2223,9 +2213,9 @@
       (== t t^))))
 
 (define generic-recursive-env
-  (relation/cut cut (g v w type-w t)
-    (to-show `(generic ,w ,type-w ,g) v t)
-    (all! (cut) (env g v t))))
+  (relation/cut cut (g v t)
+    (to-show `(generic ,_ ,_ ,g) v t)
+    (all! cut (env g v t))))
 
 (define generic-env
   (extend-relation (a1 a2 a3) generic-base-env generic-recursive-env))
