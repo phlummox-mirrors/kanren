@@ -1831,35 +1831,41 @@
 
 (define-syntax project
   (syntax-rules ()
-    [(_ (id ...) ant)
+    [(_ (var ...) ant)
      (lambda@ (sk fk subst)
-       (let ([id (nonvar! (subst-in id subst))] ...)
+       (let ([var (nonvar! (subst-in var subst))] ...)
 	 (@ ant sk fk subst)))]))
 
 (define-syntax project/no-check
   (syntax-rules ()
-    [(_ (id ...) ant)
+    [(_ (var ...) ant)
      (lambda@ (sk fk subst)
-       (let ([id (subst-in id subst)] ...)
+       (let ([var (subst-in var subst)] ...)
 	 (@ ant sk fk subst)))]))
+
+(define-syntax inject
+  (syntax-rules ()
+    [(_ scheme-expression)
+     (lambda@ (sk fk subst)
+       (if scheme-expression (@ sk fk subst) (fk)))]))
 
 (define-syntax predicate
   (syntax-rules ()
-    [(_ (var0 ...) scheme-expression)
+    [(_ () scheme-expression)
      (lambda@ (sk fk subst)
-       (let ([var0 (nonvar! (subst-in var0 subst))] ...)
-         (if (unify (not scheme-expression) #f subst)
-             (@ sk fk subst)
-             (fk))))]))
+       (if scheme-expression (@ sk fk subst) (fk)))]
+    [(_ (var ...) scheme-expression) ;; both project and predicate grab state
+     (project (var ...)
+       (predicate () scheme-expression))]))
 
 (define-syntax predicate/no-check
   (syntax-rules ()
-    [(_ (var0 ...) scheme-expression)
+    [(_ () scheme-expression)
      (lambda@ (sk fk subst)
-       (let ([var0 (subst-in var0 subst)] ...)
-         (if (unify (not scheme-expression) #f subst)
-             (@ sk fk subst)
-             (fk))))]))
+       (if scheme-expression (@ sk fk subst) (fk)))]
+    [(_ (var ...) scheme-expression) ;; both project and predicate grab state
+     (project/no-check (var ...)
+       (predicate () scheme-expression))]))
 
 (define nonvar!
   (lambda (t)
