@@ -196,6 +196,15 @@
   (syntax-rules ()
     ((_ c ...) (c1 chopo c ...))))
 
+(define check-groundness
+  (lambda (s)
+    (lambda (s1)
+      (if (eq? s s1) (unit s)
+	(begin
+	  (display "possible violation of safety in conda/condu")
+	  (newline)
+	  (unit s1))))))
+  
 (define-syntax c1
   (syntax-rules (else)
     ((_ chop) fail)
@@ -203,12 +212,15 @@
     ((_ chop (g0 g ...) c ...)
      (let ((g^ g0))
        (lambdag@ (s)
-         (let ((r (g^ s)))
+         (let ((r (g^ s)) (checker (check-groundness s)))
            (case-ans r
              ((c1 chop c ...) s)   ; g0 failed
-             ((s) ((all g ...) s)) ; g0 is deterministic
+             ((s) (bind (checker s) (all g ...))) ; g0 is deterministic
              ((s f)                ; at least one answer from g0
-              (bind (chop r s) (lambdag@ (s) ((all g ...) s)))))))))))
+              (bind (chop r s)
+		(lambdag@ (s)
+		  (bind (checker s)
+		    (lambdag@ (s) ((all g ...) s)))))))))))))
 
 (define-syntax alli
   (syntax-rules ()
