@@ -21,24 +21,19 @@
      (lambda (formal0)
        (lambda@ (formal1 formal2 ...) body0 body1 ...))]))
 
-(define-syntax @-simple    
+(define-syntax @  
   (syntax-rules ()
     [(_ rator rand) (rator rand)]
-    [(_ rator rand0 rand1 rand2 ...) (@-simple (rator rand0) rand1 rand2 ...)]))
+    [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
 
-; (define-syntax accept-args
-;   (syntax-rules ()
-;     ((_ term arg0 arg1 ...)
-;       (lambda@ (arg0 arg1 ...) (term arg0 arg1 ...)))))
-
-(define-syntax @    
-  (syntax-rules (syntax-rules)
-    [(_ (syntax-rules sdata ...) rand0 ...)
-      (let-syntax 
-	((tempname (syntax-rules sdata ...)))
-	(tempname rand0 ...))]
-    [(_ rator rand0 rand1 ...)
-     (@-simple rator rand0 rand1 ...)]))
+; (define-syntax @    
+;   (syntax-rules (syntax-rules)
+;     [(_ (syntax-rules sdata ...) rand0 ...)
+;       (let-syntax 
+; 	((tempname (syntax-rules sdata ...)))
+; 	(tempname rand0 ...))]
+;     [(_ rator rand0 rand1 ...)
+;      (@-simple rator rand0 rand1 ...)]))
 
 ; LET*-AND: a simplified and streamlined AND-LET*.
 ; The latter is defined in SRFI-2 <http://srfi.schemers.org/srfi-2/>
@@ -1034,33 +1029,29 @@
        (relation "g" vars once-vars  (gs ... g) ((g . term) . gunis) 
 	 terms . ant))]
     [(_ "g" vars once-vars gs gunis () . ant)
-     (relation "f" vars gs gunis . ant)]
+     (relation "f" vars once-vars gs gunis . ant)]
 
     ; Final: writing the code
-    [(_ "f" vars () () ant)	   ; no arguments (no head-tests)
+    [(_ "f" vars () () () ant)	   ; no arguments (no head-tests)
       (lambda ()
 	(exists vars ant))]
-    [(_ "f" (ex-id ...) (g ...) ((gv . term) ...) ) ; no body
+    [(_ "f" (ex-id ...) () (g ...) ((gv . term) ...) ) ; no body, no once-vars!
      (lambda (g ...)
        (exists (ex-id ...)
-	 (syntax-rules ()
-	   ((_ sk fk subst^)
-	     (let ((subst subst^))
-	       (let*-and (fk) ((subst (unify gv term subst)) ...)
-		 (@ sk fk subst)))))))]
+	 (lambda@ (sk fk subst)
+	   (let*-and (fk) ((subst (unify gv term subst)) ...)
+	     (@ sk fk subst)))))]
                                    ; no tests but pure binding
-    [(_ "f" (ex-id ...) (g ...) () ant)
+    [(_ "f" (ex-id ...) once-vars (g ...) () ant)
      (lambda (g ...)
        (exists (ex-id ...) ant))]
 				    ; the most general
-    [(_ "f" (ex-id ...) (g ...) ((gv . term) ...) ant)
+    [(_ "f" (ex-id ...) once-vars (g ...) ((gv . term) ...) ant)
      (lambda (g ...)
        (exists (ex-id ...)
- 	 (syntax-rules ()
-	   ((_ sk fk subst^)
-	     (let ((subst subst^))
-	       (let*-and (fk) ((subst (unify gv term subst)) ...)
-		 (@ ant sk fk subst)))))))]))
+	 (lambda@ (sk fk subst)
+	   (let*-and (fk) ((subst (unify gv term subst)) ...)
+	     (@ ant sk fk subst)))))]))
 
 ; A macro-expand-time memv function for identifiers
 ;	id-memv?? FORM (ID ...) KT KF
