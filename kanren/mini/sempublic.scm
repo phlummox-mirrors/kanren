@@ -32,6 +32,7 @@
 (define-syntax all
   (syntax-rules ()
     ((_) succeed)
+    ((_ a) a)
     ((_ a a* ...)
      (lambda (k) (all-aux k a a* ...)))))
 
@@ -45,16 +46,16 @@
 ;;; any_2, fail
 
 (define-syntax cond@
-  (syntax-rules (else)
-    ((_ (else a* ...)) (all a* ...))
-    ((_ (a* ...)) (all a* ...))
-    ((_ (a* ...) c c* ...)
-     (@ bi-any (all a* ...) (cond@ c c* ...)))))
+  (syntax-rules ()
+   ((_ c c* ...)
+     (lambda@ (k s f) (cond@-aux k s f c c* ...)))))
 
-(define bi-any
-  (lambda@ (a1 a2)
-    (lambda@ (k s f)
-      (@ a1 k s (lambda@ () (@ a2 k s f))))))
+(define-syntax cond@-aux
+  (syntax-rules (else)
+    ((_ k s f (else a* ...)) (@ (all a* ...) k s f))
+    ((_ k s f (a* ...)) (@ (all a* ...) k s f))
+    ((_ k s f (a* ...) c c* ...)
+     (@ (all a* ...) k s (lambda@ () (cond@-aux k s f c c* ...))))))
 
 (define-syntax any ;;; okay
   (syntax-rules ()
@@ -95,6 +96,21 @@
 
 ;;; all, anyi
 
+(define-syntax condi
+  (syntax-rules ()
+   ((_ c c* ...)
+     (lambda@ (k s) (condi-aux k s c c* ...)))))
+
+(define-syntax condi-aux
+  (syntax-rules (else)
+    ((_ k s (else a* ...)) (@ (all a* ...) k s))
+    ((_ k s (a* ...)) (@ (all a* ...) k s))
+    ((_ k s (a* ...) c c* ...)
+     (@ interleave 
+        (lambda@ (k) (@ (all a* ...) k s))
+        (lambda@ (k) (condi-aux k s c c* ...))
+        k))))
+
 (define bi-anyi
   (lambda@ (a1 a2)
     (lambda@ (k s)
@@ -103,7 +119,7 @@
         (lambda@ (k) (@ a2 k s))
         k))))
 
-(define-syntax condi 
+'(define-syntax condi 
   (syntax-rules (else)
     ((_ (else a* ...)) (all a* ...))
     ((_ (a* ...)) (all a* ...))
