@@ -7,7 +7,7 @@
    (title "A declarative logic programming system")
    (description "An applicative logic programming system with a
 declarative set-theoretical semantics, and its applications")
-   (Date-Revision-yyyymmdd "20040130")
+   (Date-Revision-yyyymmdd "20040507")
    (Date-Creation-yyyymmdd "20040121")
    (keywords "Logic Programming, meta-logic programming, relations,
 iterative deepening, proof assistant, Scheme")
@@ -27,6 +27,8 @@ iterative deepening, proof assistant, Scheme")
      ;("News" "http://sourceforge.net/news/?group_id=99654")
      ;("Related" "#KANREN-related")
      )
+
+
 
    (page-title)
 
@@ -56,6 +58,7 @@ command-line interface provided by the host Scheme implementation.")
 
     (ul
       (li (local-ref "Sample"))
+      (li (local-ref "mini"))
       (li (local-ref "Documentation"))
       (li (local-ref "Availability")
 	(ul (li (local-ref "CVS"))
@@ -84,7 +87,7 @@ command-line interface provided by the host Scheme implementation.")
      (dd "Functional dependency satisfaction in Haskell typeclasses
 and deriving counter-examples.  Overloading resolution for
 Haskell typeclasses in open and closed worlds.  Our method can
-typecheck more programs than is currently possible in Haskell.")
+typecheck more programs than it is currently possible in Haskell.")
 
      (dt (cvs-ref "examples/mirror.scm"))
      (dd "Structural induction proof.  We write an outline of an
@@ -102,7 +105,18 @@ truly write the equivalence axioms, including the symmetry axiom
      (dt (cvs-ref "examples/deduction.scm"))
      (dd "Proving the Deduction Theorem for Hilbert Propositional Calculus
  by induction. The example also demonstrates generating inductive hypotheses.")
+
+     (dt (cvs-ref "benchmarks/"))
+     (dd "Standard Prolog benchmarks: nrev, query, qsort, queens, etc. --
+re-written for KANREN.")
      )
+
+   (Section 3 "mini" "KANREN")
+
+   (p "miniKANREN is a simplified KANREN without many bells, whistles,
+and optimizations of the full system. The goal of the simplifications was
+to make miniKANREN easier to explain. Many tutorials below are specifically
+miniKANREN tutorials. Incidentally, miniKANREN is not that inefficient.")
 
 
    (Section 3 "Documentation" " and tutorials")
@@ -117,6 +131,25 @@ truly write the equivalence axioms, including the symmetry axiom
        (n_)
     )
 
+   (dt "C311 class notes (Indiana University)")
+   (dd "<" (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/"))
+	     "http://www.cs.indiana.edu/l/www/classes/c311/") ">")
+
+   (dt "miniKANREN tutorials (PDF), from the C311 class notes page")
+   (dd 
+     (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/miniaop.pdf"))
+	     "Outcome-Oriented Programming") (br)
+     (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/minirop.pdf"))
+	     "Relation-Oriented Programming") (br)
+     (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/minilop.pdf"))
+	     "Logic-Oriented Programming") (br)
+     (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/miniunify.pdf"))
+	     "Understanding Unification") (br)
+     (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/minitypes.pdf"))
+	     "Type Inference and Type Habitation") (br)
+     (n_)
+    )
+
    (dt (cvs-ref "docs/Substitution-Properties.txt"))
    (dd
      "Properties of Substitutions: "
@@ -128,12 +161,12 @@ forth and proven " (em "before") " the code was written.")
 
 
    (Section 3 "Availability")
-   (p "The current version of KANREN is 3.17. KANREN is OpenSource,
+   (p "The current version of KANREN is 4.11. KANREN is OpenSource,
 distributed under the MIT license.")
    (p
      "KANREN has been tested on the following Scheme systems:"
      (br)
-     "Petite Chez Scheme, Chez Scheme.")
+     "Petite Chez Scheme, Chez Scheme, SCM, Gauche.")
 
 ;    (Section 3 "Distributions")
 ;    (p "KANREN download site at SourceForge:"
