@@ -21,10 +21,24 @@
      (lambda (formal0)
        (lambda@ (formal1 formal2 ...) body0 body1 ...))]))
 
-(define-syntax @    
+(define-syntax @-simple    
   (syntax-rules ()
     [(_ rator rand) (rator rand)]
-    [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
+    [(_ rator rand0 rand1 rand2 ...) (@-simple (rator rand0) rand1 rand2 ...)]))
+
+; (define-syntax accept-args
+;   (syntax-rules ()
+;     ((_ term arg0 arg1 ...)
+;       (lambda@ (arg0 arg1 ...) (term arg0 arg1 ...)))))
+
+(define-syntax @    
+  (syntax-rules (syntax-rules)
+    [(_ (syntax-rules sdata ...) rand0 ...)
+      (let-syntax 
+	((tempname (syntax-rules sdata ...)))
+	(tempname rand0 ...))]
+    [(_ rator rand0 rand1 ...)
+     (@-simple rator rand0 rand1 ...)]))
 
 ; LET*-AND: a simplified and streamlined AND-LET*.
 ; The latter is defined in SRFI-2 <http://srfi.schemers.org/srfi-2/>
@@ -193,7 +207,11 @@
   #t)
 
 (define-syntax ==
-  (syntax-rules ()
+  (syntax-rules (_)
+    [(_ _ u)
+     (lambda@ (sk) sk)]
+    [(_ t _)
+     (lambda@ (sk) sk)]
     [(_ t u)
      (lambda@ (sk fk subst)
        (let*-and (fk) ([subst (unify t u subst)])
@@ -1025,7 +1043,11 @@
     [(_ "f" (ex-id ...) (g ...) ((gv . term) ...) ) ; no body
      (lambda (g ...)
        (exists (ex-id ...)
- 	 (all!! (promise-one-answer (== gv term)) ...)))]
+	 (syntax-rules ()
+	   ((_ sk fk subst^)
+	     (let ((subst subst^))
+	       (let*-and (fk) ((subst (unify gv term subst)) ...)
+		 (@ sk fk subst)))))))]
                                    ; no tests but pure binding
     [(_ "f" (ex-id ...) (g ...) () ant)
      (lambda (g ...)
@@ -1034,7 +1056,11 @@
     [(_ "f" (ex-id ...) (g ...) ((gv . term) ...) ant)
      (lambda (g ...)
        (exists (ex-id ...)
- 	 (if-all! ((promise-one-answer (== gv term)) ...) ant)))]))
+ 	 (syntax-rules ()
+	   ((_ sk fk subst^)
+	     (let ((subst subst^))
+	       (let*-and (fk) ((subst (unify gv term subst)) ...)
+		 (@ ant sk fk subst)))))))]))
 
 ; A macro-expand-time memv function for identifiers
 ;	id-memv?? FORM (ID ...) KT KF
