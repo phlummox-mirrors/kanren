@@ -1564,6 +1564,20 @@
       (error 'nonvar! "Logic variable ~s found after substituting." (concretize t))
       t)))
 
+; TRACE-VARS TITLE (VAR ...)
+; Is a deterministic antecedent that prints the current values of VARS
+; TITLE is any displayable thing.
+
+(define-syntax trace-vars
+  (syntax-rules ()
+    ((trace-vars title (var ...))
+      (promise-one-answer
+	(predicate/no-check (var ...)
+	  (begin (display title) (display " ")
+	    (display '(var ...)) (display " ") (display (list var ...))
+	    (newline)))))))
+
+
 (define grandpa
   (relation (grandad grandchild)
     (to-show grandad grandchild)
