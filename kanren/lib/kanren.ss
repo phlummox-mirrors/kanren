@@ -5,7 +5,7 @@
     [(_ (x ...) vs body0 body1 ...)
      (call-with-values (lambda () vs) (lambda (x ...) body0 body1 ...))]))
 
-(define-syntax exists
+(define-syntax naive-exists
   (syntax-rules ()
     [(_ () body) body]
     [(_ () body0 body1 body2 ...) (begin body0 body1 body2 ...)]
@@ -67,13 +67,13 @@
 ; anything below the mark can't possibly contain the reference to the
 ; variable we're about to remove.
 
-(define-syntax exists-lexically
+(define-syntax exists
   (syntax-rules ()
     [(_ () body) body]
     [(_ () body0 body1 body2 ...)
      (all body0 body1 body2 ...)]
     [(_ (id ...) body0 body1 ...)
-     (exists (id ...)
+     (naive-exists (id ...)
        (lambda@ (sk fk in-subst)
 	 (@ (all body0 body1 ...)
             (lambda@ (fk subst)
@@ -205,10 +205,10 @@
         (eq? t _)
         (eq? u _))))
 
-(define _ (exists (_) _))
+(define _ (naive-exists (_) _))
 
 (test-check 'test-nonrecursive-unify
-  (exists (x y)
+  (naive-exists (x y)
     (and
       (equal?
 	(unify x 3 empty-subst)
@@ -315,8 +315,6 @@
      (let-values (ct new-env) (concretize-term t0 env)
        (cons ct (concretize-sequence-aux new-env t1 ...)))]))
 
-
-
 (define concretize-var    ;;; returns two values
   (lambda (var env)
     (cond
@@ -374,21 +372,21 @@
 
 (define empty-subst? null?)
 
-(exists (x y)
+(naive-exists (x y)
   (test-check 'test-compose-subst-0
     (append (unit-subst x y) (unit-subst y 52))
     `(,(commitment x y) ,(commitment y 52))))
 
 
 (test-check 'test-compose-subst-1
-  (exists (x y)
+  (naive-exists (x y)
     (equal?
       (compose-subst (unit-subst x y) (unit-subst y 52))
       `(,(commitment x 52) ,(commitment y 52))))
   #t)
 
 (test-check 'test-compose-subst-2
-  (exists (w x y)
+  (naive-exists (w x y)
     (equal?
       (let ([s (compose-subst (unit-subst y w) (unit-subst w 52))])
 	(compose-subst (unit-subst x y) s))
@@ -396,7 +394,7 @@
   #t)
 
 (test-check 'test-compose-subst-3
-  (exists (w x y)
+  (naive-exists (w x y)
     (equal?
       (let ([s (compose-subst (unit-subst w 52) (unit-subst y w))])
 	(compose-subst (unit-subst x y) s))
@@ -404,7 +402,7 @@
   #t)
 
 (test-check 'test-compose-subst-4
-  (exists (x y z)
+  (naive-exists (x y z)
     (equal?
       (let ([s (compose-subst (unit-subst y z) (unit-subst x y))]
 	    [r (compose-subst
@@ -433,22 +431,15 @@
               subst
               cutk))))]))
 
-;;; one thing suspicious about this code is that it needs both
-;;; relations to return before it ever enters interleave, so
-;;; if the first one goes into an infinite loop before the other
-;;; then we have a problem.  I don't know if that is related
-;;; to the problem, or not.
-
 (define-syntax binary-extend-relation-interleave
   (syntax-rules ()
     [(_ (id ...) rel-exp1 rel-exp2)
      (let ([rel1 rel-exp1] [rel2 rel-exp2])
        (lambda (id ...)
          (lambda@ (sk fk subst cutk)
-           (let ([ant1 (rel1 id ...)] [ant2 (rel2 id ...)])
-             ((interleave sk fk (finish-interleave sk fk))
-              (@ ant1 initial-sk initial-fk subst cutk)
-              (@ ant2 initial-sk initial-fk subst cutk))))))]))
+           ((interleave sk fk (finish-interleave sk fk))
+            (@ (rel1 id ...) initial-sk initial-fk subst cutk)
+            (@ (rel2 id ...) initial-sk initial-fk subst cutk)))))]))
 
 (define finish-interleave
   (lambda (sk fk)
@@ -478,11 +469,11 @@
      (let ([rel1 rel-exp1] [rel2 rel-exp2])
        (lambda (id ...)
          (lambda@ (sk fk subst cutk)
-           (let ([ant1 (rel1 id ...)][ant2 (rel2 id ...)])
+           (let ([ant2 (rel2 id ...)])
              ((interleave-non-overlap sk fk)
-              (@ ant1 initial-sk initial-fk subst cutk)
+              (@ (rel1 id ...) initial-sk initial-fk subst cutk)
               (@ ant2 initial-sk initial-fk subst cutk)
-                  ; means in case of overlap, prefer ant2 over ant1
+              ; means in case of overlap, prefer (rel2 ...) over (rel1 ...)
               fail
               ant2)))))]))
 
@@ -560,30 +551,26 @@
      (relation (ex-id ...) (var ... g) (x1 ...) xs ant ...)]
     [(_ (ex-id ...) (g ...) () (x ...))
      (lambda (g ...)
-       (exists-lexically (ex-id ...)
+       (exists (ex-id ...)
 	 (all! (== g x) ...)))]
     [(_ (ex-id ...) (g ...) () (x ...) ant ...)
      (lambda (g ...)
-       (exists-lexically (ex-id ...)
+       (exists (ex-id ...)
 	 (all! (== g x) ... (all ant ...))))]))
 
 (define-syntax relation/cut
   (syntax-rules (to-show)
     [(_ cut-id (ex-id ...) (to-show x ...) ant ...)
      (relation/cut cut-id (ex-id ...) () (x ...) (x ...) ant ...)]
-    [(_ cut-id (ex-id ...) (g ...) () (x ...))
-     (lambda (g ...)
-       (exists-lexically (ex-id ...)
-	 (all! (== g x) ...)))]
+    [(_ cut-id ex-ids (var ...) (x0 x1 ...) xs ant ...)
+     (relation/cut cut-id ex-ids (var ... g) (x1 ...) xs ant ...)]
     [(_ cut-id (ex-id ...) (g ...) () (x ...) ant ...)
      (lambda (g ...)
-       (exists-lexically (ex-id ...)
+       (exists (ex-id ...)
          (all! (== g x) ...
            (lambda@ (sk fk subst cutk)
              (let ([cut-id (!! cutk)])
-               (@ (all ant ...) sk fk subst cutk))))))]
-    [(_ cut-id ex-ids (var ...) (x0 x1 ...) xs ant ...)
-     (relation/cut cut-id ex-ids (var ... g) (x1 ...) xs ant ...)]))
+               (@ (all ant ...) sk fk subst cutk))))))]))
 
 (define-syntax fact
   (syntax-rules ()
@@ -666,7 +653,7 @@
       (@ antecedent initial-sk initial-fk empty-subst initial-fk))))
 
 (test-check 'test-father-2
-  (exists (x)
+  (naive-exists (x)
     (let ([result (query (new-father 'pete x))])
       (and
 	(equal? (caar result) `(,(commitment x 'sal)))
@@ -674,7 +661,7 @@
   #t)
 
 (test-check 'test-father-3
-  (exists (x)
+  (naive-exists (x)
     (equal?
       (let ([answer (query (new-father 'pete x))])
 	(let ([subst (caar answer)])
@@ -683,7 +670,7 @@
   #t)
 
 (test-check 'test-father-4
-  (exists (x y)
+  (naive-exists (x y)
     (equal?
       (let ([answer (query (new-father x y))])
 	(let ([subst (caar answer)])
@@ -699,7 +686,7 @@
   (extend-relation (a1 a2) new-father pete/pat))
 
 (test-check 'test-father-5
-  (exists (x)
+  (naive-exists (x)
     (and
       (equal?
 	(let ([answer1 (query (newer-father 'pete x))])
@@ -751,7 +738,7 @@
 (define-syntax solve
   (syntax-rules ()
     [(_ n (var ...) ant)
-     (exists (var ...)
+     (naive-exists (var ...)
        (map (lambda (subst/cutk)
               (let ([subst (car subst/cutk)])
                 (concretize-sequence (list (concretize var)
@@ -851,7 +838,7 @@
 (define grandpa-sam
   (relation (grandchild)
     (to-show grandchild)
-    (exists-lexically (parent)
+    (exists (parent)
       (lambda (sk)
         ((newest-father 'sam parent)
          ((newest-father parent grandchild) sk))))))
@@ -895,7 +882,7 @@
 (define grandpa-sam
   (relation (grandchild)
     (to-show grandchild)
-    (exists-lexically (parent)
+    (exists (parent)
       (all
         (newest-father 'sam parent)
         (newest-father parent grandchild)))))
@@ -908,7 +895,7 @@
   (lambda (grandad)
     (relation (grandchild)
       (to-show grandchild)
-      (exists-lexically (parent)
+      (exists (parent)
         (all
           (newest-father grandad parent)
           (newest-father parent grandchild))))))
@@ -921,7 +908,7 @@
   (lambda (guide* grandad*)
     (relation (grandchild)
       (to-show grandchild)
-      (exists-lexically (parent)
+      (exists (parent)
         (all
           (guide* grandad* parent)
           (guide* parent grandchild))))))
@@ -934,7 +921,7 @@
 (define grandpa
   (relation (grandad grandchild)
     (to-show grandad grandchild)
-    (exists-lexically (parent)
+    (exists (parent)
       (all
         (newest-father grandad parent)
         (newest-father parent grandchild)))))
@@ -971,13 +958,13 @@
   (extend-relation (a1 a2)
     (relation (grandad grandchild)
       (to-show grandad grandchild)
-      (exists-lexically (parent)
+      (exists (parent)
         (all
           (father grandad parent)
           (father parent grandchild))))
     (relation (grandad grandchild)
       (to-show grandad grandchild)
-      (exists-lexically (parent)
+      (exists (parent)
         (all
           (father grandad parent)
           (mother parent grandchild))))))
@@ -989,7 +976,7 @@
 (define grandpa/father
   (relation (grandad grandchild)
     (to-show grandad grandchild)
-    (exists-lexically (parent)
+    (exists (parent)
       (all
         (father grandad parent)
         (father parent grandchild)))))
@@ -997,7 +984,7 @@
 (define grandpa/mother
   (relation (grandad grandchild)
     (to-show grandad grandchild)
-    (exists-lexically (parent)
+    (exists (parent)
       (all
         (father grandad parent)
         (mother parent grandchild)))))
@@ -1012,7 +999,7 @@
 (define grandpa-sam
   (let ([r (relation (child)
              (to-show child)
-             (exists-lexically (parent)
+             (exists (parent)
                (all
                  (father 'sam parent)
                  (father parent child))))])
@@ -1029,7 +1016,7 @@
 (define grandpa/father
   (relation/cut cut (grandad grandchild)
     (to-show grandad grandchild)
-    (exists-lexically (parent)
+    (exists (parent)
       (all
         (father grandad parent)
         (father parent grandchild)
@@ -1038,7 +1025,7 @@
 (define grandpa/mother
   (relation (grandad grandchild)
     (to-show grandad grandchild)
-    (exists-lexically (parent)
+    (exists (parent)
       (all
         (father grandad parent)
         (mother parent grandchild)))))
@@ -1053,7 +1040,7 @@
 (define grandpa/father
   (relation/cut cut (grandad grandchild)
     (to-show grandad grandchild)
-    (exists-lexically (parent)
+    (exists (parent)
       (all cut (father grandad parent) (father parent grandchild)))))
 
 (define grandpa
@@ -1076,7 +1063,7 @@
 (define no-grandma
   (relation/cut cut (grandad grandchild)
     (to-show grandad grandchild)
-    (exists-lexically (parent)
+    (exists (parent)
       (all (mother grandad parent) cut fail))))
 
 (define no-grandma-grandpa
@@ -1091,18 +1078,40 @@
     [(_ #t conseq alt) conseq]
     [(_ #f conseq alt) alt]))
 
-(define-syntax let*-inject/everything
+(define-syntax let-inject/everything
   (syntax-rules ()
-    ((_ ([t ([var bool] ...) exp] ...) body ...)
+    [(_ ([t ([var bool] ...) scheme-expression] ...) body ...)
      (lambda@ (sk fk subst)
-       (@ (exists-lexically (t ...)
+       (@ (exists (t ...)
 	    (all! (== t (let ([var (if/bc bool
 				     (nonvar! (subst-in var subst))
 				     (subst-in var subst))]
 			      ...)
-			  exp)) ...
+			  scheme-expression))
+              ...
 	      (all body ...)))
-          sk fk subst)))))
+          sk fk subst))]))
+
+(define-syntax let*-inject/everything
+  (syntax-rules ()
+    [(_ () body0 body1 ...) (all body0 body1 ...)]
+    [(_ ([t0 ([var0 bool0] ...) scheme-expression0]
+         [t1 ([var1 bool1] ...) scheme-expression1]
+         ...)
+       body0 body1 ...)
+     (let-inject/everything ([t0 ([var0 bool0] ...) scheme-expression0])
+       (let*-inject/everything ([t1 ([t0 #f][var1 bool1] ...) scheme-expression1] ...)
+         body0 body1 ...))]))
+
+(define-syntax let-inject
+  (syntax-rules ()
+    [(_ ([t (var ...) exp] ...) body ...)
+     (let-inject/everything ([t ([var #t] ...) exp] ...) body ...)]))
+
+(define-syntax let-inject/no-check
+  (syntax-rules ()
+    [(_ ([t (var ...) exp] ...) body ...)
+     (let-inject/everything ([t ([var #f] ...) exp] ...) body ...)]))
 
 (define-syntax let*-inject
   (syntax-rules ()
@@ -1114,54 +1123,17 @@
     [(_ ([t (var ...) exp] ...) body ...)
      (let*-inject/everything ([t ([var #f] ...) exp] ...) body ...)]))
 
-(define-syntax pred-call
-  (syntax-rules ()
-    [(_ p u ...)
-     (lambda@ (sk fk subst cutk)
-       (if ((nonvar! (subst-in p subst)) (nonvar! (subst-in u subst)) ...)
-         (@ sk fk subst cutk)
-         (fk)))]))
-
 (define-syntax predicate
   (syntax-rules ()
-    [(_ (var ...) (p u ...))
-     (let*-inject ([res (var ...) (not (p u ...))])
-       (== res #f))]))
+    [(_ (var ...) scheme-expression)
+     (let-inject ([t (var ...) (not scheme-expression)])
+       (== t #f))]))
 
 (define-syntax predicate/no-check
   (syntax-rules ()
-    [(_ (var ...) (p u ...))
-     (let*-inject/no-check ([res (var ...) (not (p u ...))])
-       (== res #f))]))
-
-(define-syntax pred-call/no-check
-  (syntax-rules ()
-    [(_ p u ...)
-     (lambda@ (sk fk subst cutk)
-       (if ((subst-in p subst) (subst-in u subst) ...)
-         (@ sk fk subst cutk)
-         (fk)))]))
-
-(define-syntax fun-call
-  (syntax-rules ()
-    [(_ f t u ...)
-     (lambda@ (sk fk subst cutk)
-       (cond
-         [(unify t ((nonvar! (subst-in f subst)) 
-		    (nonvar! (subst-in u subst)) ...) subst)
-          => (lambda (subst)
-               (@ sk fk subst cutk))]
-         [else (fk)]))]))
-
-(define-syntax fun-call/no-check
-  (syntax-rules ()
-    [(_ f t u ...)
-     (lambda@ (sk fk subst cutk)
-       (cond
-         [(unify t ((subst-in f subst) (subst-in u subst) ...) subst)
-          => (lambda (subst)
-               (@ sk fk subst cutk))]
-         [else (fk)]))]))
+    [(_ (var ...) scheme-expression)
+     (let*-inject/no-check ([t (var ...) (not scheme-expression)])
+       (== t #f))]))
 
 (define nonvar!
   (lambda (t)
@@ -1173,7 +1145,7 @@
 (define grandpa
   (relation (grandad grandchild)
     (to-show grandad grandchild)
-    (exists-lexically (parent)
+    (exists (parent)
       (all 
         (father grandad parent)
         (predicate (parent) (starts-with-p? parent))
@@ -1213,7 +1185,7 @@
 (define test1
   (lambda (x)
     (any (predicate () (< 4 5))
-      (let*-inject ([x^ () (< 6 7)])
+      (let-inject ([x^ () (< 6 7)])
         (== x x^)))))
 
 ;;;; Here is the definition of concretize.
@@ -1226,7 +1198,7 @@
 (define test2
   (lambda (x)
     (any (predicate () (< 5 4))
-      (let*-inject ([x^ () (< 6 7)])
+      (let-inject ([x^ () (< 6 7)])
         (== x x^)))))
 
 (test-check 'test-test2
@@ -1236,9 +1208,9 @@
 (define test3
   (lambda (x y)
     (any
-      (let*-inject ([x^ () (< 5 4)])
+      (let-inject ([x^ () (< 5 4)])
         (== x x^))
-      (let*-inject ([y^ () (< 6 7)])
+      (let-inject ([y^ () (< 6 7)])
         (== y y^)))))
 
 (test-check 'test-test3
@@ -1260,7 +1232,7 @@
 (define grandpa
   (relation (grandad grandchild)
     (to-show grandad grandchild)
-    (exists-lexically (parent)
+    (exists (parent)
       (all
         (father grandad parent)
         (fails (predicate (parent) (starts-with-p? parent)))
@@ -1284,7 +1256,7 @@
 (define grandpa
   (relation (grandad grandchild)
     (to-show grandad grandchild)
-    (exists-lexically (parent)
+    (exists (parent)
       (all
         (father grandad parent)
         (father parent grandchild)
@@ -1334,7 +1306,7 @@
       (father old young))
     (relation (old young)
       (to-show old young)
-      (exists-lexically (not-so-old)
+      (exists (not-so-old)
         (all (father old not-so-old) (ancestor not-so-old young))))))
 
 (test-check 'test-ancestor
@@ -1376,7 +1348,7 @@
     (to-show young-a young-b not-so-old)
     (all
       (common-ancestor young-a young-b not-so-old)
-      (exists-lexically (y)
+      (exists (y)
         (fails (younger-common-ancestor young-a young-b not-so-old y))))))
 
 (test-check 'test-youngest-common-ancestor
@@ -1400,7 +1372,7 @@
            (lambda (old young)
              (any
                (father old young)
-               (exists-lexically (not-so-old)
+               (exists (not-so-old)
                  (all
                    (father old not-so-old)
                    (ancestor not-so-old young)))))])
@@ -1425,7 +1397,7 @@
              (to-show n a b c)
              (all
                (predicate (n) (positive? n))
-               (let*-inject ([m (n) (- n 1)])
+               (let-inject ([m (n) (- n 1)])
                  (move m a c b)
                  (predicate (a b) (printf "Move a disk from ~s to ~s~n" a b))
                  (move m c b a)))))])
@@ -1471,7 +1443,7 @@
       [else t])))
 
 (test-check 'test-compose-subst-5
-  (exists (x y z)
+  (naive-exists (x y z)
     (equal?
       (let ([term `(p ,x ,y (g ,z))])
 	(let ([s (compose-subst (unit-subst y z) (unit-subst x `(f ,y)))]
@@ -1519,7 +1491,7 @@
       [else #f])))
 
 (test-check 'test-unify/pairs
-  (exists (w x y z u)
+  (naive-exists (w x y z u)
     (and
       (and
         (equal?
@@ -1570,7 +1542,7 @@
 ;Baader & Snyder
 (test-check 'test-pathological
   (list
-      (exists (x0 x1 y0 y1)
+      (naive-exists (x0 x1 y0 y1)
         (pretty-print
           (concretize-subst
             (unify
@@ -1579,7 +1551,7 @@
               empty-subst)))
         (newline))
 
-      (exists (x0 x1 x2 y0 y1 y2)
+      (naive-exists (x0 x1 x2 y0 y1 y2)
         (pretty-print
           (concretize-subst
             (unify
@@ -1588,7 +1560,7 @@
               empty-subst)))
         (newline))
 
-      (exists (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
+      (naive-exists (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
         (pretty-print
           (concretize-subst
             (unify
@@ -1604,7 +1576,7 @@
 	       (let*-inject/no-check
                  ([x () 4]
                   [w () 3]
-                  [z^ (x w) (cons x w)])
+                  [z^ () (cons x w)])
                  (== z^ z)))])
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
@@ -1622,7 +1594,7 @@
                  (to-show n a b c)
                  (all
                    (predicate (n) (positive? n))
-                   (let*-inject ([m (n) (- n 1)])
+                   (let-inject ([m (n) (- n 1)])
                      (move m a c b)
                      (predicate (a b) (push-step a b))
                      (move m c b a)))))])
@@ -1660,7 +1632,7 @@
       [else (compose-subst subst (unit-subst t-var u))])))
 
 (test-check 'test-unify/pairs-lazy
-  (exists (w x y z u)
+  (naive-exists (w x y z u)
     (and
       (and
         (equal?
@@ -1715,14 +1687,14 @@
 	       (let*-inject/no-check
                  ([x () 4]
                   [w () 3]
-                  [z^ (x w) (cons x w)])
+                  [z^ () (cons x w)])
                  (== z z^)))])
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
 
 (test-check 'test-pathological-lazy
   (list
-      (exists (x0 x1 y0 y1)
+      (naive-exists (x0 x1 y0 y1)
         (pretty-print
           (concretize-subst
             (unify
@@ -1731,7 +1703,7 @@
               empty-subst)))
         (newline))
 
-      (exists (x0 x1 x2 y0 y1 y2)
+      (naive-exists (x0 x1 x2 y0 y1 y2)
         (pretty-print
           (concretize-subst
             (unify
@@ -1740,7 +1712,7 @@
               empty-subst)))
         (newline))
 
-      (exists (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
+      (naive-exists (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
         (pretty-print
           (concretize-subst
             (unify
@@ -1909,26 +1881,26 @@
 
 ;------------------------------------------------------------------------
 (test-check 'test-unify/pairs-oleg
-  (exists (x y)
+  (naive-exists (x y)
     (unify `(,x ,4) `(3 ,x) empty-subst))
   #f)
 
 (test-check 'test-unify/pairs-oleg
-  (exists (x y)
+  (naive-exists (x y)
     (unify `(,x ,x) '(3 4) empty-subst))
   #f)
 
-(exists (x y)
+(naive-exists (x y)
   (test-check 'test-unify/pairs-oleg
     (unify `(,x ,y) '(3 4) empty-subst)
     `(,(commitment y 4) ,(commitment x 3))))
 
-(exists (x y)
+(naive-exists (x y)
   (test-check 'test-unify/pairs-oleg
     (unify `(,x 4) `(3 ,y) empty-subst)
     `(,(commitment y 4) ,(commitment x 3))))
 
-(exists (x y w z)
+(naive-exists (x y w z)
   (test-check 'test-unify/pairs-oleg
     (let ([s (normalize-subst
 	       (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst))])
@@ -1940,7 +1912,7 @@
        ,(commitment y 4)
        ,(commitment x 3))))
 
-(exists (x y w z)
+(naive-exists (x y w z)
   (test-check 'test-unify/pairs-oleg
     (let ([s (normalize-subst
 	       (unify `(,x 4) `(,y ,y) empty-subst))])
@@ -1951,11 +1923,11 @@
     `(,(commitment y 4) ,(commitment x 4))))
 
 (test-check 'test-unify/pairs-oleg
-  (exists (x y)
+  (naive-exists (x y)
     (unify `(,x 4 3) `(,y ,y ,x) empty-subst))
     #f)
 
-(exists (x y w z u)
+(naive-exists (x y w z u)
   (test-check 'test-unify/pairs-oleg
     (let ([s (normalize-subst
 	       (unify
@@ -1971,7 +1943,7 @@
        ,(commitment y 'abc)
        ,(commitment x 8))))
 
-(exists (x y w z u)
+(naive-exists (x y w z u)
   (test-check 'test-unify/pairs-oleg
     (let ([s (normalize-subst
 	       (unify `(p (f a) (g ,x)) `(p ,x ,y) empty-subst))])
@@ -1982,7 +1954,7 @@
     `(,(commitment y '(g (f a)))
        ,(commitment x '(f a)))))
 
-(exists (x y w z u)
+(naive-exists (x y w z u)
   (test-check 'test-unify/pairs-oleg
     (let ([s (normalize-subst
 	       (unify `(p (g ,x) (f a)) `(p ,y ,x) empty-subst))])
@@ -1993,7 +1965,7 @@
     `(,(commitment x '(f a))
        ,(commitment y '(g (f a))))))
 
-(exists (x y w z u)
+(naive-exists (x y w z u)
   (test-check 'test-unify/pairs-oleg
     (let ([s (normalize-subst
 	       (unify
@@ -2008,7 +1980,7 @@
        ,(commitment x '(h (g a)))
        ,(commitment z 'a))))
 
-(exists (x y w z u)
+(naive-exists (x y w z u)
   (test-check 'test-unify/pairs-oleg
     (concretize-subst ;;; was #f
       (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
@@ -2025,7 +1997,7 @@
        ,(commitment 'y.0  '(f (f . *d.0)))
        ,(commitment 'x.0  '(f (f . *d.0))))))
 
-(exists (x y w z u)
+(naive-exists (x y w z u)
   (test-check 'test-unify/pairs-oleg
     (concretize-subst ;;; was #f
       (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
@@ -2049,7 +2021,7 @@
 	       (let*-inject/no-check
                  ([x () 4]
                   [w () 3]
-                  [z^ (x w) (cons x w)])
+                  [z^ () (cons x w)])
                  (== z z^)))])
       (solve 4 (q) (j q))))
   '(((q.0 (4 . 3)))))
@@ -2057,7 +2029,7 @@
 ;Baader & Snyder
 (test-check 'test-pathological-oleg
   (list
-    (exists (x0 x1 y0 y1)
+    (naive-exists (x0 x1 y0 y1)
       (pretty-print
 	(concretize-subst
 	  (let ([s (unify
@@ -2070,7 +2042,7 @@
 		(subst-vars-recursively vars s))))))
       (newline))
 
-    (exists (x0 x1 x2 y0 y1 y2)
+    (naive-exists (x0 x1 x2 y0 y1 y2)
       (pretty-print
 	(concretize-subst
 	  (let ([s (unify
@@ -2083,7 +2055,7 @@
 		(subst-vars-recursively vars s))))))
       (newline))
 
-    (exists (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
+    (naive-exists (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
       (pretty-print
 	(concretize-subst
 	  (let ([s (unify
@@ -2110,7 +2082,7 @@
 
 (test-check 'test-fun-concat
   (solve 1 (q)
-    (let*-inject ([t () (concat '(a b c) '(u v))])
+    (let-inject ([t () (concat '(a b c) '(u v))])
       (== q t)))
   '(((q.0 (a b c u v)))))
 
@@ -2239,7 +2211,7 @@
 (define generic-base-env
   (relation (g v targ tresult t)
     (to-show `(generic ,v (--> ,targ ,tresult) ,g) v t)
-    (let*-inject/no-check ([t^ (targ tresult) (instantiate `(--> ,targ ,tresult))])
+    (let-inject/no-check ([t^ (targ tresult) (instantiate `(--> ,targ ,tresult))])
       (== t t^))))
 
 (define generic-recursive-env
@@ -2317,7 +2289,7 @@
 (define app-rel
   (relation (g t rand rator)
     (to-show g `(app ,rator ,rand) t)
-    (exists (t-rand)
+    (naive-exists (t-rand)
       (all! (!- g rator `(--> ,t-rand ,t)) (!- g rand t-rand)))))
 
 (define fix-rel
@@ -2328,7 +2300,7 @@
 (define polylet-rel
   (relation (g v rand body t)
     (to-show g `(let ([,v ,rand]) ,body) t)
-    (exists (t-rand)
+    (naive-exists (t-rand)
       (all!
         (!- g rand t-rand)
         (!- `(generic ,v ,t-rand ,g) body t)))))
@@ -2567,7 +2539,7 @@
                (all long-cut (!- `(non-generic ,v ,type-v ,g) body t)))
              (relation (g t rand rator)
                (to-show g `(app ,rator ,rand) t)
-               (exists-lexically (t-rand)
+               (exists (t-rand)
                  (all long-cut
 		   (all!
                      (!- g rator `(--> ,t-rand ,t))
@@ -2577,7 +2549,7 @@
                (all long-cut (!- g rand `(--> ,t ,t))))
              (relation (g v rand body t)
                (to-show g `(let ([,v ,rand]) ,body) t)
-               (exists-lexically (t-rand)
+               (exists (t-rand)
                  (all long-cut
 		   (all!
                      (!- g rand t-rand)
@@ -2605,21 +2577,21 @@
       (relation (x y z)
         (to-show x y z)
         (all (fails (instantiated z))
-          (let*-inject ([z^ (x y) (op x y)])
+          (let-inject ([z^ (x y) (op x y)])
             (== z z^))))
       (relation (x y z)
         (to-show x y z)
         (all (fails (instantiated y))
-          (let*-inject ([y^ (z x) (inverted-op z x)])
+          (let-inject ([y^ (z x) (inverted-op z x)])
             (== y y^))))
       (relation (x y z)
         (to-show x y z)
         (all (fails (instantiated x))
-          (let*-inject ([x^ (z y) (inverted-op z y)])
+          (let-inject ([x^ (z y) (inverted-op z y)])
             (== x x^))))
       (relation (x y z)
         (to-show x y z)
-        (let*-inject ([z^ (x y) (op x y)])
+        (let-inject ([z^ (x y) (op x y)])
           (== z z^))))))
 
 (define ++ (invertible-binary-function->ternary-relation + -))
@@ -2654,18 +2626,18 @@
       (relation (x y)
         (to-show x y)
         (all (fails (instantiated y))
-          (let*-inject ([y^ (x) (op x)])
+          (let-inject ([y^ (x) (op x)])
             (== y y^))))
       (relation (x y)
         (to-show x y)
         (all (fails (instantiated x))
-          (let*-inject ([x^ (y) (inverted-op y)])
+          (let-inject ([x^ (y) (inverted-op y)])
             (== x x^))))
       (relation (x y)
         (to-show x y)
         (begin
           (pretty-print "Third rule")
-          (let*-inject ([y^ (x) (op x)])
+          (let-inject ([y^ (x) (op x)])
             (== y y^)))))))
 
 (define name
@@ -2709,7 +2681,7 @@
 
 (define grandpa
   (lambda (grandfather child)
-    (exists-lexically (x)
+    (exists (x)
       (all (father grandfather x) (father x child)))))
 
 (test-check 'grandpa-ng
@@ -2739,11 +2711,11 @@
     (lambda@ (sk fk subst cutk)
       (let ([next (!! fk)]
             [cut (!! cutk)])
-        (exists (grandfather)
+        (naive-exists (grandfather)
           (@ (all
                (all next (== grandfather 'sam))
                cut
-               (exists-lexically (x)
+               (exists (x)
                  (all (father grandfather x) (father x child))))
              sk fk subst cutk))))))
 
@@ -2754,7 +2726,7 @@
 (define grandpa-sam
   (relation/cut cut (child)
     (to-show child)
-    (exists-lexically (x)
+    (exists (x)
       (all (father 'sam x) (father x child)))))
 
 (test-check 'grandpa-sam-2
@@ -2984,7 +2956,7 @@
     (fact () '() '())
     (relation (x rest ans)
       (to-show `(,x . ,rest) ans)
-      (exists-lexically (ls)
+      (exists (ls)
         (all
           (nrev rest ls)
           (concat ls `(,x) ans))))))
@@ -3006,7 +2978,7 @@
   (extend-relation ()
     (relation ()
       (to-show)
-      (exists-lexically (count)
+      (exists (count)
         (all
           (predicate () (newline))
           (predicate () (newline))
@@ -3035,11 +3007,11 @@
 (define bench
   (relation (count)
     (to-show count)
-    (let*-inject ([t0 () (get_cpu_time)])
+    (let-inject ([t0 () (get_cpu_time)])
       (dodummy count)
-      (let*-inject ([t1 () (get_cpu_time)])
+      (let-inject ([t1 () (get_cpu_time)])
         (dobench count)
-        (let*-inject ([t2 () (get_cpu_time)])
+        (let-inject ([t2 () (get_cpu_time)])
           (report count t0 t1 t2))))))
 
 (define dobench
@@ -3075,16 +3047,16 @@
       (to-show n)
       (all
         (predicate (n) (> n 1))
-        (let*-inject ([n1 (n) (- n 1)])
+        (let-inject ([n1 (n) (- n 1)])
           (repeat n1))))))
 
 (define report
   (relation (count t0 t1 t2)
     (to-show count t0 t1 t2)
-    (exists-lexically (lips units)
+    (exists (lips units)
       (let*-inject ([time1 (t0 t1) (- t1 t0)]
                     [time2 (t1 t2) (- t2 t1)]
-                    [time (time1 time2) (- time2 time1)])
+                    [time () (- time2 time1)])
         (calculate_lips count time lips units)
         (predicate (lips count) (printf "~n~s lips for ~s" lips count))
         (predicate (time units)
@@ -3101,7 +3073,7 @@
       (to-show count time lips 'msecs)
       (let*-inject ([t1 (count) (* 496 count 1000)]
                     [t2 (time) (+ time 0.0)]
-                    [lips^ (t1 t2) (/ t1 t2)])
+                    [lips^ () (/ t1 t2)])
         (== lips lips^)))))
 
 ;(test-lots)
@@ -3164,7 +3136,7 @@
   (solution (a b c1 c2)
     (typeclass-counter-example-query a b c1 c2)))
 
-(define depth-counter-var (exists (*depth-counter-var*) *depth-counter-var*))
+(define depth-counter-var (naive-exists (*depth-counter-var*) *depth-counter-var*))
 
 ; Run the antecedent no more than n times, recursively
 (define with-depth
@@ -3512,7 +3484,7 @@
 
 (define goal
   (lambda (t)
-    (exists (t1)
+    (naive-exists (t1)
       (list
 	`(btree ,t)
 	`(myeq ,t  (mirror ,t1))
@@ -3669,7 +3641,7 @@
 ; Note that we wrote
 ;    '(leaf x)
 ; rather than
-;    (exists (x) `(leaf ,x))
+;    (naive-exists (x) `(leaf ,x))
 ; because we want to prove that (goal '(leaf x)) holds for _all_ x
 ; rather than for some particular x.
 ;
