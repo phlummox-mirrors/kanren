@@ -1,32 +1,28 @@
-;;;; Can you send me this translated using the latest version
-;;;; of our logic system, below.  This is commented out in the
-;;;; the code below.  That's where I would like for you to put
-;;;; the answer.
-
-;;;; Please send back all the code.
-;;;; .... Dan
-
-;-----------------------------------/-----------------------------
-
 ;(load "plshared.ss")
+
+(define-syntax let-values
+  (syntax-rules ()
+    [(_ (x ...) vs body0 body1 ...)
+     (call-with-values (lambda () vs) (lambda (x ...) body0 body1 ...))]))
 
 (define-syntax exists
   (syntax-rules ()
-    [(_ () body0 body1 ...) (begin body0 body1 ...)]
+    [(_ () body) body]
+    [(_ () body0 body1 body2 ...) (begin body0 body1 body2 ...)]
     [(_ (id ...) body0 body1 ...)
      (let ([id (var 'id)] ...) body0 body1 ...)]))
 
 (define-syntax lambda@
   (syntax-rules ()
-    [(_ () body0 body1 ...) (begin body0 body1 ...)]
-    [(_ (formal0 formal1 ...) body0 body1 ...)
+    [(_ (formal) body0 body1 ...) (lambda (formal) body0 body1 ...)]
+    [(_ (formal0 formal1 formal2 ...) body0 body1 ...)
      (lambda (formal0)
-       (lambda@ (formal1 ...) body0 body1 ...))]))
+       (lambda@ (formal1 formal2 ...) body0 body1 ...))]))
 
 (define-syntax @    
   (syntax-rules ()
-    [(_ arg0) arg0]
-    [(_ arg0 arg1 arg2 ...) (@ (arg0 arg1) arg2 ...)]))
+    [(_ rator rand) (rator rand)]
+    [(_ rator rand0 rand1 rand2 ...) (@ (rator rand0) rand1 rand2 ...)]))
 
 (define test-@-lambda@
   (lambda ()
@@ -38,6 +34,89 @@
 
 (define-record var (id) ())
 (define var make-var)
+
+(define-syntax introduce-vars
+  (syntax-rules ()
+    [(_ () body) body]
+    [(_ () body0 body1 body2 ...)
+     (all body0 body1 body2 ...)]
+    [(_ (id ...) body0 body1 ...)
+     (let ([id (var 'id)] ...)
+       (lambda@ (sk)
+	 (@ (all body0 body1 ...)
+            (lambda@ (fk subst) (@ sk fk (prune subst id ...))))))]))
+
+
+; check if any of vars occur in a term
+; perhaps we should use memq and eq when applied to vars ...
+(define (occur-vars? term vars)
+  (cond
+    ((var? term) (memv term vars))
+    ((pair? term) (or (occur-vars? (car term) vars)
+		      (occur-vars? (cdr term) vars)))
+    (else #f)))
+
+(define-syntax prune
+  (syntax-rules ()
+    [(_ subst) subst]
+    [(_ subst id ...)
+      (let ((vars (list id ...))
+	    (do-subst
+	      (lambda (clean to-remove to-subst)
+		(let loop ((result clean) (to-subst to-subst))
+		  (if (null? to-subst) result
+		    (loop
+		      (cons-if-real-commitment
+			(commitment->var (car to-subst))
+			(subst-in (commitment->term (car to-subst))
+			  to-remove)
+			result)
+		      (cdr to-subst)))))))
+	(let loop ((clean '()) (to-remove '()) (to-subst '()) (current subst))
+	  (cond
+	    ((null? current) (do-subst clean to-remove to-subst))
+	    ((memv (commitment->var (car current)) vars)
+	      (loop clean (cons (car current) to-remove) to-subst 
+		(cdr current)))
+	    ((occur-vars? (commitment->term (car current)) vars)
+	      (loop clean to-remove (cons (car current) to-subst)
+		(cdr current)))
+	    (else
+	      (loop (cons (car current) clean) to-remove to-subst
+		(cdr current))))))]))
+'(define-syntax prune
+  (syntax-rules ()
+    [(_ subst) subst]
+    [(_ subst id ...)
+     (let-values (base refining)
+       (split-on-test
+	 (lambda (c)
+	   (or (eqv? (commitment->var c) id) ...))
+	 subst)
+       (let refine ([base base])
+	 (cond
+	   [(null? base) '()]
+	   [(subst-in (commitment->term (car base)) refining) =>
+	    (lambda (new-term)
+	      (if (equal? (commitment->term (car base)) new-term)
+		(cons (car base) (refine (cdr base)))
+		(cons-if-real-commitment
+		  (commitment->var (car base))
+		  new-term
+		  (refine (cdr base)))))]
+	   [else (cons-if-real-commitment
+		  (commitment->var (car base))
+		  (subst-in (commitment->term (car base)) refining)
+		  (refine (cdr base)))])))]))
+
+'(define split-on-test
+  (lambda (tst ls)
+    (cond
+      [(null? ls) (values '() '())]
+      [else (let-values (base refining) (split-on-test tst (cdr ls))
+	      (if (tst (car ls))
+		(values base (cons (car ls) refining))
+		(values (cons (car ls) base) refining)))])))
 
 (print-gensym #f)
 ; (define var
@@ -159,6 +238,16 @@
               (@ sk fk subst cutk))]
         [else (fk)]))))
 
+(define-syntax ==
+  (syntax-rules ()
+    [(_ t u)
+     (lambda@ (sk fk subst cutk)
+       (cond
+         [(unify t u subst)
+          => (lambda (subst)
+               (@ sk fk subst cutk))]
+         [else (fk)]))]))
+
 ;(load "plprelims.ss")
 
 ;  Fk  = () -> Ans
@@ -206,11 +295,6 @@
          (begin
            (check #'whatever)
            #'(quasiquote . whatever))]))))
-
-(define-syntax let-values
-  (syntax-rules ()
-    [(_ (x ...) vs body0 body1 ...)
-     (call-with-values (lambda () vs) (lambda (x ...) body0 body1 ...))]))
 
 (define-syntax concretize-sequence
   (syntax-rules ()
@@ -333,7 +417,9 @@
 
 (define initial-fk (lambda () '()))
 (define initial-cutk initial-fk)
-(define initial-sk (lambda@ (fk subst cutk) (cons (cons subst cutk) fk)))
+(define initial-sk (lambda@ (fk subst cutk)
+		     ;(pretty-print subst)
+		     (cons (cons subst cutk) fk)))
 
 (define-syntax binary-extend-relation
   (syntax-rules ()
@@ -364,7 +450,6 @@
               (@ ant1 initial-sk initial-fk subst cutk)
               (@ ant2 initial-sk initial-fk subst cutk))))))]))
 
-
 (define finish-interleave
   (lambda (sk fk)
     (letrec
@@ -386,7 +471,6 @@
              [else (let ([fk (cdr q1)] [subst (caar q1)] [cutk (cdar q1)])
                      (@ sk (lambda () (interleave q2 (fk))) subst cutk))]))])
       interleave)))
-
 
 (define-syntax binary-extend-relation-interleave-non-overlap
   (syntax-rules ()
@@ -428,17 +512,17 @@
 (define-syntax extend-relation
   (syntax-rules ()
     [(_ (id ...) rel-exp) rel-exp]
-    [(_ (id ...) rel-exp0 rel-exp1 ...)
+    [(_ (id ...) rel-exp0 rel-exp1 rel-exp2 ...)
      (binary-extend-relation (id ...) rel-exp0
-       (extend-relation (id ...) rel-exp1 ...))]))
+       (extend-relation (id ...) rel-exp1 rel-exp2 ...))]))
 
 (define-syntax all
   (syntax-rules ()
     [(_) (lambda (sk) sk)]
     [(_ ant) ant]
-    [(_ ant0 ant1 ...)
+    [(_ ant0 ant1 ant2 ...)
      (lambda@ (sk)
-       (ant0 (splice-in-ants/all sk ant1 ...)))]))
+       (ant0 (splice-in-ants/all sk ant1 ant2 ...)))]))
 
 (define-syntax splice-in-ants/all
   (syntax-rules ()
@@ -450,9 +534,9 @@
   (syntax-rules ()
     [(_) (lambda (sk) sk)]
     [(_ ant) ant]
-    [(_ ant0 ant1 ...)
+    [(_ ant0 ant1 ant2 ...)
      (lambda@ (sk fk)
-       (@ ant0 (splice-in-ants/all! sk fk ant1 ...) fk))]))
+       (@ ant0 (splice-in-ants/all! sk fk ant1 ant2 ...) fk))]))
 
 (define-syntax splice-in-ants/all!
   (syntax-rules ()
@@ -464,17 +548,28 @@
        (@ ant0 (splice-in-ants/all! sk fk ant1 ...) fk))]))
 
 (define-syntax relation
-  (syntax-rules (to-show _)
+  (syntax-rules (to-show)
+    [(_  (ex-id ...) (to-show x ...) ant ...)
+     (relation (ex-id ...) () (x ...) (x ...) ant ...)]
+    [(_ (ex-id ...) (g ...) () (x ...))
+     (lambda (g ...)
+       (introduce-vars (ex-id ...)
+	 (all! (== g x) ...)))]
+    [(_ (ex-id ...) (g ...) () (x ...) ant ...)
+     (lambda (g ...)
+       (introduce-vars (ex-id ...)
+	 (all! (== g x) ... (all ant ...))))]
+    [(_ ex-ids (var ...) (x0 x1 ...) xs ant ...)
+     (relation ex-ids (var ... g) (x1 ...) xs ant ...)]))
+
+(define-syntax relation/cut
+  (syntax-rules (to-show)
     [(_ cut-id (ex-id ...) (to-show x ...) ant ...)
-     (relation cut-id (ex-id ...) () (x ...) (x ...) ant ...)]
+     (relation/cut cut-id (ex-id ...) () (x ...) (x ...) ant ...)]
     [(_ cut-id (ex-id ...) (g ...) () (x ...))
      (lambda (g ...)
        (exists (ex-id ...)
 	 (all! (== g x) ...)))]
-    [(_ _ (ex-id ...) (g ...) () (x ...) ant ...)
-     (lambda (g ...)
-       (exists (ex-id ...)
-	 (all! (== g x) ... (all ant ...))))]
     [(_ cut-id (ex-id ...) (g ...) () (x ...) ant ...)
      (lambda (g ...)
        (exists (ex-id ...)
@@ -483,34 +578,12 @@
              (let ([cut-id (!! cutk)])
                (@ (all ant ...) sk fk subst cutk))))))]
     [(_ cut-id ex-ids (var ...) (x0 x1 ...) xs ant ...)
-     (relation cut-id ex-ids (var ... g) (x1 ...) xs ant ...)]))
-
-(define-syntax trace-relation
-  (syntax-rules (to-show _)
-    [(_ id cut-id (ex-id ...) (to-show x ...) ant ...)
-     (trace-relation id cut-id (ex-id ...) () (x ...) (x ...) ant ...)]
-    [(_ id cut-id (ex-id ...) (g ...) () (x ...))
-     (trace-lambda id (g ...)
-       (exists (ex-id ...)
-	 (all! (== g x) ...)))]
-    [(_ id _ (ex-id ...) (g ...) () (x ...) ant ...)
-     (trace-lambda id (g ...)
-       (exists (ex-id ...)
-	 (all! (== g x) ... (all ant ...))))]
-    [(_ id cut-id (ex-id ...) (g ...) () (x ...) ant ...)
-     (trace-lambda id (g ...)
-       (exists (ex-id ...)
-         (all! (== g x) ...
-           (lambda@ (sk fk subst cutk)
-             (let ([cut-id (!! cutk)])
-               (@ (all ant ...) sk fk subst cutk))))))]
-    [(_ id cut-id ex-ids (var ...) (x0 x1 ...) xs ant ...)
-     (trace-relation id cut-id ex-ids (var ... g) (x1 ...) xs ant ...)]))
+     (relation/cut cut-id ex-ids (var ... g) (x1 ...) xs ant ...)]))
 
 (define-syntax fact
   (syntax-rules ()
     [(_ (ex-id ...) x ...)
-     (relation _ (ex-id ...) (to-show x ...))]))
+     (relation (ex-id ...) (to-show x ...))]))
 
 (define !!
   (lambda (exiting-fk)
@@ -525,7 +598,7 @@
 ;;;;; Starts the real work of the system.
 
 (define father  
-  (relation _ ()
+  (relation ()
     (to-show 'john 'sam)))
 
 (printf "~s ~s~%" 'test-father0
@@ -539,22 +612,23 @@
 ;;; Now we need concretize-subst about here.
 
 (define child-of-male
-  (relation _ (child dad)
+  (relation (child dad)
     (to-show child dad)
     (father dad child)))
 
 (define test-child-of-male-0
   (lambda ()
-    (equal?
+    (list ;equal?
       (concretize-subst
         (caar (@ (child-of-male 'sam 'john)
                 initial-sk initial-fk empty-subst initial-fk)))
       `(,(commitment 'child.0 'sam) ,(commitment 'dad.0 'john)))))
 
 (printf "~s ~s~%" 'test-child-of-male-0 (test-child-of-male-0))
+;(exit 0)
 
 (define pete/sal
-  (relation _ ()
+  (relation ()
     (to-show 'pete 'sal)))
 
 (define new-father
@@ -610,7 +684,7 @@
 (printf "~s ~s~%" 'test-father-4 (test-father-4))
 
 (define pete/pat
-  (relation _ ()
+  (relation ()
     (to-show 'pete 'pat)))
 
 (define newer-father
@@ -667,11 +741,12 @@
   (syntax-rules ()
     [(_ n (rel t0 ...))
      (map (lambda (subst/cutk)
+	    ;(pretty-print (car subst/cutk))
             (concretize-sequence (subst-in t0 (car subst/cutk)) ...))
        (stream-prefix (- n 1) (query (rel t0 ...))))]))
 
 (define sam/pete
-  (relation _ ()
+  (relation ()
     (to-show 'sam 'pete)))
 
 (define newest-father (extend-relation (a1 a2) newer-father sam/pete))
@@ -689,6 +764,71 @@
             
 (printf "~s ~s~%" 'test-father-6/solve (test-father-6/solve))
 
+(define-syntax binary-intersect-relation
+  (syntax-rules ()
+    [(_ (id ...) rel-exp1 rel-exp2)
+     (let ([rel1 rel-exp1] [rel2 rel-exp2])
+       (lambda (id ...)
+         (lambda (sk)
+           ((rel1 id ...) ((rel2 id ...) sk)))))]))
+
+(define-syntax binary-intersect-relation
+  (syntax-rules ()
+    [(_ (id ...) rel-exp1 rel-exp2)
+     (let ([rel1 rel-exp1] [rel2 rel-exp2])
+       (lambda (id ...)
+         (lambda@ (sk fk subst cutk)
+           (@ (rel1 id ...)
+              (lambda@ (fk subst cutk)
+                (@ (rel2 id ...) sk fk subst cutk))
+              fk subst cutk))))]))
+
+(define fathers-of-cubscouts
+  (extend-relation (a1 a2)
+    (fact () 'sam 'bob)
+    (fact () 'tom 'adam)
+    (fact () 'tad 'carl)))
+
+(define fathers-of-little-leaguers
+  (extend-relation (a1 a2)
+    (fact () 'sam 'bobo)
+    (fact () 'tom 'adam)
+    (fact () 'tad 'carl)))
+
+(define busy-fathers
+  (binary-intersect-relation (a1 a2) fathers-of-cubscouts fathers-of-little-leaguers))
+
+(define test-busy-fathers
+  (lambda ()
+    (exists (x y)
+      (equal?
+        (solve 5 (busy-fathers x y))
+        '((tom adam) (tad carl))))))
+            
+(printf "~s ~s~%" 'test-busy-fathers (test-busy-fathers))
+
+(define-syntax intersect-relation
+  (syntax-rules ()
+    [(_ (id ...) rel-exp) rel-exp]
+    [(_ (id ...) rel-exp0 rel-exp1 rel-exp2 ...)
+     (binary-intersect-relation (id ...) rel-exp0
+       (intersect-relation (id ...) rel-exp1 rel-exp2 ...))]))
+
+(define busy-fathers
+  (intersect-relation (a1 a2) fathers-of-cubscouts fathers-of-little-leaguers))
+
+(define conscientious-fathers
+  (extend-relation (a1 a2) fathers-of-cubscouts fathers-of-little-leaguers))
+
+(define test-conscientious-fathers
+  (lambda ()
+    (exists (x y)
+      (equal?
+        (solve 7 (conscientious-fathers x y))
+        '((sam bob) (tom adam) (tad carl) (sam bobo) (tom adam) (tad carl))))))
+
+(printf "~s ~s~%" 'test-conscientious-fathers (test-conscientious-fathers))
+
 (define-syntax solution
   (syntax-rules ()
     [(_ x)
@@ -704,7 +844,7 @@
 (printf "~s ~s~%" 'test-father-7/solution (test-father-7/solution))
 
 (define grandpa-sam
-  (relation _ (grandchild)
+  (relation (grandchild)
     (to-show grandchild)
     (exists (parent)
       (lambda (sk)
@@ -722,11 +862,26 @@
 
 (define-syntax any
   (syntax-rules ()
+    [(_) (lambda@ (sk fk subst cutk) (fk))]
+    [(_ ant) ant]
+    [(_ ant0 ant1 ...)
+     (lambda@ (sk fk subst cutk)
+       (letrec-syntax
+         ([splice-in-ants 
+            (syntax-rules ()
+              [(_) fk]
+              [(_ ant . other-ants)
+               (lambda ()
+                 (@ ant sk (splice-in-ants . other-ants) subst cutk))])])
+         (@ ant0 sk (splice-in-ants ant1 ...) subst cutk)))]))
+
+(define-syntax any
+  (syntax-rules ()
     [(_ ant ...)
-     ((extend-relation () (relation _ () (to-show) ant) ...))]))
+     ((extend-relation () (relation () (to-show) ant) ...))]))
 
 (define child
-  (relation _ (child dad)
+  (relation (child dad)
     (to-show child dad)
     (newest-father dad child)))
 
@@ -740,7 +895,7 @@
 (printf "~s ~s~%" 'test-child-1 (test-child-1))
 
 (define grandpa-sam
-  (relation _ (grandchild)
+  (relation (grandchild)
     (to-show grandchild)
     (exists (parent)
       (all
@@ -758,7 +913,7 @@
 
 (define grandpa-maker
   (lambda (grandad)
-    (relation _ (grandchild)
+    (relation (grandchild)
       (to-show grandchild)
       (exists (parent)
         (all
@@ -776,7 +931,7 @@
 
 (define grandpa-maker
   (lambda (guide* grandad*)
-    (relation _ (grandchild)
+    (relation (grandchild)
       (to-show grandchild)
       (exists (parent)
         (all
@@ -793,7 +948,7 @@
 (printf "~s ~s~%" 'test-grandpa-maker-2 (test-grandpa-maker-2))
 
 (define grandpa
-  (relation _ (grandad grandchild)
+  (relation (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
       (all
@@ -811,7 +966,7 @@
 
 (define-syntax fact
   (syntax-rules ()
-    [(_ (var ...) x ...) (relation _ (var ...) (to-show x ...))]))
+    [(_ (var ...) x ...) (relation (var ...) (to-show x ...))]))
 
 (define-syntax trace-fact
   (syntax-rules ()
@@ -835,13 +990,13 @@
 
 (define grandpa
   (extend-relation (a1 a2)
-    (relation _ (grandad grandchild)
+    (relation (grandad grandchild)
       (to-show grandad grandchild)
       (exists (parent)
         (all
           (father grandad parent)
           (father parent grandchild))))
-    (relation _ (grandad grandchild)
+    (relation (grandad grandchild)
       (to-show grandad grandchild)
       (exists (parent)
         (all
@@ -858,7 +1013,7 @@
 (printf "~s ~s~%" 'test-grandpa-2 (test-grandpa-2))
 
 (define grandpa/father
-  (relation _ (grandad grandchild)
+  (relation (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
       (all
@@ -866,7 +1021,7 @@
         (father parent grandchild)))))
 
 (define grandpa/mother
-  (relation _ (grandad grandchild)
+  (relation (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
       (all
@@ -885,28 +1040,28 @@
 
 (printf "~s ~s~%" 'test-grandpa-5 (test-grandpa-5))
 
-(define grandpa-sam
-  (let ([r (relation _ (child)
+'(define grandpa-sam
+  (let ([r (relation (child)
              (to-show child)
              (exists (parent)
                (all
                  (father 'sam parent)
                  (father parent child))))])
-    (relation _ (child)
+    (relation (child)
       (to-show child)
       (r child))))
 
-(define test-grandpa-sam-4
+'(define test-grandpa-sam-4
   (lambda ()
     (exists (y)
       (equal?
         (solve 6 (grandpa-sam y))
         '((sal) (pat))))))
 
-(printf "~s ~s~%" 'test-grandpa-sam-4 (test-grandpa-sam-4))  
+;(printf "~s ~s~%" 'test-grandpa-sam-4 (test-grandpa-sam-4))  
 
 (define grandpa/father
-  (relation cut (grandad grandchild)
+  (relation/cut cut (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
       (all
@@ -915,7 +1070,7 @@
         cut))))
 
 (define grandpa/mother
-  (relation _ (grandad grandchild)
+  (relation (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
       (all
@@ -935,7 +1090,7 @@
 (printf "~s ~s~%" 'test-grandpa-8 (test-grandpa-8))
 
 (define grandpa/father
-  (relation cut (grandad grandchild)
+  (relation/cut cut (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
       (all cut (father grandad parent) (father parent grandchild)))))
@@ -956,7 +1111,7 @@
   (lambda@ (sk fk subst cutk) (fk)))
 
 (define no-grandma
-  (relation cut (grandad grandchild)
+  (relation/cut cut (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
       (all (mother grandad parent) cut fail))))
@@ -1017,7 +1172,7 @@
       t)))
 
 (define grandpa
-  (relation _ (grandad grandchild)
+  (relation (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
       (all 
@@ -1126,7 +1281,7 @@
         subst cutk))))
 
 (define grandpa
-  (relation _ (grandad grandchild)
+  (relation (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
       (all
@@ -1155,7 +1310,7 @@
       (@ sk fk subst cutk))))
 
 (define grandpa
-  (relation _ (grandad grandchild)
+  (relation (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
       (all
@@ -1204,10 +1359,10 @@
 
 (define ancestor
   (extend-relation (a1 a2)
-    (relation _ (old young)
+    (relation (old young)
       (to-show old young)
       (father old young))
-    (relation _ (old young)
+    (relation (old young)
       (to-show old young)
       (exists (not-so-old)
         (all (father old not-so-old) (ancestor not-so-old young))))))
@@ -1229,7 +1384,7 @@
 (printf "~s ~s~%" 'test-ancestor (test-ancestor))
 
 (define common-ancestor
-  (relation _ (young-a young-b old)
+  (relation (young-a young-b old)
     (to-show young-a young-b old)
     (all
       (ancestor old young-a)
@@ -1245,7 +1400,7 @@
 (printf "~s ~s~%" 'test-common-ancestor (test-common-ancestor))
 
 (define younger-common-ancestor
-  (relation _ (young-a young-b old not-so-old)
+  (relation (young-a young-b old not-so-old)
     (to-show young-a young-b old not-so-old)
     (all
       (common-ancestor young-a young-b not-so-old)
@@ -1262,7 +1417,7 @@
 (printf "~s ~s~%" 'test-younger-common-ancestor (test-younger-common-ancestor))
 
 (define youngest-common-ancestor
-  (relation _ (young-a young-b not-so-old)
+  (relation (young-a young-b not-so-old)
     (to-show young-a young-b not-so-old)
     (all
       (common-ancestor young-a young-b not-so-old)
@@ -1317,10 +1472,10 @@
   (letrec
       ([move
          (extend-relation (a1 a2 a3 a4)
-           (relation cut ()
+           (relation/cut cut ()
              (to-show 0 _ _ _)
              cut)
-           (relation _ (n a b c)
+           (relation (n a b c)
              (to-show n a b c)
              (exists (m)
                (all
@@ -1329,7 +1484,7 @@
                  (move m a c b)
                  (pred-call printf "Move a disk from ~s to ~s~n" a b)
                  (move m c b a)))))])
-    (relation _ (n)
+    (relation (n)
       (to-show n)
       (move n 'left 'middle 'right))))
 
@@ -1498,7 +1653,7 @@
   (lambda ()
     (equal?
       (concretize
-        (let ([j (relation _ (x w z)
+        (let ([j (relation (x w z)
                    (to-show z)
                    (all
                      (fun-call (lambda () 4) x)
@@ -1515,10 +1670,10 @@
       (letrec
         ([move
            (extend-relation (a1 a2 a3 a4)
-             (relation cut ()
+             (relation/cut cut ()
                (to-show 0 _ _ _)
                cut)
-             (relation _ (n a b c)
+             (relation (n a b c)
                (to-show n a b c)
                (exists (m)
                  (all
@@ -1527,7 +1682,7 @@
                    (move m a c b)
                    (pred-call push-step a b)
                    (move m c b a)))))])
-        (relation _ (n path)
+        (relation (n path)
           (to-show n path)
           (begin
             (set! steps '())
@@ -1927,13 +2082,13 @@
 (define concat
   (extend-relation (a1 a2 a3)
     (fact (xs) '() xs xs)
-    (relation _ (x xs ys zs)
+    (relation (x xs ys zs)
       (to-show `(,x . ,xs) ys `(,x . ,zs))
       (concat xs ys zs))))
 
 (define test-concat
   (lambda ()
-    (and
+    (list
       (equal?
         (exists (q) (solve 6 (concat '(a b c) '(u v) q)))
         '(((a b c) (u v) (a b c u v))))
@@ -1953,7 +2108,7 @@
           ((a b c u v) () (a b c u v))))
       (equal?
         (exists (q r s) (solve 6 (concat q r s)))
-        '((() xs.0 xs.0)
+	'((() xs.0 xs.0)
           ((x.0) xs.0 (x.0 . xs.0))
           ((x.0 x.1) xs.0 (x.0 x.1 . xs.0))
           ((x.0 x.1 x.2) xs.0 (x.0 x.1 x.2 . xs.0))
@@ -2032,7 +2187,7 @@
   (fact (g v t) `(non-generic ,v ,t ,g) v t))
 
 (define non-generic-recursive-env
-  (relation _ (g v t w type-w)
+  (relation (g v t w type-w)
     (to-show `(non-generic ,w ,type-w ,g) v t)
     (all! (unequal? w v) (instantiated g) (env g v t))))
 
@@ -2041,10 +2196,10 @@
 
 (define unequal?
   (extend-relation (a1 a2)
-    (relation cut (a)
+    (relation/cut cut (a)
       (to-show a a)
       (all cut fail))
-    (relation _ (a b)
+    (relation (a b)
       (to-show a b)
       (fails fail))))
 
@@ -2053,12 +2208,12 @@
     (e (lambda (z) ((fix e) z)))))
 
 (define generic-base-env
-  (relation _ (g v targ tresult t)
+  (relation (g v targ tresult t)
     (to-show `(generic ,v (--> ,targ ,tresult) ,g) v t)
     (all! (fun-call instantiate t `(--> ,targ ,tresult)))))
 
 (define generic-recursive-env
-  (relation cut (g v w type-w t)
+  (relation/cut cut (g v w type-w t)
     (to-show `(generic ,w ,type-w ,g) v t)
     (all! (cut) (env g v t))))
 
@@ -2094,7 +2249,7 @@
 (define bool 'bool)
 
 (define var-rel
-  (relation _ (g v t)
+  (relation (g v t)
     (to-show g `(var ,v) t)
     (all! (env g v t))))
 
@@ -2105,43 +2260,43 @@
   (fact (g x) g `(boolc ,x) bool))
 
 (define zero?-rel
-  (relation _ (g x)
+  (relation (g x)
     (to-show g `(zero? ,x) bool)
     (all! (!- g x int))))
 
 (define sub1-rel
-  (relation _ (g x)
+  (relation (g x)
     (to-show g `(sub1 ,x) int)
     (all! (!- g x int))))
 
 (define +-rel
-  (relation _ (g x y)
+  (relation (g x y)
     (to-show g `(+ ,x ,y) int)
     (all! (!- g x int) (!- g y int))))
 
 (define if-rel
-  (relation _ (g t test conseq alt)
+  (relation (g t test conseq alt)
     (to-show g `(if ,test ,conseq ,alt) t)
     (all! (!- g test bool) (!- g conseq t) (!- g alt t))))
 
 (define lambda-rel
-  (relation _ (g v t body type-v)
+  (relation (g v t body type-v)
     (to-show g `(lambda (,v) ,body) `(--> ,type-v ,t))
     (all! (!- `(non-generic ,v ,type-v ,g) body t))))
 
 (define app-rel
-  (relation _ (g t rand rator)
+  (relation (g t rand rator)
     (to-show g `(app ,rator ,rand) t)
     (exists (t-rand)
       (all! (!- g rator `(--> ,t-rand ,t)) (!- g rand t-rand)))))
 
 (define fix-rel
-  (relation _ (g rand t)
+  (relation (g rand t)
     (to-show g `(fix ,rand) t)
     (all! (!- g rand `(--> ,t ,t)))))
 
 (define polylet-rel
-  (relation _ (g v rand body t)
+  (relation (g v rand body t)
     (to-show g `(let ([,v ,rand]) ,body) t)
     (exists (t-rand)
       (all!
@@ -2300,10 +2455,12 @@
                        (lambda (x)
                          ((f x) x))))
               ?)))
-        `(g.0 ,(parse '(lambda (f) (lambda (x) ((f x) x))))
-           (-->
-             (--> type-v.0 (--> type-v.0 t.0))
-             (--> type-v.0 t.0))))
+        '(g.0 (lambda (f)
+                (lambda (x) (app (app (var f) (var x)) (var x))))
+              (-->
+                (--> type-v.0
+                  (--> type-v.0 t.0))
+                (--> type-v.0 t.0))))
       (equal?
         (exists (g ?)
           (solution
@@ -2423,7 +2580,7 @@
 
 (define test-!-9
   (lambda ()
-    (and
+    (list
       (equal?
         (exists (g ?) 
           (solution 
@@ -2440,7 +2597,7 @@
         (exists (g h r q z y t)
           (solution 
             (!- g `(,h ,r (,q ,z ,y)) t)))
-        '((non-generic v.0 int g.0)
+	'((non-generic v.0 int g.0)
           (+ (var v.0) (+ (var v.0) (var v.0)))
           int))
       (equal?
@@ -2450,7 +2607,7 @@
         '(g.0 (lambda (v.0) (+ (var v.0) (var v.0)))
            (--> int int))))))
         
-(printf "~s ~s~%" 'type-inhabitation (test-!-9))
+(printf "~s ~s~%" 'type-habitation (test-!-9))
 
 ;;; long cuts
 
@@ -2458,38 +2615,38 @@
   (lambda (long-cut)
     (letrec
       ([!- (extend-relation (a1 a2 a3)
-             (relation _ (g v t)
+             (relation (g v t)
                (to-show g `(var ,v) t)
                (all long-cut (env g v t)))
              (fact (g x) g `(intc ,x) int)
              (fact (g x) g `(boolc ,x) bool)
-             (relation _ (g x)
+             (relation (g x)
                (to-show g `(zero? ,x) bool)
                (all long-cut (!- g x int)))
-             (relation _ (g x)
+             (relation (g x)
                (to-show g `(sub1 ,x) int)
                (all long-cut (!- g x int)))
-             (relation _ (g x y)
+             (relation (g x y)
                (to-show g `(+ ,x ,y) int)
                (all long-cut (all! (!- g x int) (!- g y int))))
-             (relation _ (g t test conseq alt)
+             (relation (g t test conseq alt)
                (to-show g `(if ,test ,conseq ,alt) t)
                (all long-cut
 		 (all! (!- g test bool) (!- g conseq t) (!- g alt t))))
-             (relation _ (g v t body type-v)
+             (relation (g v t body type-v)
                (to-show g `(lambda (,v) ,body) `(--> ,type-v ,t))
                (all long-cut (!- `(non-generic ,v ,type-v ,g) body t)))
-             (relation _ (g t rand rator)
+             (relation (g t rand rator)
                (to-show g `(app ,rator ,rand) t)
                (exists (t-rand)
                  (all long-cut
 		   (all!
                      (!- g rator `(--> ,t-rand ,t))
                      (!- g rand t-rand)))))
-             (relation _ (g rand t)
+             (relation (g rand t)
                (to-show g `(fix ,rand) t)
                (all long-cut (!- g rand `(--> ,t ,t))))
-             (relation _ (g v rand body t)
+             (relation (g v rand body t)
                (to-show g `(let ([,v ,rand]) ,body) t)
                (exists (t-rand)
                  (all long-cut
@@ -2499,7 +2656,7 @@
       !-)))
 
 (define !-
-  (relation cut (g exp t)
+  (relation/cut cut (g exp t)
     (to-show g exp t)
     ((!-generator cut) g exp t)))
 
@@ -2508,16 +2665,16 @@
 (define invertible-binary-function->ternary-relation
   (lambda (op inverted-op)
     (extend-relation (a1 a2 a3)
-      (relation _ (x y z)
+      (relation (x y z)
         (to-show x y z)
         (all (fails (instantiated z)) (fun-call op z x y)))
-      (relation _ (x y z)
+      (relation (x y z)
         (to-show x y z)
         (all (fails (instantiated y)) (fun-call inverted-op y z x)))
-      (relation _ (x y z)
+      (relation (x y z)
         (to-show x y z)
         (all (fails (instantiated x)) (fun-call inverted-op x z y)))
-      (relation _ (x y z)
+      (relation (x y z)
         (to-show x y z)
         (fun-call op z x y)))))
 
@@ -2555,13 +2712,13 @@
 (define invertible-unary-function->binary-relation
   (lambda (op inverted-op)
     (extend-relation (a1 a2)
-      (relation _ (x y)
+      (relation (x y)
         (to-show x y)
         (all (fails (instantiated y)) (fun-call op y x)))
-      (relation _ (x y)
+      (relation (x y)
         (to-show x y)
         (all (fails (instantiated x)) (fun-call inverted-op x y)))
-      (relation _ (x y)
+      (relation (x y)
         (to-show x y)
         (begin (pretty-print "Third rule") (fun-call op y x))))))
 
@@ -2644,7 +2801,7 @@
 (pretty-print (exists (x y) (solve 5 (grandpa-sam 'sal))))
 
 (define grandpa-sam
-  (relation cut (child)
+  (relation/cut cut (child)
     (to-show child)
     (exists (x)
       (all (father 'sam x) (father x child)))))
@@ -2654,7 +2811,7 @@
 (define-syntax fact
   (syntax-rules ()
     [(_ (ex ...) x ...)
-     (relation _ (ex ...) (to-show x ...))]))
+     (relation (ex ...) (to-show x ...))]))
 
 (define father-pete-sal (fact () 'pete 'sal))
 (define father-sam-pete (fact () 'sam 'pete))
@@ -2664,13 +2821,13 @@
 (pretty-print (exists (x y) (solve 5 (grandpa-sam 'sal))))
 
 (define father-pete-sal
-  (relation cut () (to-show 'pete 'sal)))
+  (relation () (to-show 'pete 'sal)))
 
 (define father-sam-pete
-  (relation cut () (to-show 'sam 'pete)))
+  (relation () (to-show 'sam 'pete)))
 
 (define father-johh-sam
-  (relation cut () (to-show 'john 'sam)))
+  (relation () (to-show 'john 'sam)))
 
 (define father (extend-relation (a1 a2) father-john-sam father-sam-pete father-pete-sal))
 
@@ -2707,17 +2864,18 @@
 (define Rinf
   (extend-relation (a1 a2)
     (fact () 'z 'z)
-    (relation _ (x y t1 t2)
+    (relation (x y t1 t2)
       (to-show t1 t2)
       (== t1 `(s ,x))
       (== t2 `(s ,y))
       (Rinf x y))))
 (printf "~%Rinf:~%")
-(pretty-print (exists (x y) (solve 5 (Rinf x y))))
+(time (pretty-print (exists (x y) (solve 5 (Rinf x y)))))
 (printf "~%Rinf+R1: Rinf starves R1:~%")
-(pretty-print 
+(time
+  (pretty-print 
   (exists (x y) (solve 5
-		  ((extend-relation (a1 a2) Rinf R1) x y))))
+		  ((extend-relation (a1 a2) Rinf R1) x y)))))
 
 ; Solving starvation problem: extend R1 and R2 so that they
 ; are interleaved
@@ -2732,26 +2890,26 @@
 
 (printf "~%binary-extend-relation-interleave~%")
 (printf "~%Rinf+R1:~%")
-(pretty-print 
+(time (pretty-print 
   (exists (x y) (solve 7
-		  ((binary-extend-relation-interleave (a1 a2) Rinf R1) x y))))
+		  ((binary-extend-relation-interleave (a1 a2) Rinf R1) x y)))))
 (printf "~%R1+RInf:~%")
-(pretty-print 
+(time (pretty-print 
   (exists (x y) (solve 7
-		  ((binary-extend-relation-interleave (a1 a2) R1 Rinf) x y))))
+		  ((binary-extend-relation-interleave (a1 a2) R1 Rinf) x y)))))
 
 (printf "~%R2+R1:~%")
-(pretty-print 
+(time (pretty-print 
   (exists (x y) (solve 7
-		  ((binary-extend-relation-interleave (a1 a2) R2 R1) x y))))
+		  ((binary-extend-relation-interleave (a1 a2) R2 R1) x y)))))
 (printf "~%R1+fact3:~%")
-(pretty-print 
+(time (pretty-print 
   (exists (x y) (solve 7
-		  ((binary-extend-relation-interleave (a1 a2) R1 fact3) x y))))
+		  ((binary-extend-relation-interleave (a1 a2) R1 fact3) x y)))))
 (printf "~%fact3+R1:~%")
-(pretty-print 
+(time (pretty-print 
   (exists (x y) (solve 7
-		  ((binary-extend-relation-interleave (a1 a2) fact3 R1) x y))))
+		  ((binary-extend-relation-interleave (a1 a2) fact3 R1) x y)))))
 
 ;;; Test for nonoverlapping.
 
@@ -2785,7 +2943,7 @@
 (define Rinf2
   (extend-relation (a1 a2)
     (fact () 'z 'z)
-    (relation _ (x y t1 t2)
+    (relation (x y t1 t2)
       (to-show t1 t2)
       (== t1 `(s (s ,x)))
       (== t2 `(s (s ,y)))
@@ -2806,7 +2964,159 @@
 	 (a1 a2) Rinf2 Rinf) x y))))
 
 
-(printf "~%Test: checking dependency satisfaction in Haskell typeclasses~%")
+; nrev([],[]).
+; nrev([X|Rest],Ans) :- nrev(Rest,L), extend(L,[X],Ans).
+
+; extend([],L,L).
+; extend([X|L1],L2,[X|L3]) :- extend(L1,L2,L3).
+
+
+; data([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,
+;                            21,22,23,24,25,26,27,28,29,30]).
+
+
+(define nrev
+  (extend-relation (a1 a2)
+    (fact () '() '())
+    (relation (x rest ans)
+      (to-show `(,x . ,rest) ans)
+      (exists (ls)
+        (all
+          (nrev rest ls)
+          (concat ls `(,x) ans))))))
+
+(define test-nrev
+  (lambda ()
+    (time
+      (exists (x)
+        (solution (nrev '(1 2 3 4 5 6 7 8 9
+                           10 11 12 13 14 15 16 17 18
+                           19 20 21 22 23 24 25 26 27
+                           28 29 30)
+                    x))))))
+
+(printf "Timing test ~s~n" (test-nrev))
+
+(define get_cpu_time
+  (lambda ()
+    (vector-ref (statistics) 1)))
+
+(define lots
+  (extend-relation ()
+    (relation ()
+      (to-show)
+      (exists (count)
+        (all
+          (pred-call newline)
+          (pred-call newline)
+          (eg_count count)
+          (bench count)
+          fail)))
+    (fact ())))
+
+(define test-lots
+  (lambda ()
+    (solve 1000 (lots))))
+
+(define eg_count
+  (extend-relation (a1)
+    (fact () 10)
+    (fact () 20)
+    (fact () 50)
+    (fact () 100)
+    (fact () 200)
+    (fact () 500)
+    (fact () 1000)
+    (fact () 2000)
+    (fact () 5000)
+    (fact () 10000)))
+
+(define bench
+  (relation (count)
+    (to-show count)
+    (exists (t0 t1 t2)
+      (all
+        (fun-call get_cpu_time t0)
+        (dodummy count)
+        (fun-call get_cpu_time t1)
+        (dobench count)
+        (fun-call get_cpu_time t2)
+        (report count t0 t1 t2)))))
+
+(define dobench
+  (extend-relation (a1)
+    (relation (count)
+      (to-show count)
+      (repeat count)
+      (nrev '(1 2 3 4 5 6 7 8 9
+               10 11 12 13 14 15 16 17 18
+               19 20 21 22 23 24 25 26 27
+               28 29 30)
+        _)
+      fail)
+    (fact () _)))
+
+(define dodummy
+  (extend-relation (a1)
+    (relation (count)
+      (to-show count)
+      (repeat count)
+      (dummy _)
+      fail)
+    (fact () _)))
+
+(define dummy
+  (relation ()
+    (to-show _)))
+
+(define repeat
+  (extend-relation (a1)
+    (fact (n) n)
+    (relation (n)
+      (to-show n)
+      (exists (n1)
+        (all
+          (pred-call > n 1)
+          (fun-call - n1 n 1)
+          (repeat n1))))))
+
+(define report
+  (relation (count t0 t1 t2)
+    (to-show count t0 t1 t2)
+    (exists (time1 time2 time lips units)
+      (all
+        (fun-call - time1 t1 t0)
+        (fun-call - time2 t2 t1)
+        (fun-call - time time2 time1)
+        (calculate_lips count time lips units)
+        (pred-call printf "~n~s lips for ~s" lips count)
+        (pred-call printf " Iterations taking ~s  ~s ( ~s )~n " time units time)))))
+
+(define calculate_lips
+  (extend-relation (a1 a2 a3 a4)
+    (relation/cut cut (count time lips)
+      (to-show count time lips 'msecs)
+      (== time 0)
+      cut
+      (== lips 0))
+    (relation (count time lips)
+      (to-show count time lips 'msecs)
+      (exists (t1 t2)
+        (all
+          (fun-call * t1 496 count 1000)
+          (fun-call + t2 time 0.0)
+          (fun-call / lips t1 t2))))))
+
+;(test-lots)
+; 	c(A,tuple(A,C,B),C,dict2).
+; 	c(A,tuple(X,Y,B),C,dict1) :- c(A,B,C,_).
+; Had I switched the order,
+; 	c(A,tuple(X,Y,B),C,dict1) :- c(A,B,C,_).
+; 	c(A,tuple(A,C,B),C,dict2).
+; the queries would have never terminated. That's where our
+; extend-relation-interleave would be quite handy.
+
+;Complete code:
 ; Suppose we have the following Haskell class and instance declarations
 ;      class C a b c | a b -> c 
 ;      instance C a b c => C a (x,y,b) c
@@ -2815,75 +3125,70 @@
 ; They will be compiled into the following database of instances,
 ; which define the class membership.
 (define typeclass-C-instance-1
-  (relation _ (a b c x y)
+  (relation (a b c x y)
     (to-show a `(,x ,y ,b) c)
     (typeclass-C a b c)))
 
 (define typeclass-C-instance-2
-  (relation _ (a b c)
+  (relation (a b c)
     (to-show a `(,a ,c ,b) c)))
 
 (define typeclass-C
-  (binary-extend-relation (a b c) 
+  (extend-relation (a b c) 
     typeclass-C-instance-2
     typeclass-C-instance-1))
 
-
-
 ; Run the checker for the dependency a b -> c
 ; Try to find the counter-example, that is, two members of (C a b c)
-; such that a and b are the same but c are different.
+; such that a's and b's are the same but the c's are different.
+
+;equality predicate: X == Y in Prolog
+;if X is a var, then X == Y holds only if Y
+;is the same var
+(define *equal?
+  (lambda (x y)
+    (cond
+      [(and (var? x) (var? y)) (eq? x y)]
+      [(var? x) #f]                     ; y is not a var
+      [(var? y) #f]                     ; x is not a var
+      [else (equal? x y)])))
+  
 (define typeclass-counter-example-query
   (lambda (a b c1 c2)
     (all 
       (typeclass-C a b c1)
       (typeclass-C a b c2)
-      (fails
-	; equality predicate: X == Y in Prolog
-	; if X is a var, then X == Y holds only if Y
-	; is the same var
-	(pred-call/no-check 
-	  (lambda (x y)
-	    (cond
-	      ((and (var? x) (var? y)) (eq? x y))
-	      ((var? x) #f)  ; y is not a var
-	      ((var? y) #f)  ; x is not a var
-	      (else (equal? x y))))
-	  c1 c2))
-)))
+      (fails (pred-call/no-check *equal? c1 c2)))))
 
 (printf "~%Counter-example: ~s~%" 
-  (exists (a b c1 c2) (solution 
-			(typeclass-counter-example-query a b c1 c2))))
+  (exists (a b c1 c2)
+    (solution 
+      (typeclass-counter-example-query a b c1 c2))))
 
-(define depth-counter-var (make-var '*depth-counter-var*))
+(define depth-counter-var (exists (*depth-counter-var*) *depth-counter-var*))
 
 ; Run the antecedent no more than n times, recursively
-(define (with-depth limit ant)
-  (lambda@ (sk fk subst cutk)
-    (cond
-      ((assv depth-counter-var subst) =>
-	(lambda (cmt)
-	  (let ((counter (+ 1 (commitment->term cmt))))
-	    (printf "~%counter ~d" counter)
-	    (if (> counter limit) (fk)
-	      (@ ant sk fk
-		(extend-subst 
-		  depth-counter-var counter
-		  subst)
-		cutk)))))
-      (else 
-	(@ ant sk fk
-		(extend-subst 
-		  depth-counter-var 0
-		  subst)
-		cutk)))))
+(define with-depth
+  (lambda (limit ant)
+    (lambda@ (sk fk subst cutk)
+      (cond
+        [(assv depth-counter-var subst)
+         => (lambda (cmt)
+              (let ([counter (commitment->term cmt)])
+                (printf "~%counter ~d" counter)
+                (if (= counter limit)
+                  (fk)
+                  (let ([s (extend-subst depth-counter-var (+ counter 1) subst)])
+                    (@ ant sk fk s cutk)))))]
+        [else
+          (let ([s (extend-subst depth-counter-var 0 subst)])
+            (@ ant sk fk s cutk))]))))
 
-; This should loop
-; (define typeclass-C
-;   (binary-extend-relation (a b c) 
-;     typeclass-C-instance-1
-;     typeclass-C-instance-2))
+; This does loop
+'(define typeclass-C
+   (extend-relation (a b c) 
+     typeclass-C-instance-1
+     typeclass-C-instance-2))
 
 (define typeclass-C
   (lambda (a b c)
@@ -2893,14 +3198,58 @@
         (typeclass-C-instance-2 a b c)))))
 
 (printf "~%Counter-example: ~s~%" 
-  (exists (a b c1 c2) (solution 
-			(typeclass-counter-example-query a b c1 c2))))
+  (exists (a b c1 c2)
+    (solution 
+      (typeclass-counter-example-query a b c1 c2))))
 
 (printf "~%Counter-example: ~s~%" 
-  (exists (a b c1 c2) (solve 4
-			(typeclass-counter-example-query a b c1 c2))))
+  (exists (a b c1 c2)
+    (solve 4
+      (typeclass-counter-example-query a b c1 c2))))
+
+(printf "~%Append with limited depth%")
+; In Prolog, we normally write:
+; append([],L,L).
+; append([X|L1],L2,[X|L3]) :- append(L1,L2,L3).
+;
+; If we switch the clauses, we get non-termination.
+; In our system, it doesn't matter!
+
+(define extend-clause-1
+  (relation (l)
+    (to-show '() l l)))
+
+(define extend-clause-2
+  (relation (x l1 l2 l3)
+    (to-show `(,x . ,l1) l2 `(,x . ,l3))
+    (extend-rel l1 l2 l3)))
+
+(define extend-rel
+  (lambda (a b c)
+    (with-depth 5
+      (any
+	(extend-clause-1 a b c)
+        (extend-clause-2 a b c)))))
+
+; Note (solve 100 ...)
+; Here 100 is just a large number: we want to print all solutions
+(printf "~%Extend: clause1 first: ~s~%" 
+  (exists (a b c) (solve 100
+			(extend-rel a b c))))
+
+(define extend-rel
+  (lambda (a b c)
+    (with-depth 3
+      (any
+	(extend-clause-2 a b c)
+        (extend-clause-1 a b c)))))
+
+(printf "~%Extend: clause2 first. In Prolog, it would diverge!: ~s~%" 
+  (exists (a b c) (solve 100
+			(extend-rel a b c))))
 
 
+; Extendix 1A
 (printf "~%Test: checking dependency satisfaction: Another example.~%")
 ; Suppose we have the following Haskell class and instance declarations
 ;	class F a b | a->b
@@ -2912,10 +3261,10 @@
   (lambda (a b)
     (with-depth 10
       (any
-	((relation _ (a b)
+	((relation (a b)
 	   (to-show `(list ,a) `(list ,b))
 	   (typeclass-F a b)) a b)
-	((relation _ (a)
+	((relation (a)
 	   (to-show `(list ,a) a)) a b)))))
 
 
@@ -2927,26 +3276,13 @@
     (all 
       (typeclass-F a b1)
       (typeclass-F a b2)
-      (fails
-	; equality predicate: X == Y in Prolog
-	; if X is a var, then X == Y holds only if Y
-	; is the same var
-	(pred-call/no-check 
-	  (lambda (x y)
-	    (cond
-	      ((and (var? x) (var? y)) (eq? x y))
-	      ((var? x) #f)  ; y is not a var
-	      ((var? y) #f)  ; x is not a var
-	      (else (equal? x y))))
-	  b1 b2))
-)))
+      (fails (pred-call/no-check *equal? b1 b2)))))
 
-(printf "~%Counter-example: ~s~%" 
-  (exists (a b1 b2) (solve 4
-			(typeclass-F-counter-example-query a b1 b2))))
+ (printf "~%Counter-example: ~s~%" 
+   (exists (a b1 b2) (solve 4
+		       (typeclass-F-counter-example-query a b1 b2))))
 
-
-
+ 
 (printf "~%Overloading resolution in Haskell.~%")
 ; Suppose we have the following Haskell class and instance declarations
 ;	class F a b | a->b where f :: a->b->Bool
@@ -2960,7 +3296,7 @@
 ; Here's only one instance. So we need to figure out if it applies.
 
 (define typeclass-F-instance-1
-  (relation _ (a b)
+  (relation (a b)
     (to-show `(list ,a) `(list ,b))
     (typeclass-F a b)))
 
@@ -2982,82 +3318,57 @@
     (with-depth 2
       (any
 	(typeclass-F-instance-1 a b)
-	((relation cut (a b1 b2)	; a relation under constraint a->b
+	((relation/cut cut (a b1 b2)	; a relation under constraint a->b
 	   (to-show a b1)
 	   (fails
 	     (all
 	       (typeclass-F a b2)
-	       (fails
-	; equality predicate: X == Y in Prolog
-	; if X is a var, then X == Y holds only if Y
-	; is the same var
-		 (pred-call/no-check 
-		   (lambda (x y)
-		     (cond
-		       ((and (var? x) (var? y)) (eq? x y))
-		       ((var? x) #f)  ; y is not a var
-		       ((var? y) #f)  ; x is not a var
-		       (else (equal? x y))))
-		   b1 b2))
-	      cut))) a b)
+	       (fails (pred-call/no-check *equal? b1 b2))
+	       cut))) a b)
 	))))
 
 (printf "~%Typechecking (open world): ~s~%" 
   (exists (a) (solve 4
-			(typeclass-F-instance-1 `(list ,a) a))))
+		(typeclass-F-instance-1 `(list ,a) a))))
 
 (printf "~%Typechecking (open world) f [x] int: ~s~%" 
   (exists (a) (solve 4
-			(typeclass-F-instance-1 `(list ,a) 'int))))
-
-(exit 0)
-;
+		(typeclass-F-instance-1 `(list ,a) 'int))))
 
 
-(printf "~%Append with limited depth%")
 
-; In Prolog, we normally write:
-; append([],L,L).
-; append([X|L1],L2,[X|L3]) :- append(L1,L2,L3).
-;
-; If we switch the clauses, we get non-termination.
-; In our system, it doesn't matter!
+; Extendix B.
 
-(define append-clause-1
-  (relation _ (l)
-    (to-show '() l l)))
+; ?- help(call_with_depth_limit/3).
+; call_with_depth_limit(+Goal, +Limit, -Result)
+;     If  Goal can be proven  without recursion deeper than Limit  levels,
+;     call_with_depth_limit/3 succeeds,  binding  Result  to  the  deepest
+;     recursion  level  used  during the  proof.    Otherwise,  Result  is
+;     unified  with depth_limit_exceeded  if the limit was exceeded  during
+;     the  proof,  or the  entire predicate  fails if  Goal fails  without
+;     exceeding Limit.
 
-(define append-clause-2
-  (relation _ (x l1 l2 l3)
-    (to-show `(,x . ,l1) l2 `(,x . ,l3))
-    (append-rel l1 l2 l3)))
+;     The  depth-limit is  guarded by the  internal machinery.   This  may
+;     differ  from the depth computed based  on a theoretical model.   For
+;     example,  true/0  is  translated  into an  inlined  virtual  machine
+;     instruction.   Also, repeat/0 is not implemented as below, but  as a
+;     non-deterministic foreign predicate.
 
-(define append-rel
-  (lambda (a b c)
-    (with-depth 3
-      (any
-	(append-clause-1 a b c)
-        (append-clause-2 a b c)))))
+;     repeat.
+;     repeat :-
+;             repeat.
 
-; Note (solve 100 ...)
-; Here 100 is just a large number: we want to print all solutions
-(printf "~%Append: clause1 first: ~s~%" 
-  (exists (a b c) (solve 100
-			(append-rel a b c))))
+;     As  a  result, call_with_depth_limit/3 may  still loop  inifitly  on
+;     programs  that should  theoretically finish  in finite time.    This
+;     problem  can be cured by  using Prolog equivalents to such  built-in
+;     predicates.
 
-(define append-rel
-  (lambda (a b c)
-    (with-depth 3
-      (any
-	(append-clause-2 a b c)
-        (append-clause-1 a b c)))))
-
-(printf "~%Append: clause2 first. In Prolog, it would diverge!: ~s~%" 
-  (exists (a b c) (solve 100
-			(append-rel a b c))))
-
+;     This   predicate  may  be   used  for  theorem-provers  to   realise
+;     techniques  like iterrative  deepening.   It  was implemented  after
+;     discussion with Steve Moyle smoyle@ermine.ox.ac.uk.
 
 (printf "~%Inductive proof~%")
+
 
 ; First we need an extendible database of relations.
 ; We should be able to add to the database later on -- extend
@@ -3096,7 +3407,8 @@
 ; to look up names/arities of relations. We don't need separate procedures
 ; for extending our database. We can use the existing machinery of
 ; 'solving' relations for 'solving' the database of relations.
-
+; This approach seems reminiscent of the Futamura projections:
+; we use the same engine for meta-evaluations. Bootstrapping.
 
 ; First we define the inductive structure
 
@@ -3134,20 +3446,11 @@
   (lambda (kb)
     (extend-relation (t)
       (fact (val) `(btree (leaf ,val)))
-      (relation _ (t1 t2)
+      (relation (t1 t2)
 	(to-show `(btree (root ,t1 ,t2)))
 	(pred-call printf "btree ~s ~s ~n" t1 t2)
 	(kb `(btree ,t1))
 	(kb `(btree ,t2))))))
-
-
-(define (Y f)
-  ((lambda (u) (u (lambda (x) (lambda (n) ((f (u x)) n)))))
-   (lambda (x) (x x))))
-
-; The initial database: just the btree
-(define init-kb (Y btree))
-
 
 ;%> (declare mirror ((S) -> ((BTree S)) (BTree S)))
 
@@ -3195,12 +3498,13 @@
 
 (define mirror-axiom-eq-2
   (lambda (kb)
-    (relation _ (a b t1 t2)
-      (to-show `(myeq (root ,b ,a)
-		      (mirror (root ,t1 ,t2))))
+    (relation  (a b t1 t2)
+      (to-show `(myeq (root ,b ,a) (mirror (root ,t1 ,t2))))
       (kb `(myeq ,a (mirror ,t1)))
       (kb `(myeq ,b (mirror ,t2))))))
 
+; we could also add reflexivity and transitivity and symmetry axioms
+; and with-depth to keep them from diverging.
 
 ; Define the goal
 ; In Athena:
@@ -3211,16 +3515,8 @@
 ; Note, the goal is _equivalent_ to the conjunction of the
 ; predicates. That's why we couldn't use the standard Prolog
 ; notation goal(T) :- btree(T), ...
-; because the latter would give us only an _implication_.
+; because the latter would give us only the implication.
 ; goal(T,[btree(T),myeq(T,mirror(T1)),myeq(T1,mirror(T))]).
-
-; The goal here is a function from a term to a list of terms.
-; (goal t) is the list of subgoals of (goal t). If all these
-; subgoals verify against the current database, the goal verifies.
-; The Athena code above defines 'goal' in a similar
-; vein. We also added (btree t) as a 'type predicate'. Athena is
-; a typeful language. Our language is untyped, so we need to make
-; sure that the goal is applied to terms of the right type.
 
 (define goal
   (lambda (t)
@@ -3230,50 +3526,58 @@
 	`(myeq ,t  (mirror ,t1))
 	`(myeq ,t1 (mirror ,t))))))
 
+(define Y
+  (lambda (f)
+    ((lambda (u) (u (lambda (x) (lambda (n) ((f (u x)) n)))))
+     (lambda (x) (x x)))))
+
+; The initial assumptions: just the btree
+(define init-kb (Y btree))
 
 ; Verification engine
-;	verify-goal TERMS KB
-; returns a nullary relation that succeeds only when each TERM
-; in the list of TERMS succeeds against the given database KB.
-
-(define (verify-goal terms kb)
-  (if (null? (cdr terms)) (kb (car terms))
-    (all
-      (kb (car terms))
-      (verify-goal (cdr terms) kb))))
+;	verify-goal PREDS KB
+; returns a nullary relation that is the conjunction of preds against the
+; assumption base kb
+(define verify-goal
+  (lambda (preds kb)
+    (cond
+      [(null? (cdr preds)) (kb (car preds))]
+      [else (all
+              (kb (car preds))
+              (verify-goal (cdr preds) kb))])))
 
 ; A better version of concretize that replaces each variable
 ; with a _unique_! symbol. The unique symbol symbolizes universal
 ; quantification, as usual.
 
-; get the free vars of term, without duplicates
-(define (free-vars term)
-  (let loop ((term term) (fv '()))
-    (cond
-      ((var? term)
-	(if (memv term fv) fv (cons term fv)))
-      ((pair? term)
-	(loop (cdr term) (loop (car term) fv)))
-      (else fv))))
+; get the free vars of term
+(define free-vars
+  (lambda (term)
+    (let loop ([term term] [fv '()])
+      (cond
+        [(var? term) (if (memv term fv) fv (cons term fv))]
+        [(pair? term) (loop (cdr term) (loop (car term) fv))]
+        [else fv]))))
 
-(define (symbol-append . symbs)
-  (string->symbol
-    (apply string-append
-      (map symbol->string symbs))))
+(define symbol-append
+  (lambda symbs
+    (string->symbol
+      (apply string-append
+        (map symbol->string symbs)))))
 
-(define (concretize term)
-  (let* ((fv (free-vars term))
-	 (subst
-	   (map
-	     (lambda (v)
-	       (commitment v
-		 (symbol-append (var-id v) ': (gensym))))
-	     fv)))
-    (subst-in term subst)))
+(define concretize
+  (lambda (term)
+    (let ([fv (free-vars term)])
+      (let ([subst
+              (map
+                (lambda (v)
+                  (commitment v
+                    (symbol-append (var-id v) ': (gensym))))
+                fv)])
+        (subst-in term subst)))))
 
 ; extend the kb with the list of assumptions
-; this is just like 'any' only it's a procedure rather than a syntax.
-;
+; this is just like 'any' only it's a procedure rather than a syntax
 ; Why we need concretize?
 ; Suppose, the list of facts includes
 ;	(fact (x) (foo x)) and (fact (x) (bar x))
@@ -3289,15 +3593,15 @@
 ; We use extend-kb to extend the database with assumptions, which most
 ; often are universally quantified.
 
-(define (extend-kb facts kb)
-  (let ((facts (concretize facts)))
-    (printf "Extending KB with ~s~%" facts)
-    (let loop ((facts facts))
-      (if (null? facts) kb
-	(extend-relation (t)
-	  (fact () (car facts))
-	  (loop (cdr facts)))))))
-
+(define extend-kb
+  (lambda (facts kb)
+    (let ([facts (concretize facts)])
+      (printf "Extending KB with ~s~%" facts)
+      (let loop ([facts facts])
+        (if (null? facts) kb
+            (extend-relation (t)
+              (fact () (car facts))
+              (loop (cdr facts))))))))
 
 ; Here's Athena's induction proof.
 ;
@@ -3310,12 +3614,10 @@
 ; as follows.
 ; ?- goal(leaf(X),C),verify(C,[]).
 ; Here how it looks in our system:
-
 (printf "~%First check the base case ~s~%"
   (query
     (verify-goal (goal '(leaf x))
       (extend-relation (t) (mirror-axiom-eq-1 init-kb) init-kb))))
-
 
 ; that is, we obtain the list of subgoals to verify '(leaf x)
 ; by invoking the function 'goal'.
@@ -3328,6 +3630,7 @@
 ;    (exists (x) `(leaf ,x))
 ; because we want to prove that (goal '(leaf x)) holds for _all_ x
 ; rather than for some particular x.
+
 
 ; The inductive case.
 ; Now, assume the goal holds for t1 and t2 and check if it holds
@@ -3344,7 +3647,7 @@
 
 (printf "~%Another check ~s~%"
   (query
-	;check that (goal t1), (goal t2) => (btree (root t1 t2))
+	;(goal t1), (goal t2) => (btree (root t1 t2))
     (verify-goal '((btree t1) (btree t2)
 		   (btree (root t1 t2)))
       (let ((kb0
@@ -3361,7 +3664,6 @@
 ; now we really need Y because we rely on the clause
 ;	btree(root(T1,T2)) :- btree(T1),btree(T2).
 ; which is recursive.
-
 
 (printf "~%Check the inductive case ~s~%"
   (query
@@ -3383,153 +3685,11 @@
 ; The output above is a non-empty list: meaning that the inductive
 ; phase of the proof checks.
 
-(exit 0)
+;;; For future thoughts.
 
-
-; nrev([],[]).
-; nrev([X|Rest],Ans) :- nrev(Rest,L), append(L,[X],Ans).
-
-; append([],L,L).
-; append([X|L1],L2,[X|L3]) :- append(L1,L2,L3).
-
-
-; data([1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,
-;                            21,22,23,24,25,26,27,28,29,30]).
-
-
-(define nrev
-  (extend-relation (a1 a2)
-    (fact () '() '())
-    (relation _ (x rest ans)
-      (to-show `(,x . ,rest) ans)
-      (exists (ls)
-        (all
-          (nrev rest ls)
-          (concat ls `(,x) ans))))))
-
-(define test-nrev
-  (lambda ()
-    (time
-      (exists (x)
-        (solution (nrev '(1 2 3 4 5 6 7 8 9
-                           10 11 12 13 14 15 16 17 18
-                           19 20 21 22 23 24 25 26 27
-                           28 29 30)
-                    x))))))
-
-(printf "Timing test ~s~n" (test-nrev))
-
-(define get_cpu_time
-  (lambda ()
-    (vector-ref (statistics) 1)))
-
-(define lots
-  (extend-relation ()
-    (relation _ ()
-      (to-show)
-      (exists (count)
-        (all
-          (pred-call newline)
-          (pred-call newline)
-          (eg_count count)
-          (bench count)
-          fail)))
-    (fact ())))
-
-(define test-lots
-  (lambda ()
-    (solve 1000 (lots))))
-
-(define eg_count
-  (extend-relation (a1)
-    (fact () 10)
-    (fact () 20)
-    (fact () 50)
-    (fact () 100)
-    (fact () 200)
-    (fact () 500)
-    (fact () 1000)
-    (fact () 2000)
-    (fact () 5000)
-    (fact () 10000)))
-
-(define bench
-  (relation _ (count)
-    (to-show count)
-    (exists (t0 t1 t2)
-      (all
-        (fun-call get_cpu_time t0)
-        (dodummy count)
-        (fun-call get_cpu_time t1)
-        (dobench count)
-        (fun-call get_cpu_time t2)
-        (report count t0 t1 t2)))))
-
-(define dobench
-  (extend-relation (a1)
-    (relation $ (count)
-      (to-show count)
-      (repeat count)
-      (nrev '(1 2 3 4 5 6 7 8 9
-               10 11 12 13 14 15 16 17 18
-               19 20 21 22 23 24 25 26 27
-               28 29 30)
-        _)
-      fail)
-    (fact () _)))
-
-(define dodummy
-  (extend-relation (a1)
-    (relation $ (count)
-      (to-show count)
-      (repeat count)
-      (dummy _)
-      fail)
-    (fact () _)))
-
-(define dummy
-  (relation $ ()
-    (to-show _)))
-
-(define repeat
-  (extend-relation (a1)
-    (fact (n) n)
-    (relation _ (n)
-      (to-show n)
-      (exists (n1)
-        (all
-          (pred-call > n 1)
-          (fun-call - n1 n 1)
-          (repeat n1))))))
-
-(define report
-  (relation _ (count t0 t1 t2)
-    (to-show count t0 t1 t2)
-    (exists (time1 time2 time lips units)
-      (all
-        (fun-call - time1 t1 t0)
-        (fun-call - time2 t2 t1)
-        (fun-call - time time2 time1)
-        (calculate_lips count time lips units)
-        (pred-call printf "~n~s lips for ~s" lips count)
-        (pred-call printf " Iterations taking ~s  ~s ( ~s )~n " time units time)))))
-
-(define calculate_lips
-  (extend-relation (a1 a2 a3 a4)
-    (relation cut (count time lips)
-      (to-show count time lips 'msecs)
-      (== time 0)
-      cut
-      (== lips 0))
-    (relation _ (count time lips)
-      (to-show count time lips 'msecs)
-      (exists (t1 t2)
-        (all
-          (fun-call * t1 496 count 1000)
-          (fun-call + t2 time 0.0)
-          (fun-call / lips t1 t2))))))
-
-;(test-lots)
-
-#!eof
+(define-syntax fun-call*
+  (syntax-rules ()
+    [(_ f u ...)
+     (lambda (subst) 
+       ((nonvar! (subst-in f subst)) (nonvar! (subst-in u subst)) ...))]))
 
