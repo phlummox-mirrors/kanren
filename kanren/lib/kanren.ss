@@ -2168,14 +2168,31 @@
 
 ;;;; This is Oleg's unifier
 
+; Either t or u may be:
+; _
+; free-var
+; bound-var
+; pair
+; other-value
+; So, we have in general 25 possibilities to consider.
+; actually, a pair or components of a pair can be variable-free
+; or not. In the latter case, we have got to traverse them.
+
 (define unify
   (lambda (t u subst)
     (cond
-      [(eq? t u) subst]
+      [(eq? t u) subst]			; quick tests first
       [(eq? t _) subst]
       [(eq? u _) subst]
-      [(var? t) (if (var? u) (unify-var/var t u subst) (unify-var/value t u subst))]
-      [(var? u) (unify-var/value u t subst)]
+      [(var? t)
+	(let ((ct (assq t subst)))
+	  (if ct (unify-bound/any ct u subst)
+	    (unify-free/any t u subst)))]
+      [(var? u)				; t is not a variable...
+	(let ((cu (assq u subst)))
+	  (if cu
+	    (unify (commitment->term cu) t subst)
+	    (unify-free/value u t subst)))]
       [(and (pair? t) (pair? u))
        (cond
          [(unify (car t) (car u) subst)
@@ -2184,45 +2201,49 @@
          [else #f])]
       [else (and (equal? t u) subst)])))
 
-(define unify-var/var
-  (lambda (t-var u-var s)
+; t-var is a free variable, u can be anything
+(define unify-free/any
+  (lambda (t-var u subst)
     (cond
-;       [(assq t-var s)
-;        => (lambda (ct) ;;; This is bound/var
-;             (let ([t-term (commitment->term ct)])
-;               (unify u-var t-term s)))]
-      
-      [(assq t-var s)
-       => (lambda (ct) ;;; This is bound/var
-            (cond
-              [(assq u-var s)
-               => (lambda (cu)
-                    (let ([u-term (commitment->term cu)]
-                          [t-term (commitment->term ct)])
-                      (unify t-term u-term s)))]
-              [else ((unbound/bound u-var s) ct)]))]
-;     [(assq u-var s) ;;; This is bound/unbound.
-;      => (lambda (cu)
-;           (let ([u-term (commitment->term cu)])
-;             (compose-subst (unit-subst t-var u-term) s)))]
-      [(assq u-var s) => (unbound/bound t-var s)]
-      [else (extend-subst t-var u-var s)])))
+      ((eq? u _) subst)
+      ((var? u)
+	(let ((cu (assq u subst)))
+	  (if cu (unify-free/bound t-var cu subst)
+	    (extend-subst t-var u subst))  ; t-var and u are both free
+	))
+      (else (unify-free/value t-var u subst)))))
 
-; On entrance; t-var is not bound.
+; ct is a commitment to a bound variable, u can be anything
+(define unify-bound/any
+  (lambda (ct u subst)
+    (cond
+      ((eq? u _) subst)
+      ((var? u) 
+	(let ((cu (assq u subst)))
+	  (if cu
+	    ; both t and u are bound...
+	    (unify (commitment->term ct) (commitment->term cu) subst)
+	    ; t is bound, u is free
+	    (unify-free/bound u ct subst))))
+      (else ; unify bound and a value
+	(unify (commitment->term ct) u subst)))))
+
+; On entrance; t-var is not free.
 ; we are trying to unify it with a bound variable (commitment->var cu)
-(define unbound/bound
-  (lambda (t-var s)
-    (lambda (cu)
-      (let loop ([cm cu])
-        (let ([u-term (commitment->term cm)])
-          (cond
-            [(eq? u-term t-var) s]
-            [(var? u-term)
-             (cond
-               [(assq u-term s) => loop]
-               [else (extend-subst t-var u-term s)])] ; u-term is free here
-            [else (extend-subst t-var u-term s)]))))))
-  
+; Chase the binding chain, see below for comments
+; This also works somewhat like union-find...
+(define unify-free/bound
+  (lambda (t-var cu s)
+    (let loop ([cm cu])
+      (let ([u-term (commitment->term cm)])
+	(cond
+	  [(eq? u-term t-var) s]
+	  [(var? u-term)
+	    (cond
+	      [(assq u-term s) => loop]
+	      [else (extend-subst t-var u-term s)])] ; u-term is free here
+	  [else (extend-subst t-var u-term s)])))))
+
 ; ((and (pattern-var? tree2) (assq tree2 env)) => ; tree2 is a bound var
 ;        ; binding a free variable to a bound. Search for a substantial binding
 ;        ; or a loop. If we find a loop tree1->tree2->...->tree1
@@ -2257,12 +2278,10 @@
       [(pair? t) (and (ground? (car t)) (ground? (cdr t)))]
       [else #t])))
 
-(define unify-var/value
+; t-var is a free variable, u-value is not a variable
+(define unify-free/value
   (lambda (t-var u-value subst)
     (cond
-      [(assq t-var subst)
-       => (lambda (ct)
-            (unify (commitment->term ct) u-value subst))]
       [(ground? u-value) (extend-subst t-var u-value subst)]
       [(pair? u-value)
        (let ([car-val (car u-value)]
@@ -2273,7 +2292,7 @@
               [(ground? cdr-val)
                (extend-subst t-var (cons car-val cdr-val) subst)]
               [else (let ([d-var (var 'd*)])
-                      (unify d-var cdr-val
+                      (unify-free/any d-var cdr-val
                         (extend-subst t-var
                           (cons car-val d-var) subst)))])]
            [else
@@ -2281,16 +2300,18 @@
 		   [cdr-val (cdr u-value)])
                (cond
                  [(ground? cdr-val)
-                  (unify a-var car-val
+                  (unify-free/any a-var car-val
                     (extend-subst t-var (cons a-var cdr-val) subst))]
                  [else (let ([d-var (var 'd*)])
                          (cond
-                           [(unify a-var car-val
+                           [(unify-free/any a-var car-val
                               (extend-subst t-var (cons a-var d-var) subst))
                             => (lambda (subst)
+				 ; d-var might become bound! Do full checks!
                                  (unify d-var cdr-val subst))]
                            [else #f]))]))]))]
       [else (extend-subst t-var u-value subst)])))
+
 ;------------------------------------------------------------------------
 (test-check 'test-unify/pairs-oleg1
   (let-lv (x y)
