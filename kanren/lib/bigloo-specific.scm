@@ -44,7 +44,7 @@
       ((eqv? el (car lst)) (loop (cdr lst)))
       (else (cons (car lst) (loop (cdr lst)))))))
 (define pretty-print pp)
-(define (time . args) #f)
+(define (time v) v)
 
 (define (printf . args) (apply print args))
 

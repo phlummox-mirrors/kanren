@@ -2275,16 +2275,16 @@
                      (move m a c b)
                      (project (a b)
                        (begin
-                         (printf "Move a disk from ~s to ~s~n" a b)
+                         (cout "Move a disk from " a " to " b nl)
                          (move m c b a)))))))))])
     (relation (n)
       (to-show n)
       (move n 'left 'middle 'right))))
 
-(begin
-  (printf "~s with 3 disks~n~n" 'test-towers-of-hanoi)
+(cout "test-towers-of-hanoi with 3 disks: "
   (solution () (towers-of-hanoi 3))
-  (void))
+  nl nl
+  )
 
 (define concretize-term
   (lambda (t env)
@@ -2408,7 +2408,7 @@
               `(h ,x1 (f ,y0 ,y0) ,y1)
               `(h (f ,x0 ,x0) ,y1 ,x1)
               empty-subst)))
-        (newline))
+        (newline) #t)
 
       (let-lv (x0 x1 x2 y0 y1 y2)
         (pretty-print
@@ -2417,7 +2417,7 @@
               `(h ,x1 ,x2 (f ,y0 ,y0) (f ,y1 ,y1) ,y2)
               `(h (f ,x0 ,x0) (f ,x1 ,x1) ,y1 ,y2 ,x2)
               empty-subst)))
-        (newline))
+        (newline) #t)
 
       (let-lv (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
         (pretty-print
@@ -2425,8 +2425,8 @@
             (unify
               `(h ,x1 ,x2 ,x3 ,x4 (f ,y0 ,y0) (f ,y1 ,y1) (f ,y2 ,y2) (f ,y3 ,y3) ,y4)
               `(h (f ,x0 ,x0) (f ,x1 ,x1) (f ,x2 ,x2) (f ,x3 ,x3) ,y1 ,y2 ,y3 ,y4 ,x4)
-              empty-subst)))))
-  (list (void) (void) (void)))
+              empty-subst))) #t))
+  (list #t #t #t))
 
 (test-check 'test-fun-resubst
   (concretize
@@ -2562,7 +2562,7 @@
               `(h ,x1 (f ,y0 ,y0) ,y1)
               `(h (f ,x0 ,x0) ,y1 ,x1)
               empty-subst)))
-        (newline))
+        (newline) #t)
 
       (let-lv (x0 x1 x2 y0 y1 y2)
         (pretty-print
@@ -2571,7 +2571,7 @@
               `(h ,x1 ,x2 (f ,y0 ,y0) (f ,y1 ,y1) ,y2)
               `(h (f ,x0 ,x0) (f ,x1 ,x1) ,y1 ,y2 ,x2)
               empty-subst)))
-        (newline))
+        (newline) #t)
 
       (let-lv (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
         (pretty-print
@@ -2579,8 +2579,9 @@
             (unify
               `(h ,x1 ,x2 ,x3 ,x4 (f ,y0 ,y0) (f ,y1 ,y1) (f ,y2 ,y2) (f ,y3 ,y3) ,y4)
               `(h (f ,x0 ,x0) (f ,x1 ,x1) (f ,x2 ,x2) (f ,x3 ,x3) ,y1 ,y2 ,y3 ,y4 ,x4)
-              empty-subst)))))
-  (list (void) (void) (void)))
+              empty-subst)))
+	#t))
+  (list #t #t #t))
 
 ;;; ;-------------------------------------------------------
 ;;; This is the unifier of Oleg Kiselov
@@ -3032,7 +3033,7 @@
 	      (map commitment
 		vars
 		(subst-vars-recursively vars s))))))
-      (newline))
+      (newline) #t)
 
     (let-lv (x0 x1 x2 y0 y1 y2)
       (pretty-print
@@ -3045,7 +3046,7 @@
 	      (map commitment
 		vars
 		(subst-vars-recursively vars s))))))
-      (newline))
+      (newline) #t)
 
     (let-lv (x0 x1 x2 x3 x4 y0 y1 y2 y3 y4)
       (pretty-print
@@ -3059,8 +3060,9 @@
 	    (let ([vars (map commitment->var s)])
 	      (map commitment
 		vars
-		(subst-vars-recursively vars s))))))))
-  (list (void) (void) (void)))
+		(subst-vars-recursively vars s))))))
+      #t))
+  (list #t #t #t))
 
 (test-check 'unification-of-free-vars-1
   (solve 1 (x)

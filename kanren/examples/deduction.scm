@@ -137,7 +137,7 @@
 	  )
       )))))
 
-(printf "~nGenerating inductive hypotheses for prf~n")
+(cout nl "Generating inductive hypotheses for prf" nl)
 (pretty-print (solve 9 (p hs c)
 		((prf ind-kb-gen) `(prf ,p ,hs ,c))))
 
@@ -171,7 +171,7 @@
 	(eigenvar? z)))
     ))
 
-(printf "~nTesting prf~n")
+(cout nl "Testing prf" nl)
 (pretty-print
   (solve 9 (p hs c)
     (if-some
@@ -270,13 +270,11 @@
        (MP (K ,x (-> ,x ,x))
 	 (S ,x (-> ,x ,x) ,x)))))
 
-(printf "~nReflex_0~n")
-
+(cout nl "Reflex_0" nl)
 (pretty-print
   (solve 1 (h c) (full-kb `(prf (K "a" "a") ,h ,c))))
 
-(printf "~nReflex_1~n")
-
+(cout nl "Reflex_1" nl)
 (pretty-print
   (solve 1 (h c) (full-kb `(prf ,(reflex a-wff) ,h ,c))))
 
@@ -286,14 +284,13 @@
 ; constructed automatically by a system such as Jape or Boyer-Moore. Our
 ; system can also do that -- easily!
 
-(printf "~nReflex_2~n")
-
+(cout nl "Reflex_2" nl)
 (pretty-print
   (solve 1 (p) ((justifies? full-kb) 
 		 `(justifies? ,(reflex a-wff) () (-> !a-wff !a-wff)))))
 
 
-(printf "~nDeduction Theorem~n")
+(cout nl "Deduction Theorem" nl)
 
 ; Compare with the function 'ded' on p.5 of the paper
 ; The relation ded H P Q holds
@@ -323,7 +320,7 @@
 	(kb `(prf ,p ,_ ,cp))))))
 
 ; Fig. 2
-(printf "~nIllustrations of the Deduction Theorem~n")
+(cout nl "Illustrations of the Deduction Theorem" nl)
 (define sp '(MP (Hyp "x") (Hyp (-> "x" "y"))))
 
 (define full-kb
@@ -337,17 +334,17 @@
 	(ded kb)
 	(justifies? kb)))))
 
-(printf "~nIllustrations of the Deduction Theorem: Fig 3~n")
+(cout nl "Illustrations of the Deduction Theorem: Fig 3" nl)
 (pretty-print
   (solution (hs c) (full-kb `(prf ,sp ,hs ,c))))
 
-(printf "~nIllustrations of the Deduction Theorem: Fig 4~n")
+(cout nl "Illustrations of the Deduction Theorem: Fig 4" nl)
 (pretty-print
   (solution (q hs c) 
     (if-only (full-kb `(ded (-> "x" "y") ,sp ,q))
       (full-kb `(prf ,q ,hs ,c)))))
 
-(printf "~nIllustrations of the Deduction Theorem: Fig 5~n")
+(cout nl "Illustrations of the Deduction Theorem: Fig 5" nl)
 (pretty-print
   (solution (r q hs c) 
     (all!! 
@@ -356,7 +353,7 @@
       (full-kb `(prf ,r ,hs ,c)))))
 
 
-(printf "~nProving correctness of ded~n")
+(cout nl "Proving correctness of ded" nl)
 
 ; The following expresses the correctness of ded
 (define goal-fwd
@@ -381,7 +378,7 @@
       (fact () `(prf ,q ,hsq (-> ,h ,c))) ; from justify?
       (fact () `(subset ,hsq ,hs1)))))
 
-(printf "~%First check the base case: K, using goal-fwd ~a~n"
+(cout nl "First check the base case: K, using goal-fwd: "
   (solution (foo)
     (let ((kb0
 	    (Y (lambda (kb)
@@ -395,9 +392,9 @@
 		   (ded kb)
 		   (justifies? kb))))))
       (let ((kb1 (goal-fwd kb0)))
-	(kb1 '(goal !h (K !x !y))))))) ; note, !x is an eigenvariable!
-
-(printf "~%First check the base case: S, using goal-fwd ~a~n"
+	(kb1 '(goal !h (K !x !y)))))) ; note, !x is an eigenvariable!
+  nl)
+(cout nl "First check the base case: S, using goal-fwd: "
   (solution (foo)
     (let ([kb0
 	    (Y (lambda (kb)
@@ -412,9 +409,10 @@
 		   (ded kb)
 		   (justifies? kb))))])
       (let ([kb1 (goal-fwd kb0)])
-	(kb1 '(goal !h (S !x !y !z))))))) ; note, !x is an eigenvariable!
+	(kb1 '(goal !h (S !x !y !z)))))) ; note, !x is an eigenvariable!
+  nl)
 
-(printf "~%First check the base case: Cp, using goal-fwd ~a~n"
+(cout nl "First check the base case: Cp, using goal-fwd: "
   (solution (foo)
     (let ([kb0
 	    (Y (lambda (kb)
@@ -428,9 +426,10 @@
 		   (ded kb)
 		   (justifies? kb))))])
       (let ([kb1 (goal-fwd kb0)])
-	(kb1 '(goal !h (Cp !x !y)))))))
+	(kb1 '(goal !h (Cp !x !y))))))
+  nl)
 
-(printf "~%First check the base case: Hyp, using goal-fwd ~a~n"
+(cout "First check the base case: Hyp, using goal-fwd: "
   (solution (foo)
     (let ([kb0
 	    (Y (lambda (kb)
@@ -443,9 +442,11 @@
 		   (ded kb)
 		   (justifies? kb))))])
       (let ([kb1 (goal-fwd kb0)])
-	(kb1 '(goal !h (Hyp !x)))))))
+	(kb1 '(goal !h (Hyp !x))))))
+  nl)
 
-(printf "~%Some preliminary checks, using goal-rev ~s~%"
+
+(cout nl "Some preliminary checks, using goal-rev: "
 ; (goal h p) => (MP p q) is a proof
   (solution (hs c)
     (let ([kb
@@ -461,9 +462,10 @@
 		   (prf kb)
 		   (ded kb)
 		   (justifies? kb))))])
-      (kb `(prf (MP !p !q) ,hs ,c)))))
+      (kb `(prf (MP !p !q) ,hs ,c))))
+  nl)
 
-(printf "~%Some preliminary checks, using goal-rev ~s~%"
+(cout nl "Some preliminary checks, using goal-rev: "
 ; (goal h p) => (ded h p _c)
   (solution (hs c)
     (let ([kb
@@ -479,7 +481,8 @@
 		   (prf kb)
 		   (ded kb)
 		   (justifies? kb))))])
-      (kb `(ded !h !p ,c)))))
+      (kb `(ded !h !p ,c))))
+  nl)
 
 (deduction-trace
   (begin
@@ -537,7 +540,7 @@
 	      [else (fk)]))]))
     ))
 
- (printf "~%Check the inductive  case: MP, using goal-fwd ~a~n"
+ (cout nl "Check the inductive  case: MP, using goal-fwd: "
   (solution (foo)
     (let ([kb0
 	    (Y (lambda (kb)
@@ -577,7 +580,8 @@
 		   (ded kb)
 		   (justifies? kb))))])
       (let ([kb1 (goal-fwd kb0)])
-	(kb1 '(goal !h (MP !p !q)))))))
+	(kb1 '(goal !h (MP !p !q))))))
+   nl)
 
 ; Restore the changed ==
 (deduction-trace
