@@ -158,7 +158,21 @@
 (define-syntax once
   (syntax-rules ()
     ((_ a) (lambda@ (s k f) (@ a s (lambda@ (s^ f^) (@ k s^ f)) f)))))
-       
+
+; Equivalent of Kanren's if-only
+;   (if-only COND THEN ELSE) ==> (any (all (all! COND) THEN)
+;                                     (all (fails COND) ELSE))
+
+(define-syntax cond1
+  (syntax-rules (else)
+    ((_ (else a* ...)) (all a* ...))
+    ((_ (test a* ...) c c*  ...)
+     (lambda@ (s k f)
+       (@ test s
+         (lambda@ (s _f) (@ (all a* ...) s k f))
+         (lambda () (@ (cond1 c c* ...) s k f)))))))
+
+
 ;;; This does not change
 
 
@@ -176,9 +190,9 @@
 (define-syntax fresh   ;;; okay
   (syntax-rules ()
     [(_ (x* ...) a* ...)
-     (lambda@ (k)
+     (lambda@ (s)
        (let ((x* (var 'x*)) ...)
-         (@ (all a* ...) k)))]))
+         (@ (all a* ...) s)))]))
 
 ;;; run
 
@@ -1021,4 +1035,48 @@
                          (@ k s f)))))))))))
 
 
+
+(test-check 'cond1-1
+  (prefix 10
+    (run (q)
+      (fresh (x y)
+	(cond1
+	  ((any (== x 1) (== x 2)) (any (== y 1) (== y 2)))
+	  (else (any (== y 3) (== y 4))))
+	(== q (cons x y)))))
+  '((1 . 1) (1 . 2)))
+
+(test-check 'cond1-2
+  (prefix 10
+    (run (q)
+      (fresh (x y)
+	(== x 3)
+	(cond1
+	  ((any (== x 1) (== x 2)) (any (== y 1) (== y 2)))
+	  (else (any (== y 3) (== y 4))))
+	(== q (cons x y)))))
+  '((3 . 3) (3 . 4)))
+
+
+(test-check 'cond1-3
+  (prefix 10
+    (run (q)
+      (fresh (x y)
+	(== y 3)
+	(cond1
+	  ((any (== x 1) (== x 2)) (any (== y 1) (== y 2)))
+	  (else (any (== y 3) (== y 4))))
+	(== q (cons x y)))))
+  '())
+
+(test-check 'cond1-3
+  (prefix 10
+    (run (q)
+      (fresh (x y)
+	(== x 5) (== y 3)
+	(cond1
+	  ((any (== x 1) (== x 2)) (any (== y 1) (== y 2)))
+	  (else (any (== y 3) (== y 4))))
+	(== q (cons x y)))))
+  '((5 . 3)))
 
