@@ -18,14 +18,20 @@
 ;  14. The Japanese smokes Parliaments.
 ;  15. The Norwegian lives next to the blue house.
 
+; (define member 
+;   (extend-relation (a1 a2)
+;     (fact (item) item `(,item . ,_))
+;     (relation (item rest) (to-show item `(,_ . ,rest)) (member item rest))))
+
 (define member 
-  (extend-relation (a1 a2)
-    (fact (item) item `(,item . ,_))
-    (relation (item rest) (to-show item `(,_ . ,rest)) (member item rest))))
+  (relation (head-let item lst) 
+    (any (== lst `(,item . ,_))
+      (exists (rest)
+	(if-only (== lst `(,_ . ,rest)) (member item rest))))))
+
 
 (define next-to
-  (relation (item1 item2 rest)
-    (to-show item1 item2 rest)
+  (relation (head-let item1 item2 rest)
     (any (on-right item1 item2 rest) (on-right item2 item1 rest))))
 
 (define on-right
@@ -36,8 +42,7 @@
       (on-right item1 item2 rest))))
         
 (define zebra
-  (relation (h)
-    (to-show h)
+  (relation (head-let h)
     (if-all!
       ((== h `((norwegian ,_ ,_ ,_ ,_) ,_ (,_ ,_ milk ,_ ,_) ,_ ,_))
        (member `(englishman ,_ ,_ ,_ red) h)
@@ -72,7 +77,9 @@
 ;     27 ms elapsed real time, including 0 ms collecting
 ;     981560 bytes allocated, including 1066208 bytes reclaimed
 
-; For version 3.16 of kanren.ss
-;    1 collection
-;    25 ms elapsed cpu time, including 1 ms collecting
-;    1082952 bytes allocated, including 1041640 bytes reclaimed
+; For version 3.17 of kanren (with head-let ...)
+; (time (solution (h) ...))
+;     1 collection
+;     19 ms elapsed cpu time, including 0 ms collecting
+;     19 ms elapsed real time, including 0 ms collecting
+;     788928 bytes allocated, including 1052312 bytes reclaimed

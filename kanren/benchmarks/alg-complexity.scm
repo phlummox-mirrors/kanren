@@ -48,12 +48,10 @@
       (t (make-t m))
       (p
 	(extend-relation (x z)
-	  (relation (x z)
-	    (to-show x z)
+	  (relation (head-let x z)
 	    (exists (y)
 	      (all (e x y) (p y z))))
-	  (relation (x)
-	    (to-show n x)
+	  (relation (head-let `,n x)
 	    (t x)))))
     (solve (+ m  1) (x) (p 1 x))))
 
@@ -66,20 +64,20 @@
 ; Result:
 ; (((x.0 1)) ((x.0 2)) ((x.0 3)) ((x.0 4)))
 ; (time (p-test 32 ...))
-;     3 collections
-;     44 ms elapsed cpu time, including 2 ms collecting
-;     49 ms elapsed real time, including 2 ms collecting
-;     3241944 bytes allocated, including 3327864 bytes reclaimed
+;     2 collections
+;     35 ms elapsed cpu time, including 1 ms collecting
+;     53 ms elapsed real time, including 0 ms collecting
+;     2452936 bytes allocated, including 2135552 bytes reclaimed
 ; (time (p-test 64 ...))
-;     12 collections
-;     170 ms elapsed cpu time, including 2 ms collecting
-;     179 ms elapsed real time, including 0 ms collecting
-;     12861048 bytes allocated, including 12934472 bytes reclaimed
+;     9 collections
+;     142 ms elapsed cpu time, including 3 ms collecting
+;     146 ms elapsed real time, including 0 ms collecting
+;     9789840 bytes allocated, including 9770704 bytes reclaimed
 ; (time (p-test 96 ...))
-;     26 collections
-;     402 ms elapsed cpu time, including 8 ms collecting
-;     407 ms elapsed real time, including 7 ms collecting
-;     28805320 bytes allocated, including 28338544 bytes reclaimed
+;     21 collections
+;     338 ms elapsed cpu time, including 6 ms collecting
+;     385 ms elapsed real time, including 7 ms collecting
+;     22011136 bytes allocated, including 22851184 bytes reclaimed
 
 ; Obviously, the performance is O(m*n) rather than linear as hoped.
 
@@ -139,12 +137,10 @@
       (t (make-t m))
       (p
 	(extend-relation (x z)
-	  (relation (x z)
-	    (to-show x z)
+	  (relation (head-let x z)
 	    (exists (y)
 	      (all (e x y) (p y z))))
-	  (relation (x)
-	    (to-show n x)
+	  (relation (head-let `,n x)
 	    (t x)))))
     (solve (+ m  1) (x) (p 1 x))))
 
@@ -182,12 +178,10 @@
       (t (make-t m))
       (p
 	(extend-relation (x z)
-	  (relation (x z)
-	    (to-show x z)
+	  (relation (head-let x z)
 	    (exists (y)
 	      (if-only (e x y) (p y z))))
-	  (relation (x)
-	    (to-show n x)
+	  (relation (head-let `,n x)
 	    (t x)))))
     (solve (+ m  1) (x) (p 1 x))))
 
@@ -221,24 +215,25 @@
 
 ; (((x.0 1)) ((x.0 2)) ((x.0 3)) ((x.0 4)))
 ; (time (p-test 32 ...))
-;     1 collection
-;     19 ms elapsed cpu time, including 0 ms collecting
-;     18 ms elapsed real time, including 0 ms collecting
-;     1504968 bytes allocated, including 1063024 bytes reclaimed
+;     2 collections
+;     27 ms elapsed cpu time, including 0 ms collecting
+;     28 ms elapsed real time, including 0 ms collecting
+;     1682288 bytes allocated, including 2144696 bytes reclaimed
 ; (time (p-test 64 ...))
 ;     6 collections
-;     72 ms elapsed cpu time, including 0 ms collecting
-;     72 ms elapsed real time, including 1 ms collecting
-;     5895648 bytes allocated, including 6483120 bytes reclaimed
+;     104 ms elapsed cpu time, including 0 ms collecting
+;     107 ms elapsed real time, including 0 ms collecting
+;     6609536 bytes allocated, including 6484888 bytes reclaimed
 ; (time (p-test 96 ...))
-;     12 collections
-;     165 ms elapsed cpu time, including 3 ms collecting
-;     166 ms elapsed real time, including 5 ms collecting
-;     13170480 bytes allocated, including 13255968 bytes reclaimed
+;     14 collections
+;     240 ms elapsed cpu time, including 2 ms collecting
+;     269 ms elapsed real time, including 2 ms collecting
+;     14800240 bytes allocated, including 15122192 bytes reclaimed
 
-; Things improve, but the complexity is still O(n*m). We really need to
-; do something about the e-relation. We need to make the cost of
-; answering e-goals constant.
+; Previously, there was an improvement. Not any more. head-let was
+; actually quite efficient. The complexity is still O(n*m). We really
+; need to do something about the e-relation. We need to make the cost
+; of answering e-goals constant.
 
 (define (make-e n)
   (lambda (x y)
