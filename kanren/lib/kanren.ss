@@ -2901,6 +2901,53 @@
 			(typeclass-counter-example-query a b c1 c2))))
 
 
+(printf "~%Test: checking dependency satisfaction: Another example.~%")
+; Suppose we have the following Haskell class and instance declarations
+;	class F a b | a->b
+;	instance F a b => F [a] [b]
+;	instance F [a] a
+;
+
+(define typeclass-F
+  (lambda (a b)
+    (with-depth 10
+      (any
+	((relation _ (a b)
+	   (to-show `(list ,a) `(list ,b))
+	   (typeclass-F a b)) a b)
+	((relation _ (a)
+	   (to-show `(list ,a) a)) a b)))))
+
+
+; Run the checker for the dependency a -> b
+; Try to find the counter-example, that is, two members of (F a b)
+; such that as is the same but bs are different.
+(define typeclass-F-counter-example-query
+  (lambda (a b1 b2)
+    (all 
+      (typeclass-F a b1)
+      (typeclass-F a b2)
+      (fails
+	; equality predicate: X == Y in Prolog
+	; if X is a var, then X == Y holds only if Y
+	; is the same var
+	(pred-call/no-check 
+	  (lambda (x y)
+	    (cond
+	      ((and (var? x) (var? y)) (eq? x y))
+	      ((var? x) #f)  ; y is not a var
+	      ((var? y) #f)  ; x is not a var
+	      (else (equal? x y))))
+	  b1 b2))
+)))
+
+(printf "~%Counter-example: ~s~%" 
+  (exists (a b1 b2) (solve 4
+			(typeclass-F-counter-example-query a b1 b2))))
+
+
+
+
 (printf "~%Append with limited depth%")
 
 ; In Prolog, we normally write:
