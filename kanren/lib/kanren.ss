@@ -377,15 +377,12 @@
 ; Making logical variables "scoped" and garbage-collected
 
 ; A framework to remove introduced variables when they leave their scope.
-; To make removing variables easier, we consider the list
-; of subst as a "stack". Before we add a new variable, we put a mark
-; on the stack. Mark is a special variable binding, whose term is 
-; the current subst. When we are about to remove added variables after
-; their scope is ended, we locate the mark (using eq?) and check that
-; the term bound to the mark is indeed the subst after the mark.
-; If it so, then the subst list wasn't perturbed, and we know that
-; anything below the mark can't possibly contain the reference to the
-; variable we're about to remove.
+; To make removing variables easier, we consider the list of subst as a
+; "stack". Before we add a new variable, we retain a pointer to the
+; stack. Then, when we are about to remove the added variables after their
+; scope is ended, we stop at the shared retained substitution.  and we know
+; that anything below the retained substitution can't possibly contain the
+; reference to the variables we're about to remove.
 
 (define-syntax exists
   (syntax-rules ()
