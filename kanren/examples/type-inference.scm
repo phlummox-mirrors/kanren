@@ -39,16 +39,14 @@
           ,(unparse (caddr e)))]
       [(app) `(,(unparse (cadr e)) ,(unparse (caddr e)))])))
 
-(define-syntax infer-type
-  (syntax-rules ()
-    [(_ g term type)
-     (cond
-       [(solution (g type) (!- g (parse term) type))
-        => (lambda (result)
-             `(!- ,(cadr (car result)) ,term ,(cadr (cadr result))))]
-       [else #f])]))
-
 ;;; This is environments.
+
+; An environment, gamma, is a list of type assignments to variables,
+; with a side condition that each variable may occur in the list
+; exactly once.
+; Hmm, to model lexical scope better, we may relax that condition.
+; So, the type environment is truly a list, of pairs
+;  (var-name (non-generic 
 
 (define non-generic-match-env
   (fact (g v t) `(non-generic ,v ,t ,g) v t))
@@ -66,80 +64,15 @@
     (e (lambda (z) ((fix e) z)))))
 
 (define generic-base-env
-  (relation (g v targ tresult t)
-    (to-show `(generic ,v (--> ,targ ,tresult) ,g) v t)
-    (project/no-check (targ tresult)
-      (== t (copy-term `(--> ,targ ,tresult))))))
+  (relation (g v delayed-type-inf t)
+    (to-show `(generic ,v ,delayed-type-inf ,g) v t)
+    (project (delayed-type-inf)
+      (delayed-type-inf t))))
 
 (define generic-recursive-env
   (relation (g v t)
     (to-show `(generic ,_ ,_ ,g) v t)
     (all! (env g v t))))
-
-
-; copy-term TERM -> TERM
-; return a TERM that is identical to the input term modulo the replacement
-; of variables in TERM with fresh logical variables. 
-; If a logical variable occurs several times in TERM, the result
-; will have the same number of occurrences of the replacement fresh
-; variable.
-(define copy-term
-  (lambda (t)
-    (let* ((fv (vars-of t))
-	   (subst
-	     (map (lambda (old-var)
-		    (commitment old-var
-		      (logical-variable (logical-variable-id old-var))))
-	       fv)))
-      (subst-in t subst))))
-
-; Now, we do the same but entirely within KANREN
-(define generic-base-env
-  (relation (g v targ tresult t)
-    (to-show `(generic ,v (--> ,targ ,tresult) ,g) v t)
-    (copy-term-logical `(--> ,targ ,tresult) t)))
-
-; logical-assq VAR LST BINDING NEW-LST
-; if VAR is found in LST, return its binding. NEW-LST would be the same
-; as LST
-; If var is not found, add a binding to a fresh variable and
-; append to NEW-LST
-; The code below uses the low-level function var? Every use of var?
-; entails a proof obligation that such use is safe. In our case here,
-; the end-user-visible relation is copy-term-logical, 
-; which is logically sound.
-(define logical-assq
-  (extend-relation (a b c d)
-    (relation (var lst)			; non var map to themselves
-      (to-show var lst var lst)		; This is just an optimization and
-      (project/no-check (var) (predicate (not (var? var))))) ; is sound
-    (relation (var lst var1 binding)
-      (to-show var lst binding lst)
-      (all!!
-	(== lst `((,var1 . ,binding) . ,_))
-	(predicate (*equal? var var1))))
-    (relation (var h lst binding1 lst1)
-      (to-show var `(,h . ,lst) binding1 `(,h . ,lst1))
-      (logical-assq var lst binding1 lst1))
-    (fact (var new-var) var '() new-var `((,var . ,new-var)))
-    ))
-
-(define copy-term-logical
-  (relation (head-let input-term output-term)
-    (exists (varmap)
-      (copy-term-logical-raw input-term output-term '() varmap))))
-
-(define copy-term-logical-raw
-  (relation (head-let t tnew lst new-lst)
-    (project/no-check (t)
-      (exists (th tt)
-	(if-only (all!! (predicate (not (var? t))) (== t `(,th . ,tt)))
-	  (exists (th-new tt-new new-lst1)
-	    (all!!
-	      (copy-term-logical-raw th th-new lst new-lst1)
-	      (copy-term-logical-raw tt tt-new new-lst1 new-lst)
-	      (== tnew `(,th-new . ,tt-new))))
-	(logical-assq t lst tnew new-lst))))))
 
 (define generic-env
   (extend-relation (a1 a2 a3) generic-base-env generic-recursive-env))
@@ -198,13 +131,25 @@
     (to-show g `(fix ,rand) t)
     (all! (!- g rand `(--> ,t ,t)))))
 
+; (define polylet-rel
+;   (relation (g v rand body t)
+;     (to-show g `(let ([,v ,rand]) ,body) t)
+;     (exists (t-rand)
+;       (all!!
+;         (!- g rand t-rand)
+;         (!- `(generic ,v ,t-rand ,g) body t)))))
+
 (define polylet-rel
   (relation (g v rand body t)
     (to-show g `(let ([,v ,rand]) ,body) t)
-    (exists (t-rand)
-      (all!!
-        (!- g rand t-rand)
-        (!- `(generic ,v ,t-rand ,g) body t)))))
+      (!- `(generic ,v ,(lambda (t)
+			  (exists (t-rand)
+			    (all!!
+			      (== t t-rand) ;takes care if t is _
+			      (!- g rand t-rand)
+			      (trace-vars 'poly-let (t-rand rand)))))
+	     ,g)
+	body t)))
 
 (define !-
   (extend-relation (a1 a2 a3)
@@ -573,10 +518,13 @@
     ((rand) ((== exp `(fix ,rand)))
       (!- g rand `(--> ,t ,t)))
     ((v rand body) ((== exp `(let ([,v ,rand]) ,body)))
-      (exists (t-rand)
-	(all!!
-	  (!- g rand t-rand)
-	  (!- `(generic ,v ,t-rand ,g) body t))))))
+      (!- `(generic ,v ,(lambda (t)
+			  (exists (t-rand)
+			    (all!!
+			      (== t t-rand) ;takes care if t is _
+			      (!- g rand t-rand))))
+	     ,g)
+	body t))))
 
 '(define !-
   (relation-cond (g exp t)
