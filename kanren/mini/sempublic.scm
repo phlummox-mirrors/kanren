@@ -1,3 +1,5 @@
+;;; Even prettier code for alli
+
 ;;; all_2 succeed
 (load "minikanrensupport.scm")
 
@@ -30,7 +32,7 @@
          [(unify t u s) => (@ sk fk)]
          [else (fk)]))]))
 
-(define-syntax all
+'(define-syntax all
   (syntax-rules ()
     ((_) (lambda@ (sk) sk))
     ((_ a) a)
@@ -44,14 +46,25 @@
 
 ;;; all, any
 
-(define-syntax cond@  ;;; okay
+'(define-syntax cond@  ;;; okay
   (syntax-rules (else)
     ((_ (else a* ...)) (all a* ...))
     ((_ (a* ...) c* ...) (any (all a* ...) (cond@ c* ...)))))
 
+(define-syntax cond@
+  (syntax-rules (else)
+    ((_ (else a* ...)) (all a* ...))
+    ((_ (a* ...) c* ...) (if@ (all a* ...) succeed (cond@ c* ...)))))
+
 ;;; any_2, fail
 
 (define-syntax any ;;; okay
+  (syntax-rules ()
+    ((_) fail)
+    ((_ a) a)
+    ((_ a a* ...) (if@ a succeed (any a* ...)))))
+
+'(define-syntax any ;;; okay
   (syntax-rules ()
     ((_) fail)
     ((_ a) a)
@@ -90,7 +103,7 @@
 (define ef-like-fk
   (lambda@ ()
     (lambda@ (w)
-      (printf "called from ef-like-fk\n")
+      ;(printf "called from ef-like-fk\n")
       (w))))
 
 (define ef-like-sk-maker
@@ -110,6 +123,27 @@
                  [a-res (@ b sk (lambda () (loop ((cdr a-res)))) (car a-res))]
                  [else (fk)]))
              (@ c sk fk s))))]))
+
+(define-syntax if@
+  (syntax-rules ()
+    [(_ t c a)
+     (lambda (sk)
+       (lambda (fk)
+         (lambda (s)
+           (((t (c sk)) (lambda () (((a sk) fk) s)))
+       s))))]))
+
+(define-syntax all
+  (syntax-rules ()
+    ((_) (lambda@ (sk) sk))
+    ((_ a) a)
+    ((_ a a* ...) (if@ a (all a* ...) fail))))
+
+'(define-syntax all
+  (syntax-rules ()
+    ((_) (lambda@ (sk) sk))
+    ((_ a) a)
+    ((_ a a* ...) (ef a (all a* ...) fail))))
 
 ;;; all, anyi
 
@@ -293,6 +327,7 @@
   (lambda (x y q)
     (project (x y) (== (+ x y) q))))
 
+;;; 
 (define test-0 ;;; tests with-sk
   (prefix 2
     (run-stream (q)
@@ -621,8 +656,8 @@
        (cons
          (lambda@ (s resid)
 	   (@ interleave sk fk
-              (lambda@ (sk fk) (@ a2 sk fk s))
-              (lambda@ (sk fk) (bi-alli sk fk resid a2))))
+           (lambda@ (sk fk) (@ a2 sk fk s))
+           (lambda@ (sk fk) (bi-alli sk fk resid a2))))
            fk))))
 
 (define-syntax condi$ 
@@ -1039,4 +1074,3 @@
     ((s (s (s z))) (s (s (s z))) z z)
     (z z (s (s (s (s z)))) (s (s (s (s z)))))
     ((s z) (s z) (s (s z)) (s (s z)))))
-
