@@ -59,10 +59,10 @@
 ; expected of addition and multiplication.
 ;
 ; The second version of `++o' and `**o' completely fixes the
-; problem. The second version for `++o' is slower; the second version
-; for `**o' has roughly the same speed.  The addition and
+; problem without losing any performance.  The addition and
 ; multiplication relations completely enumerate their domain, even if
-; it is infinite. See the tests below for details.  We achieve the
+; it is infinite. Furthermore, ++o and **o now generate the numbers
+; _in sequence_, which is quite pleasing. We achieve the
 ; property of recursive enumerability without giving up neither
 ; completeness nor refutational completeness. As before, if 'z' is
 ; instantiated but 'x' and 'y' are not, (++o x y z) delivers *all*
@@ -371,6 +371,76 @@
 	  (full-adder* carry-in a b r))
 	))))
 
+; There is the third way of doing the addition, using
+; all-interleave and any-interleave.
+; Note that the code below is almost identical to the very first,
+; non-recursively enumerating full-adder, only
+; extend-relation is replaced with extend-relation-interleave
+; and all is replaced with all-interleave in two places.
+; The results are amazing, as the tests below show.
+; For example, the test "print a few numbers that are greater than 4"
+; shows that the numbers are generated _in sequence_, despite
+; our addition being binary (and so one would expect the numbers
+; being generated in Gray code or so).
+; Also, tests multiplication-all-3 and multiplication-all-4
+; show that (**o (build 3) y z) and (**o y (build 3) z)
+; generates the _same_ answerlist, and in that answerlist, 'y' appears
+; in sequence: 0,1,2....
+
+
+(define-rel-lifted-comb extend-relation-interleave any-interleave)
+
+(define full-adder
+  (extend-relation-interleave (carry-in a b r)
+    (fact (a) 0 a '() a) 		; 0 + a + 0 = a
+    (relation (b)			; 0 + 0 + b = b
+      (to-show 0 '() b b)
+      (pos b))
+    (relation (head-let '1 a '() r)	; 1 + a + 0 = 0 + a + 1
+      (full-adder 0 a '(1) r))
+    (relation (head-let '1 '() b r)	; 1 + 0 + b = 0 + 1 + b
+      (all (pos b)
+	(full-adder 0 '(1) b r)))
+
+    ; The following three relations are needed
+    ; to make all numbers well-formed by construction,
+    ; that is, to make sure the higher-order bit is one.
+    (relation (head-let carry-in '(1) '(1) r)	; c + 1 + 1 >= 2
+      (exists (r1 r2)
+	(all (== r `(,r1 ,r2))
+	     (half-adder carry-in 1 1 r1 r2))))
+
+    ; cin + 1 + (2*br + bb) = (2*rr + rb) where br > 0 and so is rr > 0
+    (relation (carry-in bb br rb rr)
+      (to-show carry-in '(1) `(,bb . ,br) `(,rb . ,rr))
+      (all
+	(pos br) (pos rr)
+	(exists (carry-out)
+	  (all-interleave
+	    (half-adder carry-in 1 bb rb carry-out)
+	    (full-adder carry-out '() br rr)))))
+
+    ; symmetric case for the above
+    (relation (head-let carry-in a '(1) r)
+      (all
+	(gt1 a) (gt1 r)
+	(full-adder carry-in '(1) a r)))
+
+    ; carry-in + (2*ar + ab) + (2*br + bb) 
+    ; = (carry-in + ab + bb) (mod 2)
+    ; + 2*(ar + br + (carry-in + ab + bb)/2)
+    ; The cases of ar= 0 or br = 0 have already been handled.
+    ; So, now we require ar >0 and br>0. That implies that rr>0.
+    (relation (carry-in ab ar bb br rb rr)
+      (to-show carry-in `(,ab . ,ar) `(,bb . ,br) `(,rb . ,rr))
+      (all
+	(pos ar) (pos br) (pos rr)
+	(exists (carry-out)
+	  (all-interleave
+	    (half-adder carry-in ab bb rb carry-out)
+	    (full-adder carry-out ar br rr))))
+    )))
+
 ; a + b = c
 (define ++o
   (relation (head-let a b c)
@@ -486,8 +556,8 @@
 	(project (y z) (== `(,(trans y) ,(trans z)) w)))))
    '(((w.0 (4 0)))
      ((w.0 (0 4)))
-     ((w.0 (3 1)))
      ((w.0 (1 3)))
+     ((w.0 (3 1)))
      ((w.0 (2 2)))
      )
   )
@@ -495,14 +565,11 @@
   (solve 5 (x y) (++o x (build 1) y))
    '(((x.0 ()) (y.0 (1))) ; 0 + 1 = 1
      ((x.0 (1)) (y.0 (0 1))) ; 1 + 1 = 2
-      ((x.0 (0 *anon.0)) (y.0 (1 *anon.0)))
+       ; 2*x and 2*x+1 are successors, for all x>0!
+      ((x.0 (0 *anon.0 . *anon.1)) (y.0 (1 *anon.0 . *anon.1)))
       ((x.0 (1 1)) (y.0 (0 0 1)))
-      ((x.0 (0 *anon.0 *anon.1)) (y.0 (1 *anon.0 *anon.1))))
+      ((x.0 (1 0 *anon.0 . *anon.1)) (y.0 (0 1 *anon.0 . *anon.1))))
 )
-;       ; 2*x and 2*x+1 are successors, for all x>0!
-;      ((x.0 (0 *anon.0 . *anon.1)) (y.0 (1 *anon.0 . *anon.1)))
-;      ((x.0 (1 1)) (y.0 (0 0 1)))
-;      ((x.0 (1 0 *anon.0 . *anon.1)) (y.0 (0 1 *anon.0 . *anon.1))))
 
 ; check that add(X,Y,Z) recursively enumerates all
 ; numbers such as X+Y=Z
@@ -534,9 +601,9 @@
   '(((a.0 ()) (b.0 ()) (c.0 ()))
     ((a.0 ()) (b.0 (*anon.0 . *anon.1)) (c.0 (*anon.0 . *anon.1)))
     ((a.0 (1)) (b.0 (1)) (c.0 (0 1)))
-    ((a.0 (1)) (b.0 (0 *anon.0)) (c.0 (1 *anon.0)))
-    ((a.0 (0 *anon.0)) (b.0 (1)) (c.0 (1 *anon.0))))
-  )
+    ((a.0 (1)) (b.0 (0 *anon.0 . *anon.1)) (c.0 (1 *anon.0 . *anon.1)))
+    ((a.0 (0 *anon.0 . *anon.1)) (b.0 (1)) (c.0 (1 *anon.0 . *anon.1))))
+)
 
 
 (cout nl "subtraction" nl)
@@ -546,35 +613,29 @@
 (test (x) (--o (build 29) (build 29) x))
 (test (x) (--o (build 29) (build 30) x))
 (test-check "print a few numbers such as Y - Z = 4"
-  (solve 5 (y z) (--o y z (build 4)))
-  '(((y.0 (0 0 1)) (z.0 ()))        ; 4 - 0 = 4
+  (solve 11 (y z) (--o y z (build 4)))
+  '(((y.0 (0 0 1)) (z.0 ()))    ; 4 - 0 = 4
+    ((y.0 (1 0 1)) (z.0 (1)))   ; 5 - 1 = 4
+    ((y.0 (0 1 1)) (z.0 (0 1))) ; 6 - 2 = 4
+    ((y.0 (1 1 1)) (z.0 (1 1))) ; 7 - 3 = 4
     ((y.0 (0 0 0 1)) (z.0 (0 0 1))) ; 8 - 4 = 4
-    ((y.0 (1 0 1)) (z.0 (1)))       ; 5 - 1 = 4
-    ((y.0 (0 1 0 1)) (z.0 (0 1 1))) ; 10 - 6 = 4
-    ((y.0 (0 1 1)) (z.0 (0 1))))    ; 6  - 2 = 4
+    ((y.0 (1 0 0 1)) (z.0 (1 0 1)))  ; 9 - 5 = 4
+    ((y.0 (0 1 0 1)) (z.0 (0 1 1)))  ; 10 - 6 = 4
+    ((y.0 (1 1 0 1)) (z.0 (1 1 1)))  ; 11 - 7 = 4
+     ; 8*k + 4 - 8*k = 4 forall k> 0!!
+    ((y.0 (0 0 1 *anon.0 . *anon.1)) (z.0 (0 0 0 *anon.0 . *anon.1)))
+    ((y.0 (1 0 1 *anon.0 . *anon.1)) (z.0 (1 0 0 *anon.0 . *anon.1)))
+    ((y.0 (0 1 1 *anon.0 . *anon.1)) (z.0 (0 1 0 *anon.0 . *anon.1))))
 )
-; '(((y.0 (0 0 1)) (z.0 ()))  ; 4 - 0 = 4
-;  ((y.0 (1 0 1)) (z.0 (1)))  ; 5 - 1 = 4
-;  ((y.0 (0 1 1)) (z.0 (0 1))) ; 6 -2 = 4
-;  ((y.0 (0 0 0 1)) (z.0 (0 0 1))) ; 8 -4 = 4
-;  ((y.0 (0 0 1 *anon.0 . *anon.1)) ; 16*a + 8*b +4 - (16*a +8*b) = 4
-;   (z.0 (0 0 0 *anon.0 . *anon.1)))) ;forall a and b!!!
-; )
 
 (test-check "print a few numbers such as X - Y = Z"
   (solve 5 (x y z) (--o x y z))
-  '(((x.0 y.0) (y.0 y.0) (z.0 ())) ; y - y = 0
-    ((x.0 (*anon.0 . *anon.1)) (y.0 ()) (z.0 (*anon.0 . *anon.1)))
+  '(((x.0 y.0) (y.0 y.0) (z.0 ())) ; 0 - 0 = 0
+    ((x.0 (*anon.0 . *anon.1)) (y.0 ()) (z.0 (*anon.0 . *anon.1))) ; a - 0 = a
     ((x.0 (0 1)) (y.0 (1)) (z.0 (1)))
-    ((x.0 (1 *anon.0)) (y.0 (1)) (z.0 (0 *anon.0)))
-    ((x.0 (1 *anon.0)) (y.0 (0 *anon.0)) (z.0 (1))))
+    ((x.0 (1 *anon.0 . *anon.1)) (y.0 (1)) (z.0 (0 *anon.0 . *anon.1)))
+    ((x.0 (1 *anon.0 . *anon.1)) (y.0 (0 *anon.0 . *anon.1)) (z.0 (1))))
 )
-; '(((x.0 y.0) (y.0 y.0) (z.0 ())) ; y - y = 0
-;   ((x.0 (*anon.0 . *anon.1)) (y.0 ()) (z.0 (*anon.0 . *anon.1)))
-;   ((x.0 (0 1)) (y.0 (1)) (z.0 (1)))
-;   ((x.0 (1 *anon.0 . *anon.1)) (y.0 (1)) (z.0 (0 *anon.0 . *anon.1)))
-;   ((x.0 (0 0 1)) (y.0 (1)) (z.0 (1 1))))
-; )
 
 
 (cout nl "comparisons" nl)
@@ -583,16 +644,14 @@
 (test (x) (all (== x (build 4)) (<o x (build 3))))
 (test-check "print all numbers hat are less than 6"
   (solve 10 (x) (<o x (build 6)))
-  '(((x.0 ())) ((x.0 (1 1))) ((x.0 (1))) ((x.0 (1 0 1))) 
-    ((x.0 (0 1))) ((x.0 (0 0 1))))
-)
-; '(((x.0 ())) ((x.0 (1))) ((x.0 (1 0 1))) ((x.0 (0 1)))
-;   ((x.0 (0 0 1))) ((x.0 (1 1))))
+  '(((x.0 ())) ((x.0 (1))) ((x.0 (1 0 1)))
+    ((x.0 (0 1))) ((x.0 (1 1))) ((x.0 (0 0 1))))
+  )
 
 (test-check "print a few numbers that are greater than 4"
-  (solve 3 (x) (<o (build 4) x))
-  '(((x.0 (1 0 1))) ((x.0 (0 0 1 *anon.0))) ((x.0 (0 1 1))))
-  ;'(((x.0 (1 0 1))) ((x.0 (0 1 1))) ((x.0 (0 0 0 1))))
+  (solve 5 (x) (<o (build 4) x))
+  '(((x.0 (1 0 1))) ((x.0 (0 1 1))) ((x.0 (1 1 1)))
+    ((x.0 (0 0 0 1))) ((x.0 (1 0 0 1))))
 )
 
 
@@ -622,19 +681,25 @@
 
 (test-check 'multiplication-all-3
   (solve 7 (y z) (**o (build 3) y z))
-  '(((y.0 ()) (z.0 ())) ; 3 * 0 = 0
-    ((y.0 (1)) (z.0 (1 1))) ; 3 * 1 = 3
-    ((y.0 (0 1)) (z.0 (0 1 1))) ; 3 * 2 = 6
+  '(((y.0 ()) (z.0 ()))  ; 0 * 3 = 0
+    ((y.0 (1)) (z.0 (1 1))) ; 1 * 3 = 3
+    ((y.0 (0 1)) (z.0 (0 1 1))) ; 2 * 3 = 6
     ((y.0 (1 1)) (z.0 (1 0 0 1))) ; 3 * 3 = 9
-    ((y.0 (0 0 1)) (z.0 (0 0 1 1))) ; 3 * 4 = 12
-    ((y.0 (0 1 1)) (z.0 (0 1 0 0 1))) ; 3 * 6 = 18
-    ((y.0 (1 0 1)) (z.0 (1 1 1 1))))  ; 3 * 5 = 15
+    ((y.0 (0 0 1)) (z.0 (0 0 1 1))) ; 4 * 3 = 12
+    ((y.0 (1 0 1)) (z.0 (1 1 1 1))) ; 5 * 3 = 15
+    ((y.0 (0 1 1)) (z.0 (0 1 0 0 1)))) ; 6 * 3 = 18
 )
 
+; Just as above
 (test-check 'multiplication-all-4
-  (solve 4 (x z) (**o x (build 3) z))
-  '(((x.0 ()) (z.0 ())) ((x.0 (1)) (z.0 (1 1))) 
-    ((x.0 (0 1)) (z.0 (0 1 1))) ((x.0 (1 1)) (z.0 (1 0 0 1))))
+  (solve 7 (y z) (**o y (build 3) z))
+  '(((y.0 ()) (z.0 ()))
+    ((y.0 (1)) (z.0 (1 1)))
+    ((y.0 (0 1)) (z.0 (0 1 1)))
+    ((y.0 (1 1)) (z.0 (1 0 0 1)))
+    ((y.0 (0 0 1)) (z.0 (0 0 1 1)))
+    ((y.0 (1 0 1)) (z.0 (1 1 1 1)))
+    ((y.0 (0 1 1)) (z.0 (0 1 0 0 1))))
 )
 
 (test-check 'multiplication-all-5
