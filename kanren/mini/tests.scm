@@ -1,5 +1,6 @@
 ;(load "AppendixD.ss")
-(load "new.ss")
+(load "book-s3.scm")
+;(load "new.ss")
 
 ;;; a stream is either empty or a pair whose cdr is 
                 ;;; a function of no arguments that returns a stream.
@@ -10,10 +11,12 @@
       [g]
       [else fail])))
 
-'(define-syntax trace-vars
+(define-syntax trace-vars
   (syntax-rules ()
     [(_ name (id* ...))
-     succeed]))
+      (lambda (s)
+	(pretty-print (list name (reify id* s) ...))
+	(succeed s))]))
 
 (define tex #f)
 
@@ -77,6 +80,138 @@
     (cond
      ((eq? (car x) #\.) '())
      (else (cons (car x) (prefix-id (cdr x)))))))
+
+
+; Initial tests
+
+(test-check "cond@ extensive"
+  (prefix*
+    (run (x)
+      (fresh (y)
+	(cond@ 
+	  ((cond@ 
+	     ((== y 1))
+	     ((== y 11))))
+	  ((cond@ 
+	     ((== y 2))
+	     (fail)
+	     ((== y 3)))))
+	(cond@
+	  ((== x y))
+	  ((== x 100))))))
+  '(1 100 11 100 2 100 3 100))
+
+(test-check "condi extensive"
+  (prefix*
+    (run (x)
+      (fresh (y)
+	(condi 
+	  ((condi 
+	     ((== y 1))
+	     ((== y 11))))
+	  ((condi 
+	     ((== y 2))
+	     (fail)
+	     ((== y 3)))))
+	(condi
+	  ((== x y))
+	  ((== x 100))))))
+  '(1 100 2 100 11 100 3 100))
+
+(test-check "alli"
+  (prefix*
+    (run (x)
+      (fresh (y)
+       (alli
+	(condi 
+	  ((condi 
+	     ((== y 1))
+	     ((== y 11))))
+	  ((condi 
+	     ((== y 2))
+	     (fail)
+	     ((== y 3)))))
+	(condi
+	  ((== x y))
+	  ((== x 100)))))))
+  '(1 2 100 11 100 3 100 100))
+
+; condo, cond1 tests
+(test-check "condo-1"
+  (prefix 3
+    (run (q)
+       (condo
+          ((cond@ ((== q 3)) ((== q 4))) succeed)
+          ((cond@ ((== q 5)) ((== q 6))) succeed)
+          (else fail))))
+  '(3 4))
+
+(test-check "condo-2"
+  (prefix 3
+    (run (q)
+       (condo
+    	 ((cond@ ((== q 3)) ((== q 4))) (== q 4))
+	     (else fail))))
+  '(4))
+
+
+(test-check "condo-3"
+  (prefix 3
+    (run (q)
+       (condo
+    	 ((cond@ ((== q 3)) ((== q 4))) (== q 3))
+	     (else fail))))
+  '(3))
+
+
+(test-check "cond1-1"
+  (prefix 3
+    (run (q)
+       (cond1
+    	 ((cond@ ((== q 3)) ((== q 4))) (== q 3))
+	     (else fail))))
+  '(3))
+
+(test-check "cond1-2"
+  (prefix 3
+    (run (q)
+       (cond1
+    	 ((cond@ ((== q 3)) ((== q 4))) (== q 4))
+	     (else fail))))
+  '())
+
+
+; cut
+'(pretty-print
+  (prefix* (run (x) (with-cut (lambda (!) (condi (! fail) (else fail)))))))
+
+
+; infinitary relations
+
+(define always
+   (cond@ (succeed) (else always)))
+
+(test-check "always-1"
+  (prefix 10 (run (q) always))
+  '(q.0 q.0 q.0 q.0 q.0 q.0 q.0 q.0 q.0 q.0))
+
+
+(test-check "always-2"
+  (prefix 10 (run (q) (cond@ (always) (else (== q 10)))))
+  '(q.0 q.0 q.0 q.0 q.0 q.0 q.0 q.0 q.0 q.0))
+
+(test-check "always-3"
+  (prefix 10 (run (q) (condi (always) (else (== q 10)))))
+  '(q.0 10 q.0 q.0 q.0 q.0 q.0 q.0 q.0 q.0))
+
+
+(test-check "always-4"
+  (prefix 10 (run (q) (cond@ ((== q 10)) (else (== q 11))) always))
+  '(10 10 10 10 10 10 10 10 10 10))
+
+(test-check "always-5"
+  (prefix 10 (run (q) (alli (cond@ ((== q 10)) (else (== q 11))) always)))
+  '(10 11 10 11 10 11 10 11 10 11))
 
 (define build
   (lambda (n)
@@ -145,7 +280,7 @@
           (foro f x))))))
 
 ;; Examples of foro usage
-; (prefix *(run (q) (foro (lambda (f) (f (build 9) q)) `(,caro ,cdro))))
+; (prefix* (run (q) (foro (lambda (f) (f (build 9) q)) `(,caro ,cdro))))
 ; (1 (0 0 1))
 
 ;(prefix (run (q)
@@ -1487,7 +1622,6 @@
       (run (q)
         (fresh (x y)
           (<ol `(0 . ,q) `(1 . ,q)))))))
-
 (test-check "print some numbers x that are less than y"
   (prefix 9 (run (q) (fresh (x y) (<o x y) (== `(,x ,y) q))))
   '((() (_.0 . __.0))
@@ -1499,7 +1633,6 @@
     ((_.0 _.1 1) (__.0 _.2 _.3 _.4 . __.1))
     ((1 0 1) (0 1 1))
     ((_.0 _.1 _.2 1) (__.0 _.3 _.4 _.5 _.6 . __.1))))
-
 
 (test-check "infinite loop for addition?"
   (prefix 1
@@ -2572,45 +2705,4 @@
 (pretty-print  ;;; in prolog this should diverge
   (prefix 10
     (run (q) (fresh (a b c) (append_2 a b c) (== `(,a ,b ,c) q)))))
-
-(pretty-print
-  (prefix 3
-    (run (q)
-       (condo
-          ((cond@ ((== q 3)) ((== q 4))) succeed)
-          ((cond@ ((== q 5)) ((== q 6))) succeed)
-          (else fail)))))
-
-(pretty-print
-  (prefix 3
-    (run (q)
-       (condo
-    	 ((cond@ ((== q 3)) ((== q 4))) (== q 4))
-	     (else fail)))))
-
-(pretty-print
-  (prefix 3
-    (run (q)
-       (condo
-    	 ((cond@ ((== q 3)) ((== q 4))) (== q 3))
-	     (else fail)))))
-
-(pretty-print
-  (prefix 3
-    (run (q)
-       (cond1
-    	 ((cond@ ((== q 3)) ((== q 4))) (== q 3))
-	     (else fail)))))
-
-(pretty-print
-  (prefix 3
-    (run (q)
-       (cond1
-    	 ((cond@ ((== q 3)) ((== q 4))) (== q 4))
-	     (else fail)))))
-
-
-
-'(pretty-print
-  (prefix* (run (x) (with-cut (lambda (!) (condi (! fail) (else fail)))))))
 
