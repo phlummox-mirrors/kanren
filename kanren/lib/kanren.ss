@@ -1,5 +1,7 @@
 ;(load "plshared.ss")
 
+; $Id$
+
 (define-syntax let-values
   (syntax-rules ()
     [(_ (x ...) vs body0 body1 ...)
@@ -56,7 +58,7 @@
 (define-record var (id) ())
 (define var make-var)
 
-; A framework to remove introduced variables beyond their scope.
+; A framework to remove introduced variables when they leave their scope.
 ; To make removing variables easier, we consider the list
 ; of subst as a "stack". Before we add a new variable, we put a mark
 ; on the stack. Mark is a special variable binding, whose term is 
@@ -69,12 +71,11 @@
 
 (define-syntax exists
   (syntax-rules ()
-    [(_ () ant0 ant1 ...)
-     (all ant0 ant1 ...)]
-    [(_ (id ...) ant0 ant1 ...)
+    [(_ () ant) ant]
+    [(_ (id ...) ant)
      (let-lv (id ...)
        (lambda@ (sk fk in-subst)
-	 (@ (all ant0 ant1 ...)
+	 (@ ant
             (lambda@ (fk out-subst)
               (@ sk fk (prune-subst (list id ...) in-subst out-subst)))
             fk in-subst)))]))
@@ -466,58 +467,325 @@
   (lambda (ant subst)
     (not (null? (@ ant initial-sk initial-fk subst)))))
 
-; make extend-relation behave as a CBV function, that is,
-; evaluate rel-exp early.
-; Otherwise, things like
-; (define father (extend-relation father ...))
-; loop.
-(define-syntax extend-relation
-  (syntax-rules ()
-    [(_ (id ...) rel-exp) rel-exp]
-    [(_ ids rel-exp0 rel-exp1 ...)
-      (extend-relation-aux ids () rel-exp0 rel-exp1 ...)]))
+;-----------------------------------------------------------
+; Sequencing of relations
+; Antecedent is a multi-valued function (which takes
+;   sk, fk, subst and exits to either sk or fk).
+; A relation is a parameterized antecedent.
+;
+; All sequencing operations are defined on antecedents.
+; They can be "lifted" to relations (see below).
+; 
 
-(define-syntax extend-relation-aux
-  (syntax-rules ()
-    [(_ (id ...) (rel-var ...))
-      (lambda (id ...)
-	(any (rel-var id ...) ...))]
-    [(_ ids (var ...) rel-exp0 rel-exp1 ...)
-      (let ((rel-var rel-exp0))
-	(extend-relation-aux ids (var ... rel-var) rel-exp1 ...))]))
+; Conjunctions
+; All conjunctions below satisfy properties
+;    ans is an answer of (a-conjunction ant1 ant2 ...) ==>
+;       forall i. ans is an answer of ant_i
+;    (a-conjunction) ==> true
+
+
+; (all ant1 ant2 ...)
+; A regular Prolog conjunction. Non-deterministic (i.e., can have 0, 1,
+; or more answers).
+; Properties:
+;  (all ant) ==> ant
+;  (all ant1 ... ant_{n-1} antn) is a "join" of answerlists of
+;        (all ant1 ... ant_{n-1}) and antn
 
 (define-syntax all
   (syntax-rules ()
     [(_) (lambda@ (sk) sk)]
     [(_ ant) ant]
-    [(_ ant0 ant1 ant2 ...)
+    [(_ ant0 ant1 ...)
      (lambda@ (sk)
-       (@ ant0 (splice-in-ants/all sk ant1 ant2 ...)))]))
+       (splice-in-ants/all sk ant0 ant1 ...))]))
 
 (define-syntax splice-in-ants/all
   (syntax-rules ()
-    [(_ sk ant) (ant sk)]
+    [(_ sk ant) (@ ant sk)]
     [(_ sk ant0 ant1 ...)
      (@ ant0 (splice-in-ants/all sk ant1 ...))]))
 
-(define succeed (lambda (sk) sk))
+
+(define succeed (all))
+
+; (promise-one-answer ant)
+; Operationally, it is the identity.
+; It is an optimization directive: if the user knows that an antecedent
+; can produce at most one answer, he can tell the system about it.
+; The behavior is underfined if the user has lied.
+
+(define-syntax promise-one-answer
+  (syntax-rules ()
+    ((_ ant) ant)))
+
+
+; (all! ant1 ant2 ...)
+; A committed choice nondeterminism conjunction
+; From the Mercury documentation:
+
+;   In addition to the determinism annotations described earlier, there
+;   are "committed choice" versions of multi and nondet, called cc_multi
+;   and cc_nondet. These can be used instead of multi or nondet if all
+;   calls to that mode of the predicate (or function) occur in a context
+;   in which only one solution is needed.
+;
+; (all! ant) evaluates ant in a single-choice context. That is,
+; if ant fails, (all! ant) fails. If ant has at least one answer,
+; this answer is returned.
+; (all! ant) has at most one answer regardless of the answers of ant.
+;   ans is an asnwer of (all! ant) ==> ans is an answer of ant
+; The converse is not true.
+; Corollary: (all! ant) =/=> ant
+; Corollary: ant is (semi-) deterministic: (all! ant) ==> ant
+; (all! (promise-one-answer ant)) ==> ant
+;
+; By definition, (all! ant1 ant2 ...) ===> (all! (all ant1 ant2 ...))
 
 (define-syntax all!
-  (syntax-rules ()
-    [(_) succeed]
-    [(_ ant) ant]
-    [(_ ant0 ant1 ant2 ...)
+  (syntax-rules (promise-one-answer)
+    [(_) (all)]
+    [(_ (promise-one-answer ant)) (promise-one-answer ant)] ; keep the mark
+    [(_ ant0 ant1 ...)
      (lambda@ (sk fk)
-       (@ ant0 (splice-in-ants/all! sk fk ant1 ant2 ...) fk))]))
+       (@
+	 (splice-in-ants/all (lambda@ (fk-ign) (@ sk fk)) ant0 ant1 ...)
+	 fk))]))
 
-(define-syntax splice-in-ants/all!
+; (all!! ant1 ant2 ...)
+; Even more committed choice nondeterministic conjunction
+; It evaluates all elements of the conjunction in a single answer context
+; (all!! ant) ==> (all! ant) =/=> ant
+; (all!! ant1 ant2 ...) ==> (all (all! ant1) (all! ant2) ...)
+;                       ==> (all! (all! ant1) (all! ant2) ...)
+; (all!! ant1 ... antn (promise-one-answer ant)) ==>
+;    (all (all!! ant1 ... antn) ant)
+
+(define-syntax all!!
   (syntax-rules ()
-    [(_ sk fk ant)
-     (lambda (ign-fk)
-       (@ ant sk fk))]
+    [(_) (all!)]
+    [(_ ant) (all! ant)]
+    [(_ ant0 ant1 ...)
+      (lambda@ (sk fk)
+	(splice-in-ants/all!! sk fk ant0 ant1 ...))]))
+
+(define-syntax splice-in-ants/all!!
+  (syntax-rules ()
+    [(_ sk fk)
+      (@ sk fk)]
+    [(_ sk fk (promise-one-answer ant))
+      (@ ant sk fk)]
     [(_ sk fk ant0 ant1 ...)
-     (lambda (ign-fk)
-       (@ ant0 (splice-in-ants/all! sk fk ant1 ...) fk))]))
+      (@ ant0 (lambda (fk-ign) (splice-in-ants/all!! sk fk ant1 ...)) fk)]))
+
+
+
+; (if-only COND THEN)
+; (if-only COND THEN ELSE)
+; Here COND, THEN, ELSE are antecedents.
+; If COND succeeds at least once, the result is equivalent to
+;      (all (all! COND) TNEN)
+; If COND fails, the result is the same as ELSE.
+; If ELSE is omitted, it is assumed fail. That is, (if-only COND THEN)
+; fails if the condition fails.  "This  unusual semantics
+; is part of the ISO and all de-facto Prolog standards."
+; Thus, declaratively,
+;   (if-only COND THEN ELSE) ==> (any (all (all! COND) THEN)
+;                                     (all (fails COND) ELSE))
+; Operationally, we try to generate a good code.
+
+(define-syntax if-only
+  (syntax-rules ()
+    ((_ condition then)
+      (lambda@ (sk fk)
+	(@ condition
+	  ; sk from cond
+	  (lambda@ (fk-ign) (@ then sk fk))
+	  ; failure from cond
+	  fk)))
+    ((_ condition then else)
+      (lambda@ (sk fk)
+	(@ condition
+	  (lambda@ (fk-ign) (@ then sk fk))
+	  (lambda () (@ else sk fk)))))
+))
+
+; (if-all! (COND1 ... CONDN) THEN)
+; (if-all! (COND1 ... CONDN) THEN ELSE)
+;
+; (if-all! (COND1 ... CONDN) THEN ELSE) ==>
+;   (if-only (all! COND1 ... CONDN) THEN ELSE)
+; (if-all! (COND1) THEN ELSE) ==>
+;   (if-only COND1 THEN ELSE)
+
+(define-syntax if-all!
+  (syntax-rules ()
+    ((_ (condition) . args)
+      (if-only condition . args))
+    ((_ (condition1 condition2 ...) then)
+      (lambda@ (sk fk)
+	(@
+	  (splice-in-ants/all
+	    (lambda@ (fk-ign) (@ then sk fk)) condition1 condition2 ...)
+	  fk)))
+    ((_ (condition1 condition2 ...) then else)
+      (lambda@ (sk fk)
+	(@
+	  (splice-in-ants/all
+	    (lambda@ (fk-ign) (@ then sk fk)) condition1 condition2 ...)
+	  (lambda () (@ else sk fk)))))
+))
+
+
+; Disjunction of antecedents
+; All disjunctions below satisfy properties
+;  ans is an answer of (a-disjunction ant1 ant2 ...) ==>
+;    exists i. ans is an answer of ant_i
+; (a-disjunction) ==> fail
+
+; Any disjunction. A regular Prolog disjunction (introduces
+; a choicepoints, in Prolog terms)
+; Note that 'any' is not a union! In particular, it is not
+; idempotent.
+; (any) ===> fail
+; (any ant) ===> ant
+; (any ant1 ... antn) ==> _concatenation_ of their answerlists
+
+(define-syntax any
+  (syntax-rules ()
+    [(_) (lambda@ (sk fk subst) (fk))]
+    [(_ ant) ant]
+    [(_ ant ...)
+      (lambda@ (sk fk subst)
+	(splice-in-ants/any sk fk subst ant ...))]))
+
+(define-syntax splice-in-ants/any
+  (syntax-rules ()
+    [(_ sk fk subst ant1) (@ ant1 sk fk subst)]
+    [(_ sk fk subst ant1 ant2 ...)
+     (@ ant1 sk (lambda ()
+                  (splice-in-ants/any sk fk subst ant2 ...))
+       subst)]))
+
+(define fail (any))
+
+
+; Negation
+; (fails ant) succeeds iff ant has no solutions
+; (fails ant) is a semi-deterministic predicate: it can have at most
+; one solution
+; (succeeds ant) succeeds iff ant has a solution
+;
+; (fails (fails ant)) <===> (succeeds ant)
+; but (succeeds ant) =/=> ant
+; Cf. (equal? (not (not x)) x) is #f in Scheme in general.
+
+(define fails
+  (lambda (ant)
+    (lambda@ (sk fk subst)
+      (@ ant
+        (lambda@ (current-fk subst) (fk))
+        (lambda () (@ sk fk subst))
+        subst))))
+
+(define succeeds
+  (lambda (ant)
+    (lambda@ (sk fk subst)
+      (@ ant (lambda@ (fk-ign subst-ign) (@ sk fk subst))
+	fk subst))))
+
+
+
+; partially-eval-sant: Partially evaluate a semi-antecedent
+; An semi-antecedent is an expression that, when applied to
+; two arguments, sk fk, can produce zero, one, or
+; more answers.
+; Any antecedent can be turned into a semi-antecedent if partially applied
+; to subst.
+; The following higher-order semi-antecedent takes an
+; antecedent and yields the first answer and another, residual
+; antecedent. The latter, when evaluated, will give the rest
+; of the answers of the original semi-antecedent.
+; partially-eval-sant could be implemented with streams (lazy
+; lists). The following is a purely combinational implementation.
+;
+; (@ partially-eval-sant sant a b) =>
+;   (b) if sant has no answers
+;   (a s residial-sant) if sant has a answer. That answer is delivered
+;                       in s. 
+; The residial semi-antecedent can be passed to partially-eval-sant
+; again, and so on, to obtain all answers from an antecedent one by one.
+
+; The following definition is eta-reduced.
+
+(define (partially-eval-sant sant)
+  (@ sant
+    (lambda@ (fk subst a b)
+      (@ a subst 
+	(lambda@ (sk1 fk1)
+	  (@
+	    (fk) 
+	    ; new a
+	    (lambda@ (sub11 x) (@ sk1 (lambda () (@ x sk1 fk1)) sub11))
+	    ; new b
+	    fk1))))
+    (lambda () (lambda@ (a b) (b)))))
+
+(define (ant->sant ant subst)
+  (lambda@ (sk fk)
+    (@ ant sk fk subst)))
+
+; An interleaving disjunction.
+; Declaratively, any-interleave is the same as any.
+; Operationally, any-interleave schedules each component antecedent
+; in round-robin. So, any-interleave is fair: it won't let an antecedent
+; that produces infinitely many answers (such as repeat) starve the others.
+; any-interleave introduces a breadth-first-like traversal of the
+; decision tree.
+
+(define-syntax any-interleave
+  (syntax-rules ()
+    [(_) fail]
+    [(_ ant) ant]
+    [(_ ant ...)
+      (lambda@ (sk fk subst)
+	(interleave sk fk
+	  (list (ant->sant ant subst) ...)))]))
+
+; we treat sants as a sort of a circular list
+(define (interleave sk fk sants)
+  (cond
+    ((null? sants) (fk))		; all of the sants are finished
+    ((null? (cdr sants))
+      ; only one sants left -- run it through the end
+      (@ (car sants) sk fk))
+    (else
+      (let loop ((curr sants) (residuals '()))
+	; check if the current round is finished
+	(if (null? curr) (interleave sk fk (reverse residuals))
+	  (@
+	    partially-eval-sant (car curr)
+	    ; (car curr) had an answer
+	    (lambda@ (subst residual)
+	      (@ sk
+	        ; re-entrance cont
+		(lambda () (loop (cdr curr) (cons residual residuals)))
+		subst))
+	  ; (car curr) is finished - drop it, and try next
+	  (lambda () (loop (cdr curr) residuals))))))))
+
+; Soft-cuts: ?- help(*->).
+; We can implement it with partially-eval-sant. Given an ant, we
+; peel of one answer, if possible. If it is, we then execute the action
+; passing it the answer and the fk from ant so that if the action fails,
+; it can obtain another answer. If ant has no answers, we execute the
+; 'else' part. Again, we can do all that purely declaratively, without
+; talking about introducing and destroying choice points.
+; Incidentally, soft-cuts seem to corresponds precisely to Mercury's
+; IF-THEN-ELSE.
+
+
+; Relations...........................
 
 (define-syntax relation
   (syntax-rules (to-show)
@@ -525,18 +793,22 @@
      (relation (ex-id ...) () (x ...) (x ...) ant ...)]
     [(_ (ex-id ...) (var ...) (x0 x1 ...) xs ant ...)
      (relation (ex-id ...) (var ... g) (x1 ...) xs ant ...)]
+    [(_ (ex-id ...) () () () ant ...)
+      (lambda ()
+	(exists (ex-id ...)
+	  (all ant ...)))]
     [(_ (ex-id ...) (g ...) () (x ...))
      (lambda (g ...)
        (exists (ex-id ...)
-	 (all! (== g x) ...)))]
+	 (all!! (promise-one-answer (== g x)) ...)))]
     [(_ (ex-id ...) (g ...) () (x ...) ant)
      (lambda (g ...)
        (exists (ex-id ...)
-	 (all! (== g x) ... ant)))]
+	 (if-all! ((promise-one-answer (== g x)) ...) ant)))]
     [(_ (ex-id ...) (g ...) () (x ...) ant ...)
       (lambda (g ...)
 	(exists (ex-id ...)
-	  (all! (== g x) ... (all ant ...))))]))
+	  (all (all!! (promise-one-answer (== g x)) ...) ant ...)))]))
 
 ; (define-syntax relation/cut
 ;   (syntax-rules (to-show)
@@ -557,33 +829,59 @@
     [(_ (ex-id ...) x ...)
      (relation (ex-id ...) (to-show x ...))]))
 
-; rename into once
-; (define !!
-;   (lambda (exiting-fk)
-;     (lambda@ (sk fk)
-;       (@ sk exiting-fk))))
+; Lifting from antecedents to relations
+; (define-rel-lifted-comb rel-syntax ant-proc-or-syntax)
+; Given (ant-proc-or-syntax ant ...)
+; define 
+; (rel-syntax (id ...) rel-exp ...)
+; We should make rel-syntax behave as a CBV function, that is,
+; evaluate rel-exp early.
+; Otherwise, things like
+; (define father (extend-relation father ...))
+; loop.
 
-(define-syntax splice-in-ants/any
+(define-syntax define-rel-lifted-comb
   (syntax-rules ()
-    [(_ sk fk subst ant1) (@ ant1 sk fk subst)]
-    [(_ sk fk subst ant1 ant2 ...)
-     (@ ant1 sk (lambda ()
-                  (splice-in-ants/any sk fk subst ant2 ...))
-       subst)]))
+    ((_ rel-syntax-name ant-proc-or-syntax)
+      (define-syntax rel-syntax-name
+	(syntax-rules ()
+	  ((_ ids . rel-exps)
+	    (lift-ant-to-rel-aux ant-proc-or-syntax ids () . rel-exps))))
+      )))
 
-(define-syntax any
+(define-syntax lift-ant-to-rel-aux
   (syntax-rules ()
-    [(_) fail]
-    [(_ ant) ant]
-    [(_ ant ...)
-      (lambda@ (sk fk subst)
-	(splice-in-ants/any sk fk subst ant ...))]))
+    [(_ ant-handler (id ...) (rel-var ...))
+      (lambda (id ...)
+	(ant-handler (rel-var id ...) ...))]
+    [(_ ant-handler ids (var ...) rel-exp0 rel-exp1 ...)
+      (let ((rel-var rel-exp0))
+	(lift-ant-to-rel-aux ant-handler ids 
+	  (var ... rel-var) rel-exp1 ...))]))
 
-; (define initial-fk (lambda () '()))
-; (define initial-sk
-;   (lambda@ (fk subst)
-;     (cons subst fk)))
+(define-rel-lifted-comb extend-relation any)
 
+
+; The following  antecedent-to-relations 
+; transformers are roughly equivalent. I don't know which is better.
+; see examples below.
+
+; (lift-to-relations ids (ant-comb rel rel ...))
+(define-syntax lift-to-relations
+  (syntax-rules ()
+    ((_ ids (ant-comb rel ...))
+      (lift-ant-to-rel-aux ant-comb ids () rel ...))))
+
+; (let-ants ids ((name rel) ...) body)
+(define-syntax let-ants
+  (syntax-rules ()
+    ((_ (id ...) ((ant-name rel-exp) ...) body)
+      (lambda (id ...)
+	(let ((ant-name (rel-exp id ...)) ...)
+	  body)))))
+
+
+;------------------------------------------------------------------------
 ;;;;; Starts the real work of the system.
 
 (define father  
@@ -773,13 +1071,18 @@
         ((x.0 sam) (y.0 rob)))))
   #t)
 
-(define-syntax binary-intersect-relation
+
+; (define-syntax binary-intersect
+;   (syntax-rules ()
+;     ((_ ant1 ant2)
+;       (lambda@ (sk)
+; 	(@ ant1 (@ ant2 sk))))))
+
+(define-syntax binary-intersect
   (syntax-rules ()
-    [(_ (id ...) rel-exp1 rel-exp2)
-     (let ([rel1 rel-exp1] [rel2 rel-exp2])
-       (lambda (id ...)
-         (lambda (sk)
-           ((rel1 id ...) ((rel2 id ...) sk)))))]))
+    ((_ ant1 ant2) (all ant1 ant2))))
+
+(define-rel-lifted-comb binary-intersect-relation binary-intersect)
 
 (define parents-of-scouts
   (extend-relation (a1 a2)
@@ -805,12 +1108,14 @@
   (solve 5 (x) (exists (y) (busy-parents x y)))
   '(((x.0 roz)) ((x.0 rob))))
 
-(define-syntax intersect-relation
-  (syntax-rules ()
-    [(_ (id ...) rel-exp) rel-exp]
-    [(_ (id ...) rel-exp0 rel-exp1 rel-exp2 ...)
-     (binary-intersect-relation (id ...) rel-exp0
-       (intersect-relation (id ...) rel-exp1 rel-exp2 ...))]))
+; (define-syntax intersect-relation
+;   (syntax-rules ()
+;     [(_ (id ...) rel-exp) rel-exp]
+;     [(_ (id ...) rel-exp0 rel-exp1 rel-exp2 ...)
+;      (binary-intersect-relation (id ...) rel-exp0
+;        (intersect-relation (id ...) rel-exp1 rel-exp2 ...))]))
+
+(define-rel-lifted-comb intersect-relation all)
 
 (define busy-parents
   (intersect-relation (a1 a2) parents-of-scouts parents-of-athletes))
@@ -994,16 +1299,33 @@
   (solve 6 (y) (grandpa-sam y))
   '(((y.0 sal)) ((y.0 pat))))
 
-;(printf "~s ~s~%" 'test-grandpa-sam-4 (test-grandpa-sam-4))  
+; The solution that used cuts
+; (define grandpa/father
+;   (relation/cut cut (grandad grandchild)
+;     (to-show grandad grandchild)
+;     (exists (parent)
+;       (all
+;         (father grandad parent)
+;         (father parent grandchild)
+;         cut))))
+;
+; (define grandpa/mother
+;   (relation (grandad grandchild)
+;     (to-show grandad grandchild)
+;     (exists (parent)
+;       (all
+;         (father grandad parent)
+;         (mother parent grandchild)))))
 
+
+; Now we don't need it
 (define grandpa/father
-  (relation/cut cut (grandad grandchild)
+  (relation (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
-      (all
+      (all!
         (father grandad parent)
-        (father parent grandchild)
-        cut))))
+        (father parent grandchild)))))
 
 (define grandpa/mother
   (relation (grandad grandchild)
@@ -1014,20 +1336,33 @@
         (mother parent grandchild)))))
 
 (define grandpa
-  (extend-relation (a1 a2) grandpa/father grandpa/mother))
+  (lift-to-relations (a1 a2)
+    (all!
+      (extend-relation (a1 a2) grandpa/father grandpa/mother))))
 
 (test-check 'test-grandpa-8
   (solve 10 (x y) (grandpa x y))
   '(((x.0 jon) (y.0 rob))))
 
+; The solution that used to require cuts
+; (define grandpa/father
+;   (relation/cut cut (grandad grandchild)
+;     (to-show grandad grandchild)
+;     (exists (parent)
+;       (all cut (father grandad parent) (father parent grandchild)))))
+
 (define grandpa/father
-  (relation/cut cut (grandad grandchild)
+  (relation (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
-      (all cut (father grandad parent) (father parent grandchild)))))
+      (all (father grandad parent) (father parent grandchild)))))
 
+; Properly, this requires soft cuts, aka *->, or Mercury's
+; if-then-else. But we emulate it...
 (define grandpa
-  (extend-relation (a1 a2) grandpa/father grandpa/mother))
+  (let-ants (a1 a2) ((grandpa/father grandpa/father)
+		     (grandpa/mother grandpa/mother))
+    (if-only (succeeds grandpa/father) grandpa/father grandpa/mother)))
 
 (test-check 'test-grandpa-10
   (solve 10 (x y) (grandpa x y))
@@ -1036,25 +1371,54 @@
     ((x.0 sam) (y.0 sal))
     ((x.0 sam) (y.0 pat))))
 
-(define fail
-  (lambda@ (sk fk subst) (fk)))
-
-(define succeed
-  (lambda@ (sk fk subst)
-    (@ sk fk subst)))
-
-(define no-grandma
-  (relation/cut cut (grandad grandchild)
+(define a-grandma
+  (relation (grandad grandchild)
     (to-show grandad grandchild)
     (exists (parent)
-      (all (mother grandad parent) cut fail))))
+      (all! (mother grandad parent)))))
 
 (define no-grandma-grandpa
-  (extend-relation (a1 a2) no-grandma grandpa))
+  (let-ants (a1 a2) ((a-grandma a-grandma) (grandpa grandpa))
+    (if-only a-grandma fail grandpa)))
 
 (test-check 'test-no-grandma-grandpa-1
   (solve 10 (x) (no-grandma-grandpa 'roz x))
   '())
+
+
+(define parents-of-scouts
+  (extend-relation (a1 a2)
+    (fact () 'sam 'rob)
+    (fact () 'roz 'sue)
+    (fact () 'rob 'sal)))
+
+(define fathers-of-cubscouts
+  (extend-relation (a1 a2)
+    (fact () 'sam 'bob)
+    (fact () 'tom 'adam)
+    (fact () 'tad 'carl)))
+
+(test-check 'test-partially-eval-sant
+  (let-lv (p1 p2)
+    (let* ((parents-of-scouts-sant
+	     (ant->sant (parents-of-scouts p1 p2) empty-subst))
+	    (cons@ (lambda@ (x y) (cons x y)))
+	    (split1 (@ 
+		      partially-eval-sant parents-of-scouts-sant
+		      cons@ (lambda () '())))
+	    (a1 (car split1))
+	    (split2 (@ partially-eval-sant (cdr split1) cons@
+		      (lambda () '())))
+	    (a2 (car split2))
+	    (split3 (@ partially-eval-sant (cdr split2) cons@
+		      (lambda () '())))
+	    (a3 (car split3))
+	    )
+      (map (lambda (subst)
+             (concretize-subst/vars subst p1 p2))
+	(list a1 a2 a3))))
+  '(((p1.0 sam) (p2.0 rob)) ((p1.0 roz) (p2.0 sue)) ((p1.0 rob) (p2.0 sal))))
+
 
 (define-syntax if/bc
   (syntax-rules ()
@@ -1066,12 +1430,14 @@
     [(_ ([t ([var bool] ...) scheme-expression] ...) body ...)
      (lambda@ (sk fk subst)
        (@ (exists (t ...)
-	    (all! (== t (let ([var (let ([x (subst-in var subst)])
+	    (all
+	      (all!! (promise-one-answer
+		       (== t (let ([var (let ([x (subst-in var subst)])
                                      (if/bc bool (nonvar! x) x))]
 			      ...)
-			  scheme-expression))
-              ...
-	      (all body ...)))
+			  scheme-expression)))
+		...)
+	      body ...))
           sk fk subst))]))
 
 (define-syntax let*-inject/everything
@@ -1193,18 +1559,6 @@
 (test-check 'test-test3
   (solution (x y) (test3 x y))
   `((x.0 #f) (y.0 y.0)))
-
-(define fails
-  (lambda (ant)
-    (lambda@ (sk fk subst)
-      (@ ant
-        (lambda@ (current-fk subst) (fk))
-        (lambda () (@ sk fk subst))
-        subst))))
-
-(define-syntax succeeds
-  (syntax-rules ()
-    [(_ ant) ant]))
 
 (define grandpa
   (relation (grandad grandchild)
@@ -2185,7 +2539,7 @@
 (define non-generic-recursive-env
   (relation (g v t)
     (to-show `(non-generic ,_ ,_ ,g) v t)
-    (all! (instantiated g) (env g v t))))
+    (all!! (instantiated g) (env g v t))))
 
 (define env (extend-relation (a1 a2 a3)
               non-generic-match-env non-generic-recursive-env))
@@ -2260,12 +2614,12 @@
 (define +-rel
   (relation (g x y)
     (to-show g `(+ ,x ,y) int)
-    (all! (!- g x int) (!- g y int))))
+    (all!! (!- g x int) (!- g y int))))
 
 (define if-rel
   (relation (g t test conseq alt)
     (to-show g `(if ,test ,conseq ,alt) t)
-    (all! (!- g test bool) (!- g conseq t) (!- g alt t))))
+    (all!! (!- g test bool) (!- g conseq t) (!- g alt t))))
 
 (define lambda-rel
   (relation (g v t body type-v)
@@ -2276,7 +2630,7 @@
   (relation (g t rand rator)
     (to-show g `(app ,rator ,rand) t)
     (let-lv (t-rand)
-      (all! (!- g rator `(--> ,t-rand ,t)) (!- g rand t-rand)))))
+      (all!! (!- g rator `(--> ,t-rand ,t)) (!- g rand t-rand)))))
 
 (define fix-rel
   (relation (g rand t)
@@ -2287,7 +2641,7 @@
   (relation (g v rand body t)
     (to-show g `(let ([,v ,rand]) ,body) t)
     (let-lv (t-rand)
-      (all!
+      (all!!
         (!- g rand t-rand)
         (!- `(generic ,v ,t-rand ,g) body t)))))
 
@@ -2511,55 +2865,56 @@
   #t)
 
 ;;; long cuts
+;;; No cuts are needed any more
+; (define !-generator
+;   (lambda (long-cut)
+;     (letrec
+;       ([!- (extend-relation (a1 a2 a3)
+;              (relation (g v t)
+;                (to-show g `(var ,v) t)
+;                (all long-cut (env g v t)))
+;              (fact (g x) g `(intc ,x) int)
+;              (fact (g x) g `(boolc ,x) bool)
+;              (relation (g x)
+;                (to-show g `(zero? ,x) bool)
+;                (all long-cut (!- g x int)))
+;              (relation (g x)
+;                (to-show g `(sub1 ,x) int)
+;                (all long-cut (!- g x int)))
+;              (relation (g x y)
+;                (to-show g `(+ ,x ,y) int)
+;                (all long-cut (all! (!- g x int) (!- g y int))))
+;              (relation (g t test conseq alt)
+;                (to-show g `(if ,test ,conseq ,alt) t)
+;                (all long-cut
+; 		 (all! (!- g test bool) (!- g conseq t) (!- g alt t))))
+;              (relation (g v t body type-v)
+;                (to-show g `(lambda (,v) ,body) `(--> ,type-v ,t))
+;                (all long-cut (!- `(non-generic ,v ,type-v ,g) body t)))
+;              (relation (g t rand rator)
+;                (to-show g `(app ,rator ,rand) t)
+;                (exists (t-rand)
+;                  (all long-cut
+; 		   (all!
+;                      (!- g rator `(--> ,t-rand ,t))
+;                      (!- g rand t-rand)))))
+;              (relation (g rand t)
+;                (to-show g `(fix ,rand) t)
+;                (all long-cut (!- g rand `(--> ,t ,t))))
+;              (relation (g v rand body t)
+;                (to-show g `(let ([,v ,rand]) ,body) t)
+;                (exists (t-rand)
+;                  (all long-cut
+; 		   (all!
+;                      (!- g rand t-rand)
+;                      (!- `(generic ,v ,t-rand ,g) body t))))))])
+;       !-)))
+;
+; (define !-
+;   (relation/cut cut (g exp t)
+;     (to-show g exp t)
+;     ((!-generator cut) g exp t)))
 
-(define !-generator
-  (lambda (long-cut)
-    (letrec
-      ([!- (extend-relation (a1 a2 a3)
-             (relation (g v t)
-               (to-show g `(var ,v) t)
-               (all long-cut (env g v t)))
-             (fact (g x) g `(intc ,x) int)
-             (fact (g x) g `(boolc ,x) bool)
-             (relation (g x)
-               (to-show g `(zero? ,x) bool)
-               (all long-cut (!- g x int)))
-             (relation (g x)
-               (to-show g `(sub1 ,x) int)
-               (all long-cut (!- g x int)))
-             (relation (g x y)
-               (to-show g `(+ ,x ,y) int)
-               (all long-cut (all! (!- g x int) (!- g y int))))
-             (relation (g t test conseq alt)
-               (to-show g `(if ,test ,conseq ,alt) t)
-               (all long-cut
-		 (all! (!- g test bool) (!- g conseq t) (!- g alt t))))
-             (relation (g v t body type-v)
-               (to-show g `(lambda (,v) ,body) `(--> ,type-v ,t))
-               (all long-cut (!- `(non-generic ,v ,type-v ,g) body t)))
-             (relation (g t rand rator)
-               (to-show g `(app ,rator ,rand) t)
-               (exists (t-rand)
-                 (all long-cut
-		   (all!
-                     (!- g rator `(--> ,t-rand ,t))
-                     (!- g rand t-rand)))))
-             (relation (g rand t)
-               (to-show g `(fix ,rand) t)
-               (all long-cut (!- g rand `(--> ,t ,t))))
-             (relation (g v rand body t)
-               (to-show g `(let ([,v ,rand]) ,body) t)
-               (exists (t-rand)
-                 (all long-cut
-		   (all!
-                     (!- g rand t-rand)
-                     (!- `(generic ,v ,t-rand ,g) body t))))))])
-      !-)))
-
-'(define !-
-  (relation/cut cut (g exp t)
-    (to-show g exp t)
-    ((!-generator cut) g exp t)))
 
 ; (relation-cond vars clause ...)
 ; clause::= ((local-var...) (condition ...) (conseq ...))
@@ -2572,10 +2927,6 @@
 	  (relation-cond-clause (sk fk subst)
 	    clause0 clause1 ...))))))
 
-(define-syntax once
-  (syntax-rules ()
-    ((_ ant ...) (all! ant ... succeed))))
-
 (define-syntax relation-cond-clause
   (syntax-rules ()
     ((_ (sk fk subst)) (fk)) ; no more choices: fail
@@ -2584,7 +2935,7 @@
        clause ...)
       (let-lv local-vars			; a bit sloppy, need exists...
 	(printf "running ~a~n" '(condition ...))
-	(@ (once condition ...)
+	(@ (all!! condition ...)
 	; sk
 	  (lambda@ (fk-ign)
 	    (@ conseq sk fk))
@@ -2592,6 +2943,49 @@
 	  (lambda () (relation-cond-clause (sk fk subst) clause ...))
 	  subst)))))
 
+
+; (define !-
+;     (letrec
+;       ([!- (extend-relation (a1 a2 a3)
+;              (relation (g v t)
+;                (to-show g `(var ,v) t)
+;                (all long-cut (env g v t)))
+;              (fact (g x) g `(intc ,x) int)
+;              (fact (g x) g `(boolc ,x) bool)
+;              (relation (g x)
+;                (to-show g `(zero? ,x) bool)
+;                (all long-cut (!- g x int)))
+;              (relation (g x)
+;                (to-show g `(sub1 ,x) int)
+;                (all long-cut (!- g x int)))
+;              (relation (g x y)
+;                (to-show g `(+ ,x ,y) int)
+;                (all long-cut (all! (!- g x int) (!- g y int))))
+;              (relation (g t test conseq alt)
+;                (to-show g `(if ,test ,conseq ,alt) t)
+;                (all long-cut
+; 		 (all! (!- g test bool) (!- g conseq t) (!- g alt t))))
+;              (relation (g v t body type-v)
+;                (to-show g `(lambda (,v) ,body) `(--> ,type-v ,t))
+;                (all long-cut (!- `(non-generic ,v ,type-v ,g) body t)))
+;              (relation (g t rand rator)
+;                (to-show g `(app ,rator ,rand) t)
+;                (exists (t-rand)
+;                  (all long-cut
+; 		   (all!
+;                      (!- g rator `(--> ,t-rand ,t))
+;                      (!- g rand t-rand)))))
+;              (relation (g rand t)
+;                (to-show g `(fix ,rand) t)
+;                (all long-cut (!- g rand `(--> ,t ,t))))
+;              (relation (g v rand body t)
+;                (to-show g `(let ([,v ,rand]) ,body) t)
+;                (exists (t-rand)
+;                  (all long-cut
+; 		   (all!
+;                      (!- g rand t-rand)
+;                      (!- `(generic ,v ,t-rand ,g) body t))))))])
+;       !-)))
 
 (define !-
   (relation-cond (g exp t)
@@ -2604,22 +2998,22 @@
     ((x) ((== exp `(sub1 ,x)) (== t int))
       (!- g x int))
     ((x y) ((== exp `(+ ,x ,y)) (== t int))
-      (all! (!- g x int) (!- g y int)))
+      (all!! (!- g x int) (!- g y int)))
     ((test conseq alt) ((== exp `(if ,test ,conseq ,alt)))
-      (all! (!- g test bool) (!- g conseq t) (!- g alt t)))
+      (all!! (!- g test bool) (!- g conseq t) (!- g alt t)))
     ((body type-v v t1) ((== exp `(lambda (,v) ,body)) 
 			 (== t `(--> ,type-v ,t1)))
-      (all (!- `(non-generic ,v ,type-v ,g) body t1)))
+      (!- `(non-generic ,v ,type-v ,g) body t1))
     ((rand rator) ((== exp `(app ,rator ,rand)))
       (exists (t-rand)
-	(all!
+	(all!!
 	  (!- g rator `(--> ,t-rand ,t))
 	  (!- g rand t-rand))))
     ((rand) ((== exp `(fix ,rand)))
       (!- g rand `(--> ,t ,t)))
     ((v rand body) ((== exp `(let ([,v ,rand]) ,body)))
       (exists (t-rand)
-	(all!
+	(all!!
 	  (!- g rand t-rand)
 	  (!- `(generic ,v ,t-rand ,g) body t))))))
 
@@ -2734,21 +3128,21 @@
 
 (define father
   (lambda (dad child)
-    (all! 
+    (all!!
       (== dad 'jon)
       (== child 'sam))))
 
 (define father
   (extend-relation (a1 a2) father
     (lambda (dad child)
-      (all! 
+      (all!! 
 	(== dad 'sam)
 	(== child 'rob)))))
 
 (define father
   (extend-relation (a1 a2) father
     (lambda (dad child)
-      (all!
+      (all!!
 	(== dad 'rob)
 	(== child 'sal)))))
 
@@ -2779,25 +3173,33 @@
   (solve 5 (x) (grandpa x 'sal))
   '(((x.0 sam))))
 
+; No need for the following any more...
+; (define grandpa-sam
+;   (lambda (child)
+;     (lambda@ (sk fk subst)
+;       (let ([next (!! fk)]
+;             [cut (!! cutk)])
+;         (let-lv (grandfather)
+;           (@ (all
+;                (all next (== grandfather 'sam))
+;                cut
+;                (exists (x)
+;                  (all (father grandfather x) (father x child))))
+;              sk fk subst ))))))
+
 (define grandpa-sam
   (lambda (child)
-    (lambda@ (sk fk subst)
-      (let ([next (!! fk)]
-            [cut (!! cutk)])
-        (let-lv (grandfather)
-          (@ (all
-               (all next (== grandfather 'sam))
-               cut
-               (exists (x)
-                 (all (father grandfather x) (father x child))))
-             sk fk subst ))))))
+    (exists (grandfather)
+      (if-only (== grandfather 'sam)
+	(exists (x)
+	  (all (father grandfather x) (father x child)))))))
 
 (test-check 'grandpa-sam-1
   (solve 5 () (grandpa-sam 'sal))
   '(()))
 
 (define grandpa-sam
-  (relation/cut cut (child)
+  (relation (child)
     (to-show child)
     (exists (x)
       (all (father 'sam x) (father x child)))))
@@ -2805,11 +3207,6 @@
 (test-check 'grandpa-sam-2
   (solve 5 () (grandpa-sam 'sal))
   '(()))
-
-(define-syntax fact
-  (syntax-rules ()
-    [(_ (ex ...) x ...)
-     (relation (ex ...) (to-show x ...))]))
 
 (define father-rob-sal (fact () 'rob 'sal))
 (define father-sam-rob (fact () 'sam 'rob))
@@ -2892,28 +3289,53 @@
 ; There is a fixpoint in the following algorithm!
 ; Or a second-level shift/reset!
 
-(printf "~%binary-extend-relation-interleave~%")
-(printf "~%Rinf+R1:~%")
-(time (pretty-print 
-        (solve 7 (x y)
-          ((binary-extend-relation-interleave (a1 a2) Rinf R1) x y))))
-(printf "~%R1+RInf:~%")
-(time (pretty-print 
-        (solve 7 (x y)
-          ((binary-extend-relation-interleave (a1 a2) R1 Rinf) x y))))
+(test-check "Rinf+R1"
+  (time 
+    (solve 7 (x y)
+      (any-interleave (Rinf x y) (R1 x y))))
+  '(((x.0 z) (y.0 z))
+     ((x.0 x1) (y.0 y1))
+     ((x.0 (s z)) (y.0 (s z)))
+     ((x.0 x2) (y.0 y2))
+     ((x.0 (s (s z))) (y.0 (s (s z))))
+     ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
+     ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z)))))))
+  )
 
-(printf "~%R2+R1:~%")
-(time (pretty-print 
-        (solve 7 (x y)
-          ((binary-extend-relation-interleave (a1 a2) R2 R1) x y))))
-(printf "~%R1+fact3:~%")
-(time (pretty-print 
-        (solve 7 (x y)
-          ((binary-extend-relation-interleave (a1 a2) R1 fact3) x y))))
-(printf "~%fact3+R1:~%")
-(time (pretty-print 
-        (solve 7 (x y)
-          ((binary-extend-relation-interleave (a1 a2) fact3 R1) x y))))
+(test-check "R1+Rinf"
+  (time 
+    (solve 7 (x y)
+      (any-interleave (R1 x y) (Rinf x y))))
+  '(((x.0 x1) (y.0 y1))
+    ((x.0 z) (y.0 z))
+    ((x.0 x2) (y.0 y2))
+    ((x.0 (s z)) (y.0 (s z)))
+    ((x.0 (s (s z))) (y.0 (s (s z))))
+    ((x.0 (s (s (s z)))) (y.0 (s (s (s z)))))
+    ((x.0 (s (s (s (s z))))) (y.0 (s (s (s (s z)))))))
+)
+
+
+(test-check "R2+R1"
+  (solve 7 (x y)
+    (any-interleave (R2 x y) (R1 x y)))
+  '(((x.0 x1) (y.0 y1))
+    ((x.0 x1) (y.0 y1))
+    ((x.0 x3) (y.0 y3))
+    ((x.0 x2) (y.0 y2)))
+)
+
+(test-check "R1+fact3"
+  (solve 7 (x y)
+    (any-interleave (R1 x y) (fact3 x y)))
+    '(((x.0 x1) (y.0 y1)) ((x.0 x3) (y.0 y3)) ((x.0 x2) (y.0 y2)))
+)
+
+(test-check "fact3+R1"
+  (solve 7 (x y)
+    (any-interleave (fact3 x y) (R1 x y)))
+    '(((x.0 x3) (y.0 y3)) ((x.0 x1) (y.0 y1)) ((x.0 x2) (y.0 y2)))
+)
 
 ;;; Test for nonoverlapping.
 
@@ -3137,13 +3559,9 @@
 
 (define calculate_lips
   (extend-relation (a1 a2 a3 a4)
-    (relation/cut cut (count time lips)
-      (to-show count time lips 'msecs)
-      (== time 0)
-      cut
-      (== lips 0))
     (relation (count time lips)
       (to-show count time lips 'msecs)
+      (if-only (== time 0) (== lips 0))
       (let*-inject ([t1 (count) (* 496 count 1000)]
                     [t2 (time) (+ time 0.0)]
                     [lips^ () (/ t1 t2)])
@@ -3357,13 +3775,12 @@
     (with-depth 2
       (any
 	(typeclass-F-instance-1 a b)
-	((relation/cut cut (a b1 b2)	; a relation under constraint a->b
+	((relation (a b1 b2)	; a relation under constraint a->b
 	   (to-show a b1)
 	   (fails
-	     (all
+	     (all!
 	       (typeclass-F a b2)
-	       (fails (predicate/no-check (b1 b2) (*equal? b1 b2)))
-	       cut)))
+	       (fails (predicate/no-check (b1 b2) (*equal? b1 b2))))))
          a b)))))
 
 (printf "~%Typechecking (open world): ~s~%" 
@@ -3883,25 +4300,25 @@
       (on-right item1 item2 rest))))
         
 (define zebra
-  (relation/cut cut (h)
+  (relation (h)
     (to-show h)
-    (all
-      (== h `((norwegian ,_ ,_ ,_ ,_) ,_ (,_ ,_ milk ,_ ,_) ,_ ,_))
-      (member `(englishman ,_ ,_ ,_ red) h)
-      (on-right `(,_ ,_ ,_ ,_ ivory) `(,_ ,_ ,_ ,_ green) h)
-      (next-to `(norwegian ,_ ,_ ,_ ,_) `(,_ ,_ ,_ ,_ blue) h)
-      (member `(,_ kools ,_ ,_ yellow) h)
-      (member `(spaniard ,_ ,_ dog ,_) h)
-      (member `(,_ ,_ coffee ,_ green) h) 
-      (member `(ukrainian ,_ tea ,_ ,_) h)
-      (member `(,_ luckystrikes oj ,_ ,_) h)
-      (member `(japanese parliaments ,_ ,_ ,_) h)
-      (member `(,_ oldgolds ,_ snails ,_) h)
-      (next-to `(,_ ,_ ,_ horse ,_) `(,_ kools ,_ ,_ ,_) h)
-      (next-to `(,_ ,_ ,_ fox ,_) `(,_ chesterfields ,_ ,_ ,_) h)
-      cut
-      (member `(,_ ,_ water ,_ ,_) h)
-      (member `(,_ ,_ ,_ zebra ,_) h))))
+    (if-all!
+      ((== h `((norwegian ,_ ,_ ,_ ,_) ,_ (,_ ,_ milk ,_ ,_) ,_ ,_))
+       (member `(englishman ,_ ,_ ,_ red) h)
+       (on-right `(,_ ,_ ,_ ,_ ivory) `(,_ ,_ ,_ ,_ green) h)
+       (next-to `(norwegian ,_ ,_ ,_ ,_) `(,_ ,_ ,_ ,_ blue) h)
+       (member `(,_ kools ,_ ,_ yellow) h)
+       (member `(spaniard ,_ ,_ dog ,_) h)
+       (member `(,_ ,_ coffee ,_ green) h) 
+       (member `(ukrainian ,_ tea ,_ ,_) h)
+       (member `(,_ luckystrikes oj ,_ ,_) h)
+       (member `(japanese parliaments ,_ ,_ ,_) h)
+       (member `(,_ oldgolds ,_ snails ,_) h)
+       (next-to `(,_ ,_ ,_ horse ,_) `(,_ kools ,_ ,_ ,_) h)
+       (next-to `(,_ ,_ ,_ fox ,_) `(,_ chesterfields ,_ ,_ ,_) h)
+      )
+      (all (member `(,_ ,_ water ,_ ,_) h)
+	(member `(,_ ,_ ,_ zebra ,_) h)))))
 
 (test-check "Addition"
   (solve 20 (x y)
@@ -3922,8 +4339,6 @@
        (spaniard luckystrikes oj dog ivory)
        (japanese parliaments coffee zebra green)))))
 
-
-
 ; mirror with the equational theory
 
 (define myeq-axioms
@@ -3937,8 +4352,9 @@
       (relation (a b)			; transitivity
 	(to-show `(myeq ,a ,b))
 	(exists (c)
-	  (kb `(myeq ,a ,c))
-	  (kb `(myeq ,c ,b))))
+	  (all
+	    (kb `(myeq ,a ,c))
+	    (kb `(myeq ,c ,b)))))
       )))
 
 (define myeq-axioms-trees		; equational theory of trees
@@ -3959,8 +4375,8 @@
 	(to-show `(myeq (mirror ,a) ,b))
 	(predicate/no-check (a b) (printf "mirror: ~a ~a~n" a b))
 	(exists (c)
-	  (kb `(myeq ,b (mirror ,c)))
-	  (kb `(myeq ,a ,c)))))))
+	  (all (kb `(myeq ,b (mirror ,c)))
+	       (kb `(myeq ,a ,c))))))))
  
 ; The second axiom
 ; In Athena:
@@ -4123,109 +4539,6 @@
 		  (@ sk fk ps))))
             fk in-subst)))]))
 
-; partially-eval-sant: Partially evaluate a semi-antecedent
-; An semi-antecedent is an expression that, when applied to
-; two arguments, sk fk, can produce zero, one, or
-; more answers.
-; Any antecedent can be turned into a semi-antecedent if partially applied
-; to subst.
-; The following higher-order semi-antecedent takes an
-; antecedent and yields the first answer and another, residual
-; antecedent. The latter, when evaluated, will give the rest
-; of the answers of the original semi-antecedent.
-; partially-eval-sant could be implemented with streams (lazy
-; lists). The following is a purely combinational implementation.
-;
-; (@ partially-eval-sant sant a b) =>
-;   (b) if sant has no answers
-;   (a s residial-sant) if sant has a answer. That answer is delivered
-;                       in s. 
-; The residial semi-antecedent can be passed to partially-eval-sant
-; again, and so on, to obtain all answers from an antecedent one by one.
-
-; The following definition is eta-reduced.
-
-(define (partially-eval-sant sant)
-  (@ sant
-    (lambda@ (fk subst a b)
-      (@ a subst 
-	(lambda@ (sk1 fk1)
-	  (@
-	    (fk) 
-	    ; new a
-	    (lambda@ (sub11 x) (@ sk1 (lambda () (@ x sk1 fk1)) sub11))
-	    ; new b
-	    fk1))))
-    (lambda () (lambda@ (a b) (b)))))
-
-(define (ant->sant ant subst)
-  (lambda@ (sk fk)
-    (@ ant sk fk subst)))
-
-(define parents-of-scouts
-  (extend-relation (a1 a2)
-    (fact () 'sam 'rob)
-    (fact () 'roz 'sue)
-    (fact () 'rob 'sal)))
-
-(define fathers-of-cubscouts
-  (extend-relation (a1 a2)
-    (fact () 'sam 'bob)
-    (fact () 'tom 'adam)
-    (fact () 'tad 'carl)))
-
-(test-check 'test-partially-eval-sant
-  (let-lv (p1 p2)
-    (let* ((parents-of-scouts-sant
-	     (ant->sant (parents-of-scouts p1 p2) empty-subst
-	       initial-fk))
-	    (cons@ (lambda@ (x y) (cons x y)))
-	    (split1 (@ 
-		      partially-eval-sant parents-of-scouts-sant
-		      cons@ (lambda () '())))
-	    (a1 (car split1))
-	    (split2 (@ partially-eval-sant (cdr split1) cons@
-		      (lambda () '())))
-	    (a2 (car split2))
-	    (split3 (@ partially-eval-sant (cdr split2) cons@
-		      (lambda () '())))
-	    (a3 (car split3))
-	    )
-      (map (lambda (subst)
-             (concretize-subst/vars subst p1 p2))
-	(list a1 a2 a3))))
-  '(((p1.0 sam) (p2.0 rob)) ((p1.0 roz) (p2.0 sue)) ((p1.0 rob) (p2.0 sal))))
-
-(define-syntax any-interleave
-  (syntax-rules ()
-    [(_) fail]
-    [(_ ant) ant]
-    [(_ ant ...)
-      (lambda@ (sk fk subst)
-	(interleave sk fk
-	  (list (ant->sant ant subst) ...)))]))
-
-; we treat sants as a sort of a circular list
-(define (interleave sk fk sants)
-  (cond
-    ((null? sants) (fk))		; all of the sants are finished
-    ((null? (cdr sants))
-      ; only one sants left -- run it through the end
-      (@ (car sants) sk fk))
-    (else
-      (let loop ((curr sants) (residuals '()))
-	; check if the current round is finished
-	(if (null? curr) (interleave sk fk (reverse residuals))
-	  (@
-	    partially-eval-sant (car curr)
-	    ; (car curr) had an answer
-	    (lambda@ (subst residual)
-	      (@ sk
-	        ; re-entrance cont
-		(lambda () (loop (cdr curr) (cons residual residuals)))
-		subst))
-	  ; (car curr) is finished - drop it, and try next
-	  (lambda () (loop (cdr curr) residuals))))))))
 
 (exit 0)
 
