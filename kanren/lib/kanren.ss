@@ -1,11 +1,22 @@
-; From dfried@cs.indiana.edu Thu Jan 30 14:10:42 2003
-; Message-ID: <200301301410.h0UEAcN05746@bullshark.cs.indiana.edu>
+; From dfried@cs.indiana.edu Fri Jan 31 15:54:14 2003
+; Message-ID: <200301311554.h0VFs7M10965@bullshark.cs.indiana.edu>
 ; To: oleg@pobox.com
-; Subject: Re: Fabulous!!
-; In-Reply-To: Your message of "Tue, 28 Jan 2003 11:31:14 PST."
-;              <200301281931.h0SJVEE9065468@adric.fnmoc.navy.mil> 
-; Date: Thu, 30 Jan 2003 09:10:38 -0500
+; Subject: Re: Latest pl.ss
+; In-Reply-To: Your message of "Thu, 30 Jan 2003 16:35:32 PST."
+;              <200301310035.h0V0ZW8a070115@adric.fnmoc.navy.mil> 
+; Date: Fri, 31 Jan 2003 10:54:07 -0500
 ; From: Dan Friedman <dfried@cs.indiana.edu>
+
+
+; This includes the key lines of code that I sent you earlier, but
+; that code had not shown the abstraction of commitment throughout.
+; This one does.  It is also the whole system.  I am having a little
+; problem with extending relations in the presence of cut.  I thought
+; that I had solved this, but it turns out that there are diabolical
+; problems where building a relation one relation at a time does not
+; behave the same as building the full relation when cut is involved.
+; Let me know if you would be willing to look at this.
+
 
 ;  Fk  = () -> Ans
 ;  Cutk = Fk
@@ -196,37 +207,30 @@
     (cond
       [(null? base) refining-survivors]
       [else (cons-if-real-commitment
-              (car (car base))
-              (nonempty-subst-in (cadr (car base)) refining)
+              (commitment->var (car base))
+              (nonempty-subst-in (commitment->term (car base)) refining)
               (refine (cdr base) refining
                 (cond
-                  [(assv (car (car base)) refining-survivors)
-                   => (lambda (p) (remv p refining-survivors))]
+                  [(assv (commitment->var (car base)) refining-survivors)
+                   => (lambda (c) (remv c refining-survivors))]
                   [else refining-survivors])))])))
+
+(define commitment list)             ;;; change to cons
+(define commitment->term cadr)       ;;; and change to cdr
+(define commitment->var car)
 
 (define cons-if-real-commitment
   (lambda (lv term refined)
     (cond
       [(eqv? term lv) refined]
-      [else (cons (list lv term) refined)])))
-
-;; remove all elements of refining whose domain is in base:
-(define restrict
-  (lambda (refining base-dom)
-    (cond
-      [(null? refining) '()]
-      [(memv (car (car refining)) base-dom)
-       (restrict (cdr refining) base-dom)]
-      [else (cons (car refining)
-              (restrict (cdr refining) base-dom))])))
-
+      [else (cons (commitment lv term) refined)])))
 
 (define nonempty-subst-in
   (lambda (t subst)
     (cond
       [(lv? t)
        (cond
-         [(assv t subst) => cadr]
+         [(assv t subst) => commitment->term]
          [else t])]
       [else t])))
 
@@ -238,7 +242,7 @@
 
 (define unit-subst
   (lambda (var t)
-    (list (list var t))))
+    (list (commitment var t))))
 
 (define test-compose-subst-1
   (lambda ()
@@ -289,9 +293,13 @@
             (newline)
             (compose-subst s r))))
       (begin
-        '((x.1 y.1) (y.1 z.1))
-        '((x.1 a) (y.1 b) (z.1 y.1))
-        '((x.1 b) (z.1 y.1))))))
+	`(,(commitment 'x.1 'y.1)
+	  ,(commitment 'y.1 'z.1))
+	`(,(commitment 'x.1 'a)
+	  ,(commitment 'y.1 'b)
+	  ,(commitment 'z.1 'y.1))
+	`(,(commitment 'x.1 'b)
+	  ,(commitment 'z.1 'y.1))))))
   
 (printff "~s ~s~%" 'test-compose-subst-4 (test-compose-subst-4))
 
@@ -320,17 +328,17 @@
         (concretize
           (exists (x)
             (unify x 3 empty-subst)))
-        '((x.1 3)))
+        `(,(commitment 'x.1 3)))
       (equal?
         (concretize
           (exists (y)
             (unify 4 y empty-subst)))
-        '((y.1 4)))
+        `(,(commitment 'y.1 4)))
       (equal?
         (concretize
           (exists (x y)
             (unify x y empty-subst)))
-        '((x.1 y.1)))
+        `(,(commitment 'x.1 'y.1)))
       (equal?
         (unify 'x 'x empty-subst)
         '())
@@ -374,7 +382,9 @@
                 2 3 4)
              (lambda (subst) subst)
              (lambda () '())))))
-      '((x.1 2) (y.1 3) (z.1 4)))))
+      `(,(commitment 'x.1 2)
+	,(commitment 'y.1 3)
+	,(commitment 'z.1 4)))))
 
 (printff "~s ~s~%" 'test-unify-incrementally (test-unify-incrementally))
 
@@ -454,7 +464,7 @@
       (concretize
         (car (@ (child-of-male 'sam 'john)
                 initial-sk initial-fk empty-subst initial-fk)))
-      '((child.1 sam) (dad.1 john)))))
+      `(,(commitment 'child.1 'sam) ,(commitment 'dad.1 'john)))))
 
 (printff "~s ~s~%" 'test-child-of-male-0 (test-child-of-male-0))
 
@@ -502,7 +512,7 @@
                     (exists (x)
                       (query (father 'pete x))))])
       (and
-        (equal? (car result) '((x.1 sal)))
+        (equal? (car result) `(,(commitment 'x.1 'sal)))
         (equal? ((cdr result)) '())))))
 
 (printff "~s ~s~%" 'test-father-3 (test-father-3))
@@ -1456,7 +1466,7 @@
     (cond
       [(lv? t)
        (cond
-         [(assv t subst) => cadr]
+         [(assv t subst) => commitment->term]
          [else t])]
       [(pair? t)
        (cons
@@ -1528,23 +1538,26 @@
           (concretize
             (exists (x y) 
               (unify `(,x ,y) '(3 4) empty-subst)))
-          '((x.1 3) (y.1 4)))
+          `(,(commitment 'x.1 3) ,(commitment 'y.1 4)))
         (equal?
           (concretize
             (exists (x y) 
               (unify `(,x 4) `(3 ,y) empty-subst)))
-          '((x.1 3) (y.1 4))))
+          `(,(commitment 'x.1 3) ,(commitment 'y.1 4))))
       (and
         (equal?
           (concretize
             (exists (w x y z)     
               (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst)))
-          '((x.1 3) (y.1 4) (w.1 z.1)))
+          `(,(commitment 'x.1 3)
+	    ,(commitment 'y.1 4)
+	    ,(commitment 'w.1 'z.1)))
         (equal?
           (concretize
             (exists (x y)
               (unify `(,x 4) `(,y ,y) empty-subst)))
-          '((x.1 4) (y.1 4)))
+          `(,(commitment 'x.1 4)
+	    ,(commitment 'y.1 4)))
         (equal?
           (exists (x y) 
             (unify `(,x 4 3) `(,y ,y ,x) empty-subst))
@@ -1552,24 +1565,32 @@
         (equal?
           (concretize
             (exists (r v w x u)
-              (unify `(,r (,v (,w ,x) 8)) `(,r (,u (abc ,u) ,x)) empty-subst)))
-          '((v.1 8) (w.1 abc) (x.1 8) (u.1 8)))
+              (unify `(,r (,v (,w ,x) 8))
+		`(,r (,u (abc ,u) ,x))
+		empty-subst)))
+          `(,(commitment 'v.1 8)
+	    ,(commitment 'w.1 'abc)
+	    ,(commitment 'x.1 8)
+	    ,(commitment 'u.1 8)))
         (equal?
           (concretize
             (exists (x y)
               (unify `(p (f a) (g ,x)) `(p ,x ,y) empty-subst)))
-          '((x.1 (f a)) (y.1 (g (f a)))))
+          `(,(commitment 'x.1 '(f a))
+	    ,(commitment 'y.1 '(g (f a)))))
         (equal?
           (concretize
             (exists (x y)
               (unify `(p (g ,x) (f a)) `(p ,y ,x) empty-subst)))
-          '((y.1 (g (f a))) (x.1 (f a))))
+          `(,(commitment 'y.1 '(g (f a))) ,(commitment 'x.1 '(f a))))
         (equal?
           (concretize
             (exists (x y z)
               (unify `(p a ,x (h (g ,z))) `(p ,z (h ,y) (h ,y)) empty-subst)))
-          '((z.1 a) (x.1 (h (g a))) (y.1 (g a))))
-        (equal?
+          `(,(commitment 'z.1 'a)
+	    ,(commitment 'x.1 '(h (g a)))
+	    ,(commitment 'y.1 '(g a))))
+        (equal? ;;; Oleg's works on this.
           (concretize
             (exists (x y)
               (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)))
@@ -1655,10 +1676,13 @@
 
 (define compose-with-virtual-unit-subst
   (lambda (base t-var u)
-    (cons (list t-var u)
+    (cons (commitment t-var u)
       (map
-        (lambda (b)
-          (list (car b) (subst-in-with-virtual-unit-subst (cadr b) t-var u)))
+        (lambda (c)
+          (commitment
+	    (commitment-var c)
+	    (subst-in-with-virtual-unit-subst
+	      (commitment-term c) t-var u)))
         base))))
 
 (define subst-in-with-virtual-unit-subst
@@ -1677,23 +1701,24 @@
 (define normalize-subst
   (lambda (subst)
     (map (lambda (c)
-           (list (car c)
-             (substitute-vars-recursively (cadr c) subst)))
+           (commitment (commitment->var c)
+             (substitute-vars-recursively
+	       (commitment->term c) subst)))
       subst)))
 
 (define substitute-vars-recursively
   (lambda (term subst)
-    (letrec
-        ([resolve-var
-           (lambda (var)
-             (cond
-               [(assv var subst) =>
-                (lambda (c)
-                  (substitute-vars-recursively (cadr c) (remq c subst)))]
-               [else var]))])
-      (traverse-term resolve-var term))))
+    (traverse-term
+      (lambda (var)
+	(cond
+	  [(assv var subst) =>
+	   (lambda (c)
+	     (substitute-vars-recursively
+	       (commitment->term c) (remq c subst)))]
+	  [else var]))
+      term)))
 
-(define traverse-term ;;; probably can use copy-term, here.
+(define traverse-term
   (lambda (f t)
     (cond
       [(lv? t) (f t)]
@@ -1705,8 +1730,9 @@
     (cond
       [(lv? t)
        (cond
-         [(assv t subst) 
-          => (lambda (c) (nonempty-subst-in (cadr c) subst))]
+         [(assv t subst)
+	  => (lambda (c)
+	       (nonempty-subst-in (commitment->term c) subst))]
          [else t])]
       [(pair? t)
        (cons
@@ -1721,15 +1747,15 @@
       [(lv? t)
        (cond
          [(assv t subst)
-          => (lambda (t-binding)        ; t is bound
-               (unify (cadr t-binding) u subst))]
+          => (lambda (c)        ; t is bound
+               (unify (commitment->term c) u subst))]
          [(lv? u) (unify-with-unbound-lv-and-other-is-lv t u subst)]
          [else (unify-with-unbound-lv-and-other-is-value t u subst)])]
       [(lv? u)
        (cond
          [(assv u subst)
-          => (lambda (u-binding)        ; u is bound
-               (unify (cadr u-binding) t subst))]
+          => (lambda (c)        ; u is bound
+               (unify (commitment->term c) t subst))]
          [else (unify-with-unbound-lv-and-other-is-value u t subst)])]
       [(and (pair? t) (pair? u))
        (cond
@@ -1744,9 +1770,9 @@
   (lambda (unbound-t-var u-var subst)
     (cond
       [(assv u-var subst)                  
-       => (lambda (u-binding)                       ; u-var is bound
-            (let ([u-val (cadr u-binding)])
-              (cons-if-real-commitment unbound-t-var u-val subst)))]
+       => (lambda (c)                       ; u-var is bound
+            (let ([u-term (commitment->term c)])
+              (cons-if-real-commitment unbound-t-var u-term subst)))]
       [else (compose-subst (unit-subst unbound-t-var u-var) subst)])))
 
 ;;; Don't add the commitment of an uncommited variable x to a pair (a . b)
@@ -1757,8 +1783,8 @@
   (lambda (unbound-t-var u-value subst)
     (cond
       [(pair? u-value)
-       (let ([car-var (lv 'a:)]
-             [cdr-var (lv 'd:)])
+       (let ([car-var (lv ':a)]
+             [cdr-var (lv ':d)])
          (let ([new-pair (cons car-var cdr-var)])
            (cond
              [(unify car-var (car u-value)
@@ -1820,23 +1846,35 @@
           (concretize
             (exists (x y) 
               (unify `(,x ,y) '(3 4) empty-subst)))
-          '((y.1 4) (x.1 3)))
+          `(,(commitment 'y.1 4) ,(commitment 'x.1 3)))
         (equal?
           (concretize
             (exists (x y) 
               (unify `(,x 4) `(3 ,y) empty-subst)))
-          '((y.1 4) (x.1 3))))
+          `(,(commitment 'y.1 4) ,(commitment 'x.1 3))))
       (and
         (equal?
           (concretize
-            (exists (w x y z)     
-              (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst)))
-          '((w.1 z.1) (y.1 4) (x.1 3)))
-        (equal? ;;; not in Oleg's; his is ((x.1 4)) after normalizing
+            (exists (w x y z)
+	      (let ([s (normalize-subst
+                         (unify `(,x 4 3 ,w) `(3 ,y ,x ,z) empty-subst))])
+		(let ([vars (list w y x)])
+		  (map commitment
+		    vars
+		    (substitute-vars-recursively vars s))))))
+          `(,(commitment 'w.1 'z.1)
+	    ,(commitment 'y.1 4)
+	    ,(commitment 'x.1 3)))
+        (equal? 
           (concretize
             (exists (x y)
-              (normalize-subst (unify `(,x 4) `(,y ,y) empty-subst))))
-          '((y.1 4) (x.1 4)))
+              (let ([s (normalize-subst
+			 (unify `(,x 4) `(,y ,y) empty-subst))])
+		(let ([vars (list y x)])
+		  (map commitment
+		    vars
+		    (substitute-vars-recursively vars s))))))
+          `(,(commitment 'y.1 4) ,(commitment 'x.1 4)))
         (equal?
           (exists (x y) 
             (unify `(,x 4 3) `(,y ,y ,x) empty-subst))
@@ -1845,46 +1883,69 @@
           (concretize
             (exists (r v w x u)
               (let ([s (normalize-subst
-                         (unify `(,r (,v (,w ,x) 8)) `(,r (,u (abc ,u) ,x)) empty-subst))])
+                         (unify
+			   `(,r (,v (,w ,x) 8))
+			   `(,r (,u (abc ,u) ,x))
+			   empty-subst))])
                 (let ([vars (list u x w v)])
-                  (map list vars (substitute-vars-recursively vars s))))))
-          '((u.1 8) (x.1 8) (w.1 abc) (v.1 8)))
+                  (map commitment
+		    vars
+		    (substitute-vars-recursively vars s))))))
+          `(,(commitment 'u.1 8)
+	    ,(commitment 'x.1 8)
+	    ,(commitment 'w.1 'abc)
+	    ,(commitment 'v.1 8)))
         (equal? 
           (concretize
             (exists (x y)
               (let ([s (normalize-subst
                          (unify `(p (f a) (g ,x)) `(p ,x ,y) empty-subst))])
                 (let ([vars (list y x)])
-                  (map list vars (substitute-vars-recursively vars s))))))
-          '((y.1 (g (f a))) (x.1 (f a))))
+                  (map commitment
+		    vars
+		    (substitute-vars-recursively vars s))))))
+          `(,(commitment 'y.1 '(g (f a)))
+	    ,(commitment 'x.1 '(f a))))
         (equal? 
           (concretize
             (exists (x y)
               (let ([s (normalize-subst
                          (unify `(p (g ,x) (f a)) `(p ,y ,x) empty-subst))])
                 (let ([vars (list x y)])
-                  (map list vars (substitute-vars-recursively vars s))))))
-          '((x.1 (f a)) (y.1 (g (f a)))))
+                  (map commitment
+		    vars
+		    (substitute-vars-recursively vars s))))))
+          `(,(commitment 'x.1 '(f a))
+	    ,(commitment 'y.1 '(g (f a)))))
         (equal? 
           (concretize
             (exists (x y z)
               (let ([s (normalize-subst
-                         (unify `(p a ,x (h (g ,z))) `(p ,z (h ,y) (h ,y)) empty-subst))])
+                         (unify
+			   `(p a ,x (h (g ,z)))
+			   `(p ,z (h ,y) (h ,y))
+			   empty-subst))])
                 (let ([vars (list y x z)])
-                  (map list vars (substitute-vars-recursively vars s))))))
-          '((y.1 (g a)) (x.1 (h (g a))) (z.1 a)))
+                  (map commitment
+		    vars
+		    (substitute-vars-recursively vars s))))))
+          `(,(commitment 'y.1 '(g a))
+	    ,(commitment 'x.1 '(h (g a)))
+	    ,(commitment 'z.1 'a)))
         (equal? 
           (concretize ;;; was #f
             (exists (x y)
               (let ([s (unify `(p ,x ,x) `(p ,y (f ,y)) empty-subst)])
-                (let ([var (map car s)])
-                  (map list var (substitute-vars-recursively var s))))))
-          '((d:.1 ())
-            (a:.1 (f a:.1))
-            (d:.2 ((f . d:.2)))
-            (a:.2 f)
-            (y.1 (f (f . d:.2)))
-            (x.1 (f (f . d:.2)))))))))
+                (let ([var (map commitment->var s)])
+                  (map commitment
+		    var
+		    (substitute-vars-recursively var s))))))
+          `(,(commitment ':d.1 '())
+            ,(commitment ':a.1 '(f :a.1))
+            ,(commitment ':d.2 '((f . :d.2)))
+            ,(commitment ':a.2 'f)
+            ,(commitment 'y.1 '(f (f . :d.2)))
+            ,(commitment 'x.1 `(f (f . :d.2)))))))))
           
 (printff "~s ~s~%" 'test-unify/pairs-lazy (test-unify/pairs))
 (printff "~s ~s~%" 'test-fun-resubstitute-lazy (test-fun-resubstitute))
@@ -2324,7 +2385,7 @@
   (copy-term
     (lambda (t env k)
       (cond
-        [(assq t env)
+        [(assv t env)
          => (lambda (pr)
               (k (cdr pr) env))]
         [else (let ([new-lv (lv (lv-name t))])
