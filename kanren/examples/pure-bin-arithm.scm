@@ -777,9 +777,11 @@
   (relation (head-let n b q r)
     (any-interleave
       (all (== n '(1)) (pos b) (== q '()) (== r '())) ; 1 = b^0 + 0, b >0
-      ; in the rest, b > 1
       (all (== q '())  (<o n b)  (++o r '(1) n)) ; n = b^0 + (n-1)
-      (all (== q '(1)) (=ol n b) (++o r b n)) ; n = b + r, n and b the same sz
+	; n = b + r, n and b the same sz
+      (all (== q '(1)) (gt1 b) (=ol n b) (++o r b n))
+      (all (== b '(1)) (pos q) (++o r '(1) n))  ; n = 1^q + (n-1), q>0
+      (all (== b '()) (pos q) (== r n))         ; n = 0^q + n, q>0
       ; in the rest, n is longer than b
       (all (== b '(0 1))		; b = 2
 	   (exists (n1)
@@ -1279,15 +1281,23 @@
 
 (test-check 'logo-15--3
   (solve 10 (b r) (logo (build 15) b (build 3) r))
-  '(((b.0 (0 1)) (r.0 (1 1 1)))))
+  '(((b.0 (1)) (r.0 (0 1 1 1)))  ; 15 = 1^3 + 14
+    ((b.0 ()) (r.0 (1 1 1 1)))   ; 15 = 0^3 + 15
+    ((b.0 (0 1)) (r.0 (1 1 1))))) ; 15 = 2^3 + 7
+
+(test-check 'logo-15--3-1
+  (solve 10 (q) (logo q '(1) (build 2) '()))
+  '(((q.0 (1)))))
 
 (test-check 'logo-32--4
   (solve 10 (b r) (logo (build 32) b (build 4) r))
-  '())
+  '(((b.0 (1)) (r.0 (1 1 1 1 1))) ((b.0 ()) (r.0 (0 0 0 0 0 1)))))
 
 (test-check 'logo-33--5
   (solve 10 (b r) (logo (build 33) b (build 5) r))
-  '(((b.0 (0 1)) (r.0 (1)))))
+  '(((b.0 (1)) (r.0 (0 0 0 0 0 1)))
+    ((b.0 ()) (r.0 (1 0 0 0 0 1)))
+    ((b.0 (0 1)) (r.0 (1)))))
 
 (test-check 'logo-2-5
   (solve 10 (n) (logo n (build 2) (build 5) '(1)))
@@ -1316,8 +1326,12 @@
 )
 
 (test-check 'powers-of-exp-3
-  (solve 3 (n b r) (logo n b (build 3) r))
-  '(((n.0 (0 0 0 1)) (b.0 (0 1)) (r.0 ()))
+  (solve 7 (n b r) (logo n b (build 3) r))
+  '(((n.0 (1)) (b.0 (1)) (r.0 ()))
+    ((n.0 n.0) (b.0 ()) (r.0 n.0))
+    ((n.0 (0 0 0 1)) (b.0 (0 1)) (r.0 ()))
     ((n.0 (1 1 0 1 1)) (b.0 (1 1)) (r.0 ()))
-    ((n.0 (1 0 0 1)) (b.0 (0 1)) (r.0 (1))))
+    ((n.0 (0 1)) (b.0 (1)) (r.0 (1)))
+    ((n.0 (1 0 0 1)) (b.0 (0 1)) (r.0 (1)))
+    ((n.0 (0 0 1 1 1)) (b.0 (1 1)) (r.0 (1))))
 )
