@@ -1,3 +1,5 @@
+;; http://www.sics.se/quintus/primes.pl
+
 (define primes
   (relation (head-let limit ps)
     (exists (ls)
