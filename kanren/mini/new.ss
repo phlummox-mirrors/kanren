@@ -2,32 +2,36 @@
 
 ; Stream implementation
 
-(define-syntax open
-  (syntax-rules ()
-    ((_ e e1 ((s r) e2))
-     (let ((r^ e))
-       (let ((p (cond
-                  ((mzero? r^) #f)
-                  (else (r^ mzero)))))
-         (cond
-           ((not p) e1)
-           (else (let ((s (car p))
-                       (r (cdr p)))
-                   e2))))))))
-
-(define-syntax freeze
-  (syntax-rules ()
-    ((_ e)
-     (lambda (f)
-       (let ((r e))
-         (cond
-           ((not (mzero? r)) (r f))
-           ((not (mzero? f)) (f mzero))
-           (else #f)))))))
-
 (define mzero '())
 
 (define mzero? null?)
+
+(define-syntax thaw ; internal
+  (syntax-rules ()
+    ((_ r)
+     (let ((r^ r))
+       (cond
+         ((mzero? r^) #f)
+         (else (r^ mzero)))))
+    ((_ r f)
+     (let ((r^ r) (f^ f))
+       (cond
+         ((mzero? r^) (thaw f^))
+         (else (r^ f^)))))))
+
+(define-syntax open
+  (syntax-rules ()
+    ((_ e ((s r) e1) e2)
+     (let ((p (thaw e)))
+       (cond
+         (p (let ((s (car p))
+                  (r (cdr p)))
+              e1))
+         (else e2))))))
+
+(define-syntax freeze
+  (syntax-rules ()
+    ((_ e) (lambda (f) (thaw e f)))))
 
 (define mplus
   (lambda (r r^)
@@ -50,8 +54,13 @@
     (cond
       ((mzero? r) mzero)
       (else
-        (freeze
-          (open r mzero ((s r) (mplus (k s) (bind r k)))))))))
+        (lambda (f)
+          (let ((p (r mzero)))
+            (cond
+              (p (thaw (mplus (k (car p))
+                              (bind (cdr p) k))
+                       f))
+              (else (thaw f)))))))))
 
 ; Kanren implementation
 
@@ -61,8 +70,13 @@
       ((mzero? r) r^)
       ((mzero? r^) r)
       (else
-        (freeze
-          (open r r^ ((s r) (mplus (unit s) (interleave r^ r)))))))))
+        (lambda (f)
+          (let ((p (r mzero)))
+            (cond
+              (p (thaw (mplus (unit (car p))
+                              (interleave r^ (cdr p)))
+                       f))
+              (else (thaw r^ f)))))))))
 
 (define succeed unit)
 (define fail (lambda (s) mzero))
@@ -119,19 +133,21 @@
      (let ((g^ (all g ...)))
        (lambda (s) (combine (g^ s) (freeze ((c@ combine c ...) s))))))))
 
+(define-syntax chop1
+  (syntax-rules ()
+    ((chop s r k) (k s))))
+
 (define-syntax cond1
   (syntax-rules ()
-    ((_ c ...)
-     (let-syntax ((chop (syntax-rules ()
-                          ((chop s r k) (k s)))))
-       (c1 chop c ...)))))
+    ((_ c ...) (c1 chop1 c ...))))
+
+(define-syntax chopo
+  (syntax-rules ()
+    ((chop s r k) (bind (mplus (unit s) r) k))))
 
 (define-syntax condo
   (syntax-rules ()
-    ((_ c ...)
-     (let-syntax ((chop (syntax-rules ()
-                          ((chop s r k) (bind (mplus (unit s) r) k)))))
-       (c1 chop c ...)))))
+    ((_ c ...) (c1 chopo c ...))))
 
 (define-syntax c1
   (syntax-rules (else)
@@ -140,13 +156,15 @@
     ((_ chop (g0 g ...))
      (let ((g^ g0))
        (lambda (s)
-         (open (g^ s) mzero
-           ((s r) (chop s r (all g ...)))))))
+         (open (g^ s)
+           ((s r) (chop s r (all g ...)))
+           mzero))))
     ((_ chop (g0 g ...) c ...)
      (let ((g^ g0))
        (lambda (s)
-         (open (g^ s) ((c1 chop c ...) s)
-           ((s r) (chop s r (all g ...)))))))))
+         (open (g^ s)
+           ((s r) (chop s r (all g ...)))
+           ((c1 chop c ...) s)))))))
 
 (define-syntax alli
   (syntax-rules ()
@@ -154,14 +172,13 @@
     ((_ g) g)
     ((_ g0 g ...)
      (let ((g^ g0))
-       (lambda (s)
-         (ai (g^ s)
-             (lambda (s) ((alli g ...) s))))))))
+       (lambda (s) (ai (g^ s) (lambda (s) ((alli g ...) s))))))))
 
 (define ai
   (lambda (r g)
-    (open r mzero
-      ((s r) (interleave (g s) (freeze (ai r g)))))))
+    (open r
+      ((s r) (interleave (g s) (freeze (ai r g))))
+      mzero)))
 
 (define-syntax lambda-limited
   (syntax-rules ()
@@ -182,8 +199,9 @@
 
 (define prefix*
   (lambda (r)
-    (open r '()
-      ((s r) (cons s (prefix* r))))))
+    (open r
+      ((s r) (cons s (prefix* r)))
+      '())))
 
 (define prefix* ; inlined
   (lambda (r)
@@ -202,9 +220,10 @@
     (cond
       ((zero? n) '())
       (else
-       (open r '()
+       (open r
          ((s r) (cons s
-                  (prefix (- n 1) r))))))))
+                  (prefix (- n 1) r)))
+         '())))))
 
 (define prefix ; inlined
   (lambda (n r)
