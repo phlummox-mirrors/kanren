@@ -516,6 +516,30 @@
 ; They can be "lifted" to relations (see below).
 ; 
 
+; TRACE-ANT-RAW TITLE ANT -> ANT
+; Traces all invocations and re-invocations of an antecedent
+; printing subst before and after, in their raw form
+(define trace-ant-raw
+  (lambda (title ant)
+    (let ((print-it
+	    (lambda (event subst)
+	      (display title) (display " ")
+	      (display event) (pretty-print subst) (newline))))
+      (lambda@ (sk fk subst)
+	(print-it "CALL:" subst)
+	(@ ant 
+	  (lambda@ (fk subst)
+	    (print-it "RETURN:" subst)
+	    (@ sk
+	      (lambda ()
+		(display title) (display " REDO") (newline)
+		(fk))
+	      subst))
+	  (lambda ()
+	    (display title) (display " FAIL") (newline)
+	    (fk))
+	  subst)))))
+
 ; Conjunctions
 ; All conjunctions below satisfy properties
 ;    ans is an answer of (a-conjunction ant1 ant2 ...) ==>
@@ -667,12 +691,13 @@
             condition1 condition2 ...)
           fk))]
     [(_ (condition1 condition2 ...) then else)
-     (lambda@ (sk fk)
+     (lambda@ (sk fk subst)
        (@ (splice-in-ants/all
             (lambda@ (fk-ign)
               (@ then sk fk)) condition1 condition2 ...)
           (lambda ()
-            (@ else sk fk))))]))
+            (@ else sk fk subst))
+	 subst))]))
 
 ; Disjunction of antecedents
 ; All disjunctions below satisfy properties
@@ -1337,7 +1362,7 @@
     parents-of-scouts parents-of-athletes))
 
 (test-check 'test-busy-parents
-  (solve 5 (x) (exists (y) (busy-parents x y)))
+  (solve 5 (x) (exists (y) (trace-ant-raw 'busy-parents (busy-parents x y))))
   '(((x.0 roz)) ((x.0 rob))))
 
 ; (define-syntax intersect-relation
@@ -1601,6 +1626,24 @@
   (solve 10 (x) (grandpa x 'sue))
   '(((x.0 sam))))
 
+; The same as above, with if-all! -- just to test the latter.
+(define grandpa
+  (let-ants (a1 a2) ([grandpa/father grandpa/father]
+		     [grandpa/mother grandpa/mother])
+    (if-all! ((succeeds grandpa/father) (succeeds grandpa/father))
+      grandpa/father grandpa/mother)))
+
+(test-check 'test-grandpa-10
+  (solve 10 (x y) (grandpa x y))
+  '(((x.0 jon) (y.0 rob))
+    ((x.0 jon) (y.0 roz))
+    ((x.0 sam) (y.0 sal))
+    ((x.0 sam) (y.0 pat))))
+
+(test-check 'test-grandpa-10-1
+  (solve 10 (x) (grandpa x 'sue))
+  '(((x.0 sam))))
+
 ; Now do it with soft-cuts
 (define grandpa
   (let-ants (a1 a2) ([grandpa/father grandpa/father]
@@ -1746,6 +1789,7 @@
          (begin (display title) (display " ")
                 (display '(var0 ...)) (display " ") (display (list var0 ...))
                 (newline))))]))
+
 
 (define grandpa
   (relation (grandad grandchild)
