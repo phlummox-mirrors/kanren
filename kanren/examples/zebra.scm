@@ -43,21 +43,22 @@
         
 (define zebra
   (relation (head-let h)
-    (if-all!
-      ((== h `((norwegian ,_ ,_ ,_ ,_) ,_ (,_ ,_ milk ,_ ,_) ,_ ,_))
-       (member `(englishman ,_ ,_ ,_ red) h)
-       (on-right `(,_ ,_ ,_ ,_ ivory) `(,_ ,_ ,_ ,_ green) h)
-       (next-to `(norwegian ,_ ,_ ,_ ,_) `(,_ ,_ ,_ ,_ blue) h)
-       (member `(,_ kools ,_ ,_ yellow) h)
-       (member `(spaniard ,_ ,_ dog ,_) h)
-       (member `(,_ ,_ coffee ,_ green) h) 
-       (member `(ukrainian ,_ tea ,_ ,_) h)
-       (member `(,_ luckystrikes oj ,_ ,_) h)
-       (member `(japanese parliaments ,_ ,_ ,_) h)
-       (member `(,_ oldgolds ,_ snails ,_) h)
-       (next-to `(,_ ,_ ,_ horse ,_) `(,_ kools ,_ ,_ ,_) h)
-       (next-to `(,_ ,_ ,_ fox ,_) `(,_ chesterfields ,_ ,_ ,_) h)
-      )
+    (if-only
+      (all!
+        (== h `((norwegian ,_ ,_ ,_ ,_) ,_ (,_ ,_ milk ,_ ,_) ,_ ,_))
+        (member `(englishman ,_ ,_ ,_ red) h)
+        (on-right `(,_ ,_ ,_ ,_ ivory) `(,_ ,_ ,_ ,_ green) h)
+        (next-to `(norwegian ,_ ,_ ,_ ,_) `(,_ ,_ ,_ ,_ blue) h)
+        (member `(,_ kools ,_ ,_ yellow) h)
+        (member `(spaniard ,_ ,_ dog ,_) h)
+        (member `(,_ ,_ coffee ,_ green) h) 
+        (member `(ukrainian ,_ tea ,_ ,_) h)
+        (member `(,_ luckystrikes oj ,_ ,_) h)
+        (member `(japanese parliaments ,_ ,_ ,_) h)
+        (member `(,_ oldgolds ,_ snails ,_) h)
+        (next-to `(,_ ,_ ,_ horse ,_) `(,_ kools ,_ ,_ ,_) h)
+        (next-to `(,_ ,_ ,_ fox ,_) `(,_ chesterfields ,_ ,_ ,_) h)
+        )
       (all (member `(,_ ,_ water ,_ ,_) h)
 	(member `(,_ ,_ ,_ zebra ,_) h)))))
 
