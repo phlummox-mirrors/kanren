@@ -11,7 +11,7 @@
       (relation (t1 t2)
 	(to-show `(btree (root ,t1 ,t2)))
 	(all
-	  (predicate (t1 t2) (printf "btree ~s ~s ~n" t1 t2))
+	  (project (t1 t2) (predicate (printf "btree ~s ~s ~n" t1 t2)))
 	  (kb `(btree ,t1))
 	  (kb `(btree ,t2)))))))
 
@@ -22,7 +22,7 @@
       (relation (a b)
 	(to-show `(myeq ,a ,b))		; symmetry
 	(all
-	  (predicate/no-check (a b) (printf "symmetry: ~a ~a ~n" a b))
+	  (project/no-check (a b) (predicate (printf "symmetry: ~a ~a ~n" a b)))
 	  (kb `(myeq ,b ,a))))
       (relation (a b)			; transitivity
 	(to-show `(myeq ,a ,b))
@@ -37,7 +37,7 @@
     (relation (a b c d)
       (to-show `(myeq (root ,a ,b) (root ,c ,d)))
       (all
-	(predicate/no-check (a b) (printf "trees: ~a ~a ~a ~a ~n" a b c d))
+	(project/no-check (a b) (predicate (printf "trees: ~a ~a ~a ~a ~n" a b c d)))
 	(kb `(myeq ,a ,c))
 	(kb `(myeq ,b ,d))))))
   
@@ -49,7 +49,7 @@
       (relation (a b)
 	(to-show `(myeq (mirror ,a) ,b))
 	(all
-	  (predicate/no-check (a b) (printf "mirror: ~a ~a~n" a b))
+	  (project/no-check (a b) (predicate (printf "mirror: ~a ~a~n" a b)))
 	  (exists (c)
 	    (all (kb `(myeq ,b (mirror ,c)))
 	         (kb `(myeq ,a ,c)))))))))
@@ -66,7 +66,7 @@
   (lambda (kb)
     (relation (val)
       (to-show `(myeq (leaf ,val) (mirror (leaf ,val))))
-      (predicate/no-check () (printf "mirror-axiom-eq-1: ~a~n" val)))))
+      (project/no-check (val) (predicate (printf "mirror-axiom-eq-1: ~a~n" val))))))
 
 ; The second axiom
 ; In Athena:
@@ -84,9 +84,10 @@
   (lambda (kb)
     (relation (t1 t2) 
       (to-show `(myeq (mirror (root ,t1 ,t2)) (root (mirror ,t2) (mirror ,t1))))
-      (predicate/no-check (t1 t2)
-	(printf "mirror ax2: ~a~n"
-	  `(myeq (root ,t1 ,t2) (root (mirror ,t2) (mirror ,t1))))))))
+      (project/no-check (t1 t2)
+	(predicate
+          (printf "mirror ax2: ~a~n"
+	    `(myeq (root ,t1 ,t2) (root (mirror ,t2) (mirror ,t1)))))))))
 
 ; Define the goal
 ; In Athena:
