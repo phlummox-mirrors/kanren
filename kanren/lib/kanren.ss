@@ -2496,22 +2496,19 @@
       [(eq? t _) subst]
       [(eq? u _) subst]
       [(var? t)
-       (let ([ct (assq t subst)])
-         (if ct
-             (unify-bound/any ct u subst)
-             (unify-free/any t u subst)))]
+       (let*-and (unify-free/any t u subst) ([ct (assq t subst)])
+         (unify-bound/any ct u subst))]
       [(var? u)				; t is not a variable...
-       (let ([cu (assq u subst)])
+       (let*-and
          (cond
-           [cu (unify (commitment->term cu) t subst)]
            [(pair? t) (unify-free/list u t subst)]
            ; t is not a var and is not a pair: it's atomic
-           [else (extend-subst u t subst)]))]  
+           [else (extend-subst u t subst)])
+         ([cu (assq u subst)])
+         (unify (commitment->term cu) t subst))]  
       [(and (pair? t) (pair? u))
-       (let ([car-subst (unify (car t) (car u) subst)])
-         (if car-subst
-             (unify (cdr t) (cdr u) car-subst)
-             #f))]
+       (let*-and #f ([subst (unify (car t) (car u) subst)])
+         (unify (cdr t) (cdr u) subst))]
       [else (and (equal? t u) subst)])))
 
 ; ct is a commitment to a bound variable, u can be anything
@@ -2519,13 +2516,9 @@
   (lambda (ct u subst)
     (cond
       [(eq? u _) subst]
-      [(var? u) 
-       (let ([cu (assq u subst)])
-	 (if cu
-	   ; both t and u are bound...
-	   (unify-bound/bound ct cu subst)
-	   ; t is bound, u is free
-	   (unify-free/bound u ct subst)))]
+      [(var? u)
+       (let*-and (unify-free/bound u ct subst) ([cu (assq u subst)])
+         (unify-bound/bound ct cu subst))] ; both t and u are bound...
       [else ; unify bound and a value
 	(unify (commitment->term ct) u subst)])))
 
@@ -2548,46 +2541,32 @@
 
 (define unify-bound/bound
   (lambda (ct cu subst)
-    (let unify-internal ((t (commitment->term ct))
-			 (u (commitment->term cu))
-			 (subst subst))
+    (let unify-internal ([t (commitment->term ct)]
+			 [u (commitment->term cu)]
+			 [subst subst])
       (cond
-	[(eq? t u) subst]			; quick tests first
+	[(eq? t u) subst]               ; quick tests first
 	[(var? t)
-	  (let ([ct (assq t subst)])
-	    (if ct
-	      (cond			; t is a bound variable
-		[(var? u) 
-		  (let ([cu (assq u subst)])
-		    (if cu
-			; both t and u are bound...
-		      (unify-bound/bound ct cu subst)
-			; t is bound, u is free
-		      (unify-free/bound u ct subst)))]
-		[else ; unify bound and a value
-		  (unify-internal (commitment->term ct) u subst)])
-	      (cond			; t is a free variable
-		[(var? u) 
-		  (let ([cu (assq u subst)])
-		    (if cu
-			; t is free, u is bound...
-		      (unify-free/bound t cu subst)
-			; both are free
-		      (extend-subst t u subst)))]
-		[else ; t is free, u is not a var: done
-		  (extend-subst t u subst)])))]
-	[(var? u)				; t is not a variable...
-	  (let ([cu (assq u subst)])
-	    (cond
-	      [cu (unify-internal (commitment->term cu) t subst)]
-              ; u is free, t is not a var: done
-	      [else (extend-subst u t subst)]))]
-      [(and (pair? t) (pair? u))
-       (let ([car-subst (unify-internal (car t) (car u) subst)])
-         (if car-subst
-             (unify-internal (cdr t) (cdr u) car-subst)
-             #f))]
-      [else (and (equal? t u) subst)]))))
+         (let*-and (cond                ; t is a free variable
+                     [(var? u)
+                      (let*-and (extend-subst t u subst) ([cu (assq u subst)])
+                        (unify-free/bound t cu subst))]
+                     [else              ; t is free, u is not a var: done
+                       (extend-subst t u subst)])
+           ([ct (assq t subst)])
+           (cond			; t is a bound variable
+             [(var? u) 
+              (let*-and (unify-free/bound u ct subst) ([cu (assq u subst)])
+                (unify-bound/bound ct cu subst))]
+             [else                      ; unify bound and a value
+               (unify-internal (commitment->term ct) u subst)]))]
+	[(var? u)                       ; t is not a variable...
+         (let*-and (extend-subst u t subst) ([cu (assq u subst)])
+           (unify-internal (commitment->term cu) t subst))]
+        [(and (pair? t) (pair? u))
+         (let*-and #f ([subst (unify-internal (car t) (car u) subst)])
+           (unify-internal (cdr t) (cdr u) subst))]
+        [else (and (equal? t u) subst)]))))
 
 ; t-var is a free variable, u can be anything
 ; This is analogous to get_variable instruction of Warren Abstract Machine
@@ -2599,10 +2578,8 @@
     (cond
       [(eq? u _) subst]
       [(var? u)
-       (let ([cu (assq u subst)])
-	 (if cu (unify-free/bound t-var cu subst)
-             ; t-var and u are both free
-	   (extend-subst t-var u subst)))]
+       (let*-and (extend-subst t-var u subst) ([cu (assq u subst)])
+         (unify-free/bound t-var cu subst))]
       [(pair? u) (unify-free/list t-var u subst)]
       [else ; u is not a var and is not a pair: it's atomic
 	(extend-subst t-var u subst)])))
@@ -2696,16 +2673,17 @@
     ; non-ground cells of lst-src (which may be improper!)
 (define ufl-analyze-list
   (lambda (lst-src)
-    (if (pair? lst-src)
-      (if (ground? (car lst-src))
-	(ufl-analyze-list (cdr lst-src))
-	(let ((fresh-var (logical-variable 'a*)))
-	  (cons (cons fresh-var (car lst-src))
-	    (ufl-analyze-list (cdr lst-src)))))
+    (cond
+      [(pair? lst-src)
+       (cond
+         [(ground? (car lst-src)) (ufl-analyze-list (cdr lst-src))]
+         [else
+	   (let ([fresh-var (logical-variable 'a*)])
+	     (cons (cons fresh-var (car lst-src))
+	       (ufl-analyze-list (cdr lst-src))))])]
       ; lst-src is either null? or the end of an improper list
-      (if (or (null? lst-src) (ground? lst-src))
-	'()
-	(cons (cons (logical-variable 'd*) lst-src) '())))))
+      [(or (null? lst-src) (ground? lst-src)) '()]
+      [else (list (cons (logical-variable 'd*) lst-src))])))
 
       ; Given a proper or improper list lst,
       ; return a list in which some of the cells are replaced with
@@ -2716,32 +2694,33 @@
 (define ufl-rebuild-with-vars
   (lambda (term-assoc lst)
     (cond
-      ((null? term-assoc) lst)
-      ((pair? lst)
+      [(null? term-assoc) lst]
+      [(pair? lst)
 	(if (eq? (cdar term-assoc) (car lst))
 	  (cons (caar term-assoc)
 	    (ufl-rebuild-with-vars (cdr term-assoc) (cdr lst)))
 	  (cons (car lst)
-	    (ufl-rebuild-with-vars term-assoc (cdr lst)))))
-      (else (caar term-assoc)))))
+	    (ufl-rebuild-with-vars term-assoc (cdr lst))))]
+      [else (caar term-assoc)])))
 
 (define unify-free/list
   (lambda (t-var u-value subst)
-    (let ((to-unify (ufl-analyze-list u-value)))
+    (let ([to-unify (ufl-analyze-list u-value)])
       (cond 
-	((null? to-unify)		; u-value was totally ground
-	  (extend-subst t-var u-value subst))
-	(else				; general case
-	  (let loop ((subst
+	[(null? to-unify)		; u-value was totally ground
+         (extend-subst t-var u-value subst)]
+	[else				; general case
+	  (let loop ([subst
 		       (unify-free/any (caar to-unify) (cdar to-unify)
 			 (extend-subst t-var 
 			   (ufl-rebuild-with-vars to-unify u-value)
-			   subst)))
-		      (to-unify (cdr to-unify)))
-	    (if (null? to-unify) subst
-	      (loop (unify-free/any (caar to-unify) (cdar to-unify) subst)
-		(cdr to-unify))))))))
-  )
+			   subst))]
+                     [to-unify (cdr to-unify)])
+	    (cond
+              [(null? to-unify) subst]
+               [else
+                 (loop (unify-free/any (caar to-unify) (cdar to-unify) subst)
+                   (cdr to-unify))]))]))))
 
 ;------------------------------------------------------------------------
 (test-check 'test-unify/pairs-oleg1
