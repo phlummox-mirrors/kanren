@@ -2,7 +2,7 @@
 ;;9-queens program
 
 (define queen
-  (relation (out data)
+  (relation ((once out) (once data))
     (to-show data out)
     (queen2 data '() out)))
 
@@ -20,7 +20,7 @@
 (define qdelete
   (extend-relation (a1 a2 a3 a4)
     (fact (a l) a a l l)
-    (relation (x a h t r)
+    (relation ((once x) a h t r)
       (to-show x a `(,h . ,t) `(,a . ,r))
       (qdelete x h t r))))
 
