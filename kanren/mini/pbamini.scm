@@ -1,4 +1,4 @@
-;	     Pure, declarative, and constructive binary arithmetics
+; Pure, declarative, and constructive binary arithmetics
 ;
 ; aka: Addition, Multiplication, Division as always terminating,
 ; pure and declarative relations that can be used in any mode whatsoever.
@@ -31,7 +31,6 @@
 ; is an uninstantiated variable. However, 'var' is impure. The present
 ; file shows the implementation of arithmetic relations in a _pure_
 ; logic system.
-;
 ; The present approach places the correct upper bounds on the
 ; generated numbers to make sure the search process will terminate.
 ; Therefore, our arithmetic relations are not only sound
@@ -59,6 +58,24 @@
 
 (load "sempublic.ss")
 
+(define-syntax succ
+  (syntax-rules ()
+    [(_) succeed]
+    [(_ e e* ...)
+     (lambda@ (sk fk s)
+       (begin
+         e
+         (@ (succ e* ...) sk fk s)))]))
+       
+(define-syntax fa
+  (syntax-rules ()
+    [(_) fail]
+    [(_ e e* ...)
+     (lambda@ (sk fk s)
+       (begin
+         e
+         (@ (fa e* ...) sk fk s)))]))
+
 (define build
   (lambda (n)
     (cond
@@ -71,11 +88,6 @@
       [(null? n) 0]
       [else (+ (car n) (* 2 (trans (cdr n))))])))
 
-; (zeroo x) holds if x is zero numeral
-(define zeroo
-  (lambda (n)
-    (== '() n)))
-
 ; Not a zero
 (define pos
   (lambda (n)
@@ -85,41 +97,15 @@
 ; At least two
 (define gt1
   (lambda (n)
-    (fresh (_ __)
-      (== `(,_ . ,__) n)
-      (pos __))))
+    (fresh (_ __ ___)
+      (== `(,_ ,__ . ,___) n))))
 
 ; full-adder: carry-in x y r c-out
 ; The relation holds if
 ; carry-in + x + y = r + 2*c-out
 ; where carry-in x y r c-out are all either 0 or 1.
 
-(define comp-l
-  (lambda (n m base-comp)
-    (cond@
-      [(== '() n) (base-comp m)]
-      [else
-        (fresh (x y _ __)
-          (== `(,_ . ,x) n)
-          (== `(,__ . ,y) m)
-          (comp-l x y base-comp))])))
-
-; Compare the length of two numerals.  (<ol a b) holds holds if a=0
-; and b>0, or if (floor (log2 a)) < (floor (log2 b)) That is, we
-; compare the length (logarithms) of two numerals For a positive
-; numeral, its bitlength = (floor (log2 n)) + 1
-
-(define <ol
-  (lambda (n m)
-    (comp-l n m pos)))
-
-; holds if both a and b are zero
-; or if (floor (log2 a)) = (floor (log2 b))
-(define =ol
-  (lambda (n m)
-    (comp-l n m (lambda (m) (== '() m)))))
-
-(define no-carry-adder ;;; half-adder
+(define half-adder ;;; half-adder
   (lambda (x y r c-out)
     (cond@
       ((== 0 x) (== 0 y) (== 0 r) (== 0 c-out))
@@ -140,7 +126,7 @@
 (define full-adder
   (lambda (c-in x y r c-out)
     (cond@
-      ((== 0 c-in) (no-carry-adder x y r c-out))
+      ((== 0 c-in) (half-adder x y r c-out))
       ((== 1 c-in) (carry-adder x y r c-out))
       (else fail))))
 
@@ -148,70 +134,32 @@
 ; holds if c-in + m + n = k
 ; where m, n, and k are binary numerals
 ; and c-in is either 0 or 1
-(define ready-for-adder*
-  (lambda(n m k)
-    (fresh (_)
-      (condi
-	; Note that we take advantage of the fact that if
-	; a + b = r and length(b) <= length(a) then length(a) <= length(r)
-    ; or, length(a) < length(2*r)
-        [(<ol n `(,_ . ,k))
-         (cond@
-           [(<ol m n) succeed]
-           [(=ol m n) succeed]
-           [else fail])]
-         ; commutative case, length(a) < length(b)
-        [(all (<ol m `(,_ . ,k)) (<ol n m))]
-        [else fail]))))
 
-(define ready-for-gen-adder
-  (lambda (n m ign-k)
-    (condi
-      ((== '(1) n) (== '(1) m))
- 	  ((gt1 n) (== '(1) m))
-	  ((gt1 m) (== '(1) n))
-	  ((gt1 n) (gt1 m))
-	  (else fail))))
-
-;;; We can't invoke gen-adder, unless we know that n and m =/= '().
-(define gen-adder
+(define adder
   (lambda (c-in n m k)
-    (fresh (nb nr mb mr kb kr)
-      (== `(,nb . ,nr) n)
-      (== `(,mb . ,mr) m)
-      (== `(,kb . ,kr) k)
+    (condi
+      [(== 0 c-in) (== '() m) (== '() n) (== '() k)]
+      [(== 0 c-in) (== '() m) (pos n) (== n k)]      
+      [(== 0 c-in) (== '() n) (pos m) (== m k)]
+      [(== 1 c-in) (== '() m) (== '() n) (== '(1) k)]      
+      [(== 1 c-in) (== '() m) (pos m) (adder 0 n '(1) k)]
+      [(== 1 c-in) (== '() n) (pos m) (adder 0 '(1) m k)]
+      [(== '(1) n) (== '(1) m) (gen-adder c-in n n k)]
+      [(== '(1) n) (gt1 m) (gen-adder c-in n m k)]
+      [(== '(1) m) (gt1 n) (gen-adder c-in m n k)]
+      [(gt1 n) (gt1 m) (gen-adder c-in n m k)]
+      [else fail])))
+
+(define gen-adder
+  (lambda (c-in x y r)
+    (fresh (xb xr yb yr kb kr)
+      (== `(,xb . ,xr) x)
+      (== `(,yb . ,yr) y)
+      (== `(,kb . ,kr) r)
       (fresh (c-out)
-        (full-adder c-in nb mb kb c-out)
-        (adder* c-out nr mr kr)))))
-
-(define adder**
-  (lambda (ready action)
-    (lambda (c-in n m k)
-      (cond@
-        [(== '() n) (== '() m)
-         (cond@
-           [(== 0 c-in) (== '() k)]
-           [(== 1 c-in) (== '(1) k)]
-           [else fail])]            
-        [(== '() n) (pos m)
-         (cond@
-           [(== 0 c-in) (== m k)]
-           [(== 1 c-in) (adder* 0 '(1) m k)]
-           [else fail])]
-        [(== '() m) (pos n)
-         (cond@
-           [(== 0 c-in) (== n k)]
-           [(== 1 c-in) (adder* 0 n '(1) k)]
-           [else fail])]      
-        [(ready n m k) (action c-in n m k)]
-        [else fail]))))
-
-;;; earlier version of adder was:
-;;; (define adder (ready-for-gen-adder gen-adder))
-
-(define adder* (adder** ready-for-gen-adder gen-adder))
-(define adder (adder** ready-for-adder* adder*))
-
+        (alli
+          (full-adder c-in xb yb kb c-out)
+          (adder c-out xr yr kr))))))
 ; a + b = c
 (define +o
   (lambda (n m k)
@@ -221,6 +169,37 @@
 (define -o
   (lambda (n m k)
     (+o m k n)))
+    
+(define <o  ; n < m iff exists x > 0 such that n + x = m
+  (lambda (n m)
+    (fresh (x)
+      (pos x)
+      (+o n x m))))
+
+
+; Compare the length of two numerals.  (<ol a b) holds holds if a=0
+; and b>0, or if (floor (log2 a)) < (floor (log2 b)) That is, we
+; compare the length (logarithms) of two numerals For a positive
+; numeral, its bitlength = (floor (log2 n)) + 1
+(define <ol
+  (lambda (n m)
+    (cond@
+      [(== '() n) (pos m)]
+      [else
+        (fresh (x y _ __)
+          (== `(,_ . ,x) n)
+          (== `(,__ . ,y) m)
+          (<ol x y))])))
+    
+(define =ol
+  (lambda (n m)
+    (cond@
+      [(== '() n) (== '() m)]
+      [else
+        (fresh (x y _ __)
+          (== `(,_ . ,x) n)
+          (== `(,__ . ,y) m)
+          (=ol x y))])))
     
 ; (<ol3 q p n m) holds iff
 ; q = '() and (pos p) or
@@ -299,11 +278,21 @@
 	      (+o `(0 . ,res) m p))]
       [else fail])))
 
-(define <o  ; n < m iff exists x > 0 such that n + x = m
+(define comp-l
+  (lambda (n m base-comp)
+    (cond@
+      [(== '() n) (base-comp m)]
+      [else
+        (fresh (x y _ __)
+          (== `(,_ . ,x) n)
+          (== `(,__ . ,y) m)
+          (comp-l x y base-comp))])))
+
+; holds if both a and b are zero
+; or if (floor (log2 a)) = (floor (log2 b))
+(define =ol
   (lambda (n m)
-    (fresh (x)
-      (pos x)
-      (+o n x m))))
+    (comp-l n m (lambda (m) (== '() m)))))
 
 ; n = q*m + r where 0<=r<m
 (define divo
@@ -322,6 +311,69 @@
           ; (width m) = (width n); n < m, q = 0, r = n
       [(== '() q) (=ol m n) (== r n) (<o n m)]
       [else fail])))
+
+(define bexp
+  (lambda (a n)
+    (cond
+      [(eq? '() n) '(1)]
+      [(= (car n) 0)
+       (b* (bexp a (cdr n)) (bexp a (cdr n)))]
+      [(= (car n) 1)
+       (b* a (bexp a (bmonus1 n)))]      
+      [else #f])))
+
+(define b*
+  (lambda (n m)
+    (cond
+     [(and (eq? '() n) (eq? '() m)) '()]     
+     [(and (eq? '() n) (pair? m)) '()]
+     [(and (eq? '() m) (pair? n)) '()]
+     [(and (equal? '(1) n) (equal? '(1) m)) '(1)]     
+     [(and (equal? '(1) n) (pair? (cdr m))) m]
+     [(and (equal? '(1) m) (pair? (cdr n))) n]     
+     [(and (pair? (cdr n)) (pair? (cdr m)))
+      (cond
+       [(and (= 0 (car n)) (= 0 (car m)))
+        (cons 0 (cons 0 (b* (cdr n) (cdr m))))]
+       [(and (= 1 (car n)) (= 0 (car m)))
+        (b+ m (cons 0 (cons 0 (b* (cdr n) (cdr m)))))]
+       [(and (= 0 (car n)) (= 1 (car m)))
+        (b+ n (cons 0 (cons 0 (b* (cdr n) (cdr m)))))]
+       [(and (= 1 (car n)) (= 1 (car m)))
+        (bmonus1 (b+ (b* (bmonus1 n) (bmonus1 m)) (b+ n m)))]
+       [else #f])]
+     [else #f])))
+
+(define b+
+  (lambda (n m)
+    (cond
+     [(and (eq? '() n) (eq? '() m)) '()]     
+     [(and (eq? '() n) (pair? m)) m]
+     [(and (eq? '() m) (pair? n)) n]
+     [(and (pair? n) (pair? m))     
+      (cond
+       [(and (= 0 (car n)) (= 0 (car m)))
+        (cons 0 (b+ (cdr n) (cdr m)))]
+       [(and (= 1 (car n)) (= 0 (car m)))
+        (cons 1 (b+ (cdr n) (cdr m)))]
+       [(and (= 0 (car n)) (= 1 (car m)))
+        (cons 1 (b+ (cdr n) (cdr m)))]
+       [(and (= 1 (car n)) (= 1 (car m)))
+        (cons 0 (b+ '(1) (b+ (cdr n) (cdr m))))]
+       [else #f])]
+     [else #f])))
+
+(define bmonus1
+  (lambda (n)
+    (cond
+     [(eq? '() n) '()]
+     [(and (= (car n) 1) (pair? (cdr n))) (cons 0 (cdr n))]
+     [(and (= (car n) 1) (not (pair? (cdr n)))) '()]
+     [(= (car n) 0) (cons 1 (bmonus1 (cdr n)))]
+     [else #f])))
+
+(cout "testing 3 * q = 6\n")
+(pretty-print (run (q) (*o (build 3) q (build 6))))
 
 (cout "Testing strong commutativity" nl)
 (pretty-print
@@ -376,7 +428,7 @@
     (fresh (y z)
       (+o y z (build 4))
       (project (y z) (== `(,(trans y) ,(trans z)) w)))))
- '((4 0) (0 4) (3 1) (1 3) (2 2)))
+ '((4 0) (0 4) (1 3) (3 1) (2 2)))
  
 ;; 
 
@@ -385,14 +437,12 @@
     (run-stream (w)
       (fresh (x y)
         (+o x (build 1) y) (== `(,x ,y) w))))
-      '((() (1))                       ; 0 + 1 = 1
-        ((1) (0 1))                    ; 1 + 1 = 2
-        ((0 _.0 . __.0) (1 _.0 . __.0)) ; 2*x 
-                                            ; and 2*x+1 
-                                            ; are successors, for all x>0!    
-        ((1 1) (0 0 1))                     ; the successor of 3 is 4
-        ((1 0 _.0 . __.0) (0 1 _.0 . __.0))))
-                                            ; 1 added to an odd is an even.
+  '((() (1))                                  ; 0 + 1 = 1
+    ((1) (0 1))                               ; 1 + 1 = 2
+    ((0 __.0 . ___.0) (1 __.0 . ___.0))       ; 2*x and 2*x+1 for all x
+                                        
+    ((1 1) (0 0 1))                           ; the successor of 3 is 4
+    ((1 0 __.0 . ___.0) (0 1 __.0 . ___.0)))) ; 1 added to an odd is an even.
 
 (display "subtraction")
 (newline)
@@ -440,31 +490,49 @@
   #f)
 
 (test-check "print a few numbers such as y - z = 4"
-  (prefix 5
+  (prefix 15
     (run-stream (w)
       (fresh (x y)
         (-o x y (build 4))
         (== `(,x ,y) w))))
-  '(((0 0 1) ())                        ; 4 - 0 = 4
-    ((1 0 1) (1))                       ; 5 - 1 = 4
-    ((0 1 1) (0 1))                     ; 6 - 2 = 4
-    ((0 0 0 1) (0 0 1))                 ; 8 - 4 = 4
-    ((0 0 1 _.0 . __.0) (0 0 0 _.0 . __.0))))
-     ; 16*a + 8*b + 4 - (16*a + 8*b) = 4 forall a and b!!!  
+  '(((0 0 1) ())
+	((1 0 1) (1))
+	((0 1 1) (0 1))
+	((1 1 1) (1 1))
+	((0 0 0 1) (0 0 1))
+	((1 0 0 1) (1 0 1))
+	((0 1 0 1) (0 1 1))
+	((1 1 0 1) (1 1 1))
+	((0 0 1 __.0 . ___.0) (0 0 0 __.0 . ___.0))
+	((1 0 1 __.0 . ___.0) (1 0 0 __.0 . ___.0))
+	((0 1 1 __.0 . ___.0) (0 1 0 __.0 . ___.0))
+	((1 1 1 __.0 . ___.0) (1 1 0 __.0 . ___.0))
+	((0 0 0 0 1) (0 0 1 1))
+	((1 0 0 0 1) (1 0 1 1))
+	((0 1 0 0 1) (0 1 1 1))))
 
 (test-check "print a few numbers such as x - y = z"
-  (prefix 5
+  (prefix 15
     (run-stream (w)
       (fresh (x y z)
         (-o x y z)
         (== `(,x ,y ,z) w))))
-  '((x.0 x.0 ())
-    ((_.0 . __.0) () (_.0 . __.0))
-    ((0 1) (1) (1))
-    ((1 _.0 . __.0) (0 _.0 . __.0) (1))
-    ((0 0 1) (1 1) (1))))
+  '((() () ())
+    ((_.0 . __.0) (_.0 . __.0) ())
+	((_.0 . __.0) () (_.0 . __.0))
+	((0 1) (1) (1))
+	((1 __.0 . ___.0) (1) (0 __.0 . ___.0))
+	((1 __.0 . ___.0) (0 __.0 . ___.0) (1))
+	((0 0 1) (1) (1 1))
+	((0 0 1) (0 1) (0 1))
+	((0 1 __.0 . ___.0) (1) (1 0 __.0 . ___.0))
+	((0 0 1) (1 1) (1))
+	((0 0 0 1) (1) (1 1 1))
+	((1 0 1) (0 1) (1 1))
+	((0 0 1 __.0 . ___.0) (1) (1 1 0 __.0 . ___.0))
+	((0 1 __.0 . ___.0) (1 0 __.0 . ___.0) (1))
+	((0 0 0 0 1) (1) (1 1 1 1))))
 
-(display "comparisons")
 (newline)
 
 (test-check "comparison-1"
@@ -492,41 +560,33 @@
 
 (test-check "print all numbers less than 6"
   (prefix 10 (run-stream (x) (<o x (build 6))))
-  '(() (1 0 1) (1) (0 0 1) (0 1) (1 1)))
+  '(() (1) (1 0 1) (0 1) (1 1) (0 0 1)))
 
 (test-check "print a few numbers that are greater than 4"
-  (prefix 10 (run-stream (x) (<o (build 4) x)))
+  (prefix 20 (run-stream (x) (<o (build 4) x)))
   '((1 0 1)
-    (0 1 1)
-	(0 0 0 1)
-	(0 0 1 _.0 . __.0)
-	(0 0 0 0 1)
-	(0 0 0 1 _.0 . __.0)
-	(0 0 0 0 0 1)
-	(0 0 0 0 1 _.0 . __.0)
-	(0 0 0 0 0 0 1)
-	(0 0 0 0 0 1 _.0 . __.0)))
+ (0 1 1)
+ (1 1 1)
+ (0 0 0 1)
+ (1 0 0 1)
+ (0 1 0 1)
+ (1 1 0 1)
+ (0 0 1 __.0 . ___.0)
+ (1 0 1 __.0 . ___.0)
+ (0 1 1 __.0 . ___.0)
+ (1 1 1 __.0 . ___.0)
+ (0 0 0 0 1)
+ (1 0 0 0 1)
+ (0 1 0 0 1)
+ (1 1 0 0 1)
+ (0 0 0 1 __.0 . ___.0)
+ (1 0 0 1 __.0 . ___.0)
+ (0 1 0 1 __.0 . ___.0)
+ (1 1 0 1 __.0 . ___.0)
+ (0 0 0 0 0 1)))
 
 (display "multiplication")
 (newline)
-
-(display "Test recursive enumerability")
-(newline)
-(let ((n 7))
-  (do ((i 0 (+ 1 i))) ((> i n))
-    (do ((j 0 (+ 1 j))) ((> j n))
-      (let ((p (* i j)))
-	    (test-check
-	      (string-append "enumerability: " (number->string i)
-	        "*" (number->string j) "=" (number->string p))
-	    (run (q) 
-          (fresh (x y z) 
-	        (*o x y z)
-	        (== (build i) x)
-            (== (build j) y)
-            (== (build p) z)
-            (== `(,x ,y ,z) q)))
-	    `(,(build i) ,(build j) ,(build p)))))))
 
 (test-check "multiplication-1"
   (run (q)
@@ -596,13 +656,7 @@
         (*o (build 3) y z)
         (project (y z)
           (== `(,(trans y) ,(trans z)) x)))))
-  '((0 0)
-    (1 3)
-    (2 6)
-    (3 9)
-    (4 12)
-    (6 18)
-    (5 15)))
+  '((0 0) (1 3) (2 6) (3 9) (4 12) (5 15) (6 18)))
 
 (test-check "multiplication-all-4"
   (prefix 5
@@ -762,17 +816,17 @@
         (<o m n)
         (divo n m q r)
         (project (m q r) (== `(,(trans m) ,(trans q) ,(trans r)) w)))))
-  '((11 1 1)
-    (1 12 0)
-    (10 1 2)
+  '((1 12 0)
+    (11 1 1)
     (2 6 0)
-    (8 1 4)
-	(4 3 0)
-	(6 2 0)
-	(9 1 3)
-	(3 4 0)
-	(5 2 2)
-	(7 1 5)))
+    (3 4 0)
+    (10 1 2)
+    (9 1 3)
+    (4 3 0)
+    (5 2 2)
+    (6 2 0)
+    (7 1 5)
+    (8 1 4)))
 
 (test-check "div-all-3"
   (prefix 8
@@ -800,5 +854,35 @@
     ((1 1) (1 1) ())
     ((0 0 1) (0 0 1) ())))
 
+(cout "Testing strong multiplicative commutativity" nl)
+(pretty-print
+  (prefix 50
+    (run-stream (q)
+      (fresh (a b c)
+        (*o a b c)
+          (== `(,a ,b ,c) q)
+          (once
+            (fresh (x y z)
+              (*o x y z)
+              (== x b)
+              (== y a)
+              (== z c)))))))
 
+(display "Test recursive enumerability")
+(newline)
+(let ((n 7))
+  (do ((i 0 (+ 1 i))) ((> i n))
+    (do ((j 0 (+ 1 j))) ((> j n))
+      (let ((p (* i j)))
+	    (test-check
+	      (string-append "enumerability: " (number->string i)
+	        "*" (number->string j) "=" (number->string p))
+	    (run (q) 
+          (fresh (x y z) 
+	        (*o x y z)
+	        (== (build i) x)
+            (== (build j) y)
+            (== (build p) z)
+            (== `(,x ,y ,z) q)))
+	    `(,(build i) ,(build j) ,(build p)))))))
 
