@@ -21,19 +21,65 @@
     (== st `((0 0 ,a1) ,a2))))
 
 ;type Action = (Int,Int,Int)
-(define (legal-actions a)
-  (conde
-    ((== a '(1 0 1))) 
-    ((== a '(0 1 1)))
-    ((== a '(2 0 1)))
-    ((== a '(0 2 1)))
-    ((== a '(1 1 1)))
-    ((== a '(-1 0 -1)))
-    ((== a '(0 -1 -1)))
-    ((== a '(-2 0 -1)))
-    ((== a '(0 -2 -1)))
-    ((== a '(-1 -1 -1)))
+(define legal-actions
+  (list
+    '(1 0 1)
+    '(0 1 1)
+    '(2 0 1)
+    '(0 2 1)
+    '(1 1 1)
+    '(-1 0 -1)
+    '(0 -1 -1)
+    '(-2 0 -1)
+    '(0 -2 -1)
+    '(-1 -1 -1)
 ))
+
+(define (legal-action a)
+  (fresh (_)
+    (reme a legal-actions _)))
+
+
+; choose an element e from the list lst
+;  (choose lst e rest) holds
+; if e \in lst and rest = lst \ {e}
+
+(define appendo
+  (lambda (l1 l2 l3)
+    (conde
+      ((== l1 '()) (== l2 l3))
+      (else 
+        (fresh (x l11 l31)
+          (== l1 (cons x l11))
+          (== l3 (cons x l31))
+          (appendo l11 l2 l31))))))
+
+
+; common-prefix l l1 l2
+; holds iff l is a prefix of both l1 and l2.
+(define common-prefix
+   (lambda (l l1 l2)
+     (conde
+        ((== l '()))
+        (else
+          (fresh (x l* l1* l2*)
+            (== l  (cons x l*))
+            (== l1 (cons x l1*))
+            (== l2 (cons x l2*))
+            (common-prefix l* l1* l2*))))))
+
+; A pure rembere: l = lo U {x}
+(define reme
+  (lambda (x l lo)
+    (fresh (l1 l2)
+      (common-prefix l1 l lo)
+      (appendo l1 (cons x l2) l)
+      (appendo l1 l2 lo))))
+
+
+; (run 6 (q) (fresh (e rest) (reme e '(1 2 3) rest) (== q (list e rest))))
+; (run 6 (q) (fresh (e rest) (reme e rest '(1 2 3)) (== q (list e rest))))
+
 
 ; the transmission function...
 
@@ -58,20 +104,6 @@
 	fail))))
 
 
-; choose an element e from the list lst
-;  (choose lst e rest) holds
-; if e \in lst and rest = lst \ {e}
-(define (choose lst e rest)
-  (condi
-    ((== lst (cons e rest)))
-    (else
-      (fresh (e1 lst1 rest1)
-	(== lst (cons e1 lst1))
-	(== rest (cons e1 rest1))
-	(choose lst1 e rest1)))))
-
-; (run 6 (q) (fresh (e rest) (choose '(1 2 3) e rest) (== q (list e rest))))
-; (run 6 (q) (fresh (e rest) (choose rest e '(1 2 3)) (== q (list e rest))))
 
 ; (define (solve left res)
 ;   (fresh (s)
@@ -79,7 +111,7 @@
 ;     (let loop ((s s))
 ;       (fresh (s1 a)
 ; 	(alli
-; 	  (legal-actions a)
+; 	  (legal-action a)
 ; 	  (move s a s1)
 ; ; 	  (project (s1 a)
 ; ; 	    (begin (display "generated: ") (display s1) 
@@ -106,35 +138,30 @@
     (final? q)
 ))
 
-	
-; seen is the list of seen states
-; frontier is the list of frontier states together with the actions
-; that lead to them.
-; Each element of frontier is a list, whose car is the state and the rest
-; is the list of actions
-; All states in frontier are in seen.
+
+; frontier is ((frontier-state seen-states actions) ...)
+; where actions is the list of actions (the most recent first)
+; that lead to frontier-state.
+; frontier-state is in seen-states.
 
 (define (solve-dfs left res)
-  (define (loop seen frontier res)
-    (fresh (s sactions rfrontier a s1 dummy)
-      (choose frontier (cons s sactions) rfrontier)
-      (legal-actions a)
+  (define (loop frontier res)
+    (fresh (s seen sactions rfrontier a s1 dummy)
+      (reme (list s seen sactions) frontier rfrontier)
+      (legal-action a)
       (move s a s1)
       (project (s1 a)
 	(begin (display "generated: ") (display s1) 
 	  (display " action:" ) (display a) (newline)
 	  succeed))
       (condu
-	((choose seen s1 dummy) (loop seen rfrontier res))
 	((final? s1) (== res `(,s1 ,a . ,sactions)))
+	((reme s1 seen dummy) (loop rfrontier res))
 	(else
-	  (fresh (seen1 frontier1)
-	    (== seen1 (cons s1 seen))
-	    (== frontier1 (cons `(,s1 ,a . ,sactions) rfrontier))
-	    (loop seen1 frontier1 res))))))
-  (fresh (s)
-    (== s (list left '(0 0 0)))
-    (loop (list s) (list (list s)) res)))
+	  (loop (cons (list s1 (cons s1 seen) (cons a sactions)) rfrontier)
+	    res)))))
+  (let ((s (list left '(0 0 0))))
+    (loop (list (list s (list s) '())) res)))
 
 ; (run 1 (q) (solve-dfs '(1 1 1) q))
 ; (run 1 (q) (solve-dfs '(2 2 1) q))
@@ -166,3 +193,74 @@
 ;   (-2 0 -1)
 ;   (1 1 1)
 ;   (1 1 1)))
+
+
+(define (mapfilter pred neg-guard lst out)
+  (conde
+    ((== lst '()) (== out '()))
+    (else
+      (fresh (e e1 rest out1)
+	(== lst (cons e rest))
+	(conde
+	  ((pred e e1)
+	    (conde
+	      ((neg-guard e1) (mapfilter pred neg-guard rest out))
+	      (else
+		(== out (cons e1 out1))
+		(mapfilter pred neg-guard rest out1))))
+	    (else (mapfilter pred neg-guard rest out)))))))
+
+(define (concato l out)
+  (conde
+    ((== l '()) (== out '()))
+    (else
+      (fresh (e rest out1)
+	(== l (cons e rest))
+	(concato rest out1)
+	(appendo e out1 out)))))
+
+(define (solve-bfs-pure left res)
+  (define (pred-final sa out)
+    (fresh (s seen actions)
+      (== sa (list s seen actions))
+      (final? s)
+      (== out (list s actions))
+      ))
+  (define (grow-frontier sa out)
+    (fresh (s seen actions)
+      (== sa (list s seen actions))
+      (mapfilter 
+	(lambda (a sa1)
+	  (fresh (s1)
+	    (move s a s1)
+	    (== sa1 (list s1 (cons s1 seen) (cons a actions)))
+	    (project (s1 a)
+	      (begin (display "generated: ") (display s1)
+		(display " action:" ) (display a) (newline)
+		succeed))))
+	(lambda (sa) 
+	  (fresh (s seen actions seen1 _)
+	    (== sa (list s seen actions))
+	    (reme s seen seen1)
+	    (reme s seen1 _)))
+	legal-actions
+	out)))
+  (define (loop frontier res)
+    (conde
+      ((fresh (a r)
+	 (mapfilter pred-final (lambda (e) fail) frontier (cons a r))
+	 (== res (cons a r))))
+      (else
+	(fresh (seen1 frontier1 lfrontier1)
+	  (mapfilter grow-frontier (lambda (e) fail) frontier lfrontier1)
+	  (concato lfrontier1 frontier1)
+	  (loop frontier1 res)))))
+  (let ((s (list left '(0 0 0))))
+    (loop (list (list s (list s) '())) res)))
+
+
+; (run 1 (q) (solve-bfs-pure '(1 1 1) q))
+; (run 1 (q) (solve-bfs-pure '(2 2 1) q))
+; (run 1 (q) (solve-bfs-pure '(3 3 1) q))
+; takes a long time:
+; (run 1 (q) (solve-bfs-pure '(4 4 2) q))
