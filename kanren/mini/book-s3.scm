@@ -164,7 +164,7 @@
        (let ((x (walk* x s)) ...)
          ((all g0 g ...) s))))))
 
-(define-syntax cond@
+(define-syntax conde
   (syntax-rules ()
     ((_ c ...) (c@ mplus c ...))))
 
@@ -184,7 +184,7 @@
   (syntax-rules ()
     ((chop1 r s) (succeed s))))
 
-(define-syntax cond1
+(define-syntax condu
   (syntax-rules ()
     ((_ c ...) (c1 chop1 c ...))))
 
