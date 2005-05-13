@@ -148,6 +148,7 @@
       )
 
     (once
+      (project (sum) ; saves one collection: 1619 rather than 1620...
       (fresh (xyz)
 	; first, we limit xyz by range. Separate bits of xyz are
 	; not instantiated...
@@ -165,7 +166,7 @@
 	; Now, we check that xyz is really in range [100..999]
 	; and that k is within [10..90]
 	(<o xyz (build 1000))
-	(<o (build 99) xyz)))
+	(<o (build 99) xyz))))
 
     (== q sum)))
 

@@ -244,6 +244,22 @@
 (define scheduling-quantum 10)
 (define max-queue-size 5)
 
+; Note the correspondence with the implementation of ``future'' From
+; the paper ``A Syntactic Theory Of Dynamic Binding'' by Luc Moreau.
+; pp. 262-263: `` As in our previous work [44], we follow the
+; "parallelism by annotation" approach, where the programmer uses an
+; annotation future [28] to indicate which expressions may be
+; evaluated in parallel. The semantics of future has been described in
+; the purely functional framework [19] and in the presence of
+; first-class continuations and assignments [44]....  If the runtime
+; elects to create a new task, (fork) creates a f-let expression,
+; whose mandatory component is the argument of fmark, i.e., the future
+; argument, and whose speculative component is a new state evaluating
+; the context of fmark filled with the placeholder variable, in the
+; scope of the duplicated dynamic environment delta1 . If the runtime
+; does not elect to spawn a new task, evaluation can proceed in the
+; fmark argument.''
+
 ; Two-queue priority scheduler
 ; The high-priority queue has the size of one.
 ; The other queue has a limited capacity to prevent unbridled speculation
