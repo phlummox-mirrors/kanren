@@ -274,18 +274,99 @@
 ;     the eigen value. So, unification triggers the occurs check.
 ;   an eigen variable is unifiable with a fresh variable created after
 ;     eigen.
-;   an eigen variable is not unifiable with anything else.
+;   an eigen variable is not unifiable with anything else [but see below].
 ;
-; This implementation has been suggested by Chung-chieh Shan.
+; The idea of this implementation has been suggested by Chung-chieh Shan.
 ;
 ; An alternative implementation for eigen will use death records --
 ; or delayed occurs check.
+
+
+; Alas, there is a drawback:
+;   (run 1 (q) (eigen (x) (fresh (u v) (==-check x (cons u v)))))
+; succeeds, and so does
+;   (run 1 (q) (eigen (x) (fresh (v) (==-check x (cons q v)))))
+;
+; They mean, logically,
+; 	forall x. exists u v. x = (u . v)
+; 	exists u. forall x. exists v. x = (u . v)
+;
+; which isn't particularly meaningful. It seems that any solution that
+; relies on the occurs check must have this unfortunate
+; property. Indeed, in order to trigger the occurs check, the
+; representation of an eigen variable must be traversable by the
+; unifier. That means, it can be unified with another traversable value
+; of the similar structure.
+
+; (define-syntax eigen
+;   (syntax-rules ()
+;     ((_ (x ...) g0 g ...)
+;      (lambdag@ (s)
+;        (let ((x (cons (gensym) s)) ...)
+; 	   ((all g0 g ...) s))))))
+
+
+; The following implementation realizes an eigen variable as a non-traversable
+; value. In that case, we don't need to change the unifier, and we don't need
+; to rely on the occurs check. I could have used a string, e.g.,
+; (symbol->string (gensym)) or 
+; (string-append "varname" (number->string (length s)))
+; In the latter case, eigen must extend the substitution, just to change
+; its length.
+; Instead, we use a procedure, which is a truly opaque value.
+; The following implementation is also lazy in its check: we catch an attempt
+; to bind an eigenvariable to a logical variable of the outer scope not
+; at the place of unification but at the exit from the eigen form: when
+; the eigen variable is about to escape.
+; Does lambda-prolog do something similar?
+;
+; The check scans all bindings that are made after the entrance to
+; eigen.  If we found an assoctiation xi -> ti such that ti contains
+; the eigen variable but xi's birth record is in the part of the
+; substitution before eigen, we fail.
 
 (define-syntax eigen
   (syntax-rules ()
     ((_ (x ...) g0 g ...)
      (lambdag@ (s)
-       (let ((x (cons (gensym) s)) ...)
-	   ((all g0 g ...) s))))))
+       (let ((x (lambda () (list 'x))) ...) ; A unique value ...
+	 (bind ((all g0 g ...) s)
+	   (lambda (s1) (check-eigen s s1 (list x ...)))))))))
+
+; Test that all bindings within substitution prefix [s0..s1] are proper
+; with respect to each of the eigenvariables x0 ... 
+; We rely on the fact that any binding to a logical
+; variable may only occur after that variable's birth record.
+
+(define check-eigen
+  (lambda (s0 s1 eigens)
+    (let ((local-vars (find-created-vars s0 s1)))
+      (let loop ((sc s1))
+	(if (eq? sc s0) (succeed s1)
+	  (let ((binding (car sc)) (sc (cdr sc)))
+	    (cond
+	      ((memq (lhs binding) local-vars) (loop sc))
+	      ((occur? eigens (rhs binding)) (fail s1))
+	      (else (loop sc)))))))))
 
 
+; Scan the substitution prefix [s0..s1] and find all logical variables
+; (by their birth record) that were created within that prefix.
+; Return them in a list
+
+(define find-created-vars
+  (lambda (s0 s1)
+    (cond 
+      ((eq? s0 s1) '())
+      ((unbound-binding? (car s1))
+	(cons (lhs (car s1)) (find-created-vars s0 (cdr s1))))
+      (else (find-created-vars s0 (cdr s1))))))
+
+
+
+; check to see if any of the terms in patterns occur within `term'
+(define occur?
+  (lambda (patterns term)
+    (or (memq term patterns)
+      (and (pair? term) (or (occur? patterns (car term))
+			    (occur? patterns (cdr term)))))))
