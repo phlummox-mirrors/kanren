@@ -259,7 +259,7 @@
 (define ext-s-check
   (lambda (v w s)
     (cond
-      ((occurs? v w) #f)
+      ((occurs? v w s) #f)
       (else (ext-s v w s)))))
 
 (define occurs?

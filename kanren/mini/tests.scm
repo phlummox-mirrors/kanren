@@ -201,6 +201,28 @@
   (run 10 (q) (alli (conde ((== q 10)) (else (== q 11))) always))   
   '(10 11 10 11 10 11 10 11 10 11))
 
+(display "eigen-checks") (newline)
+
+(test-check "eigen-equal-to-itself"
+  (run 1 (q) (eigen (x y) (==-check x x) (==-check y y)))
+  '(_.0))
+
+(test-check "eigen-not-equal-to-others"
+  (run 1 (q) (eigen (x y) (==-check x y)))
+  '())
+
+(test-check "eigen-not-equal-to-others"
+  (run 1 (q) (eigen (x) (==-check x q)))
+  '())
+
+(test-check "eigen-not-equal-to-others"
+  (run 1 (q) (fresh (u) (eigen (x) (==-check x u) )))
+  '())
+
+(test-check "eigen-unifies-with-internal logic vars"
+  (run 1 (q) (eigen (x) (fresh (u) (==-check x u) (==-check u u))))
+  '(_.0))
+
 (define build
   (lambda (n)
     (cond
@@ -1124,7 +1146,6 @@
     (conde
       ((== i n) succeed)
       (else (count-up (+ i 1) n)))))
-
 
 (display "------- testing split -------")
 (newline)

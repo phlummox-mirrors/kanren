@@ -100,7 +100,7 @@
 (define rn
   (lambda (x g filter)
     (map (lambda (s) (reify x s)) 
-      (filter (g empty-s)))))
+      (filter (g (ext-s x x empty-s))))))
 
 (define-syntax run
   (syntax-rules ()
@@ -148,6 +148,13 @@
     (lambdag@ (s)
       (cond
         ((unify v w s) => succeed)
+        (else (fail s))))))
+
+(define ==-check
+  (lambda (v w)
+    (lambdag@ (s)
+      (cond
+        ((unify-check v w s) => succeed)
         (else (fail s))))))
 
 (define-syntax fresh
@@ -253,4 +260,32 @@
           ((var? v) (g (ext-s x 1 s)))
           ((< v n)  (g (ext-s x (+ v 1) s)))
           (else (fail s)))))))
+
+
+; The following implementation of eigen critically depends on:
+;  -- the presence of birth records for logical variables in substitution 's'
+;  -- unification with the occurs check but which
+;     does eq? check of its arguments first.
+; These conditions and the following implementation guarantee:
+;   an eigen variable is equal (unifiable) to itself
+;   an eigen variable cannot be unified with a fresh variable
+;     created _before_ the eigen variable. This is because the birth
+;     record of the logical variable will be in 's', which is the part of
+;     the eigen value. So, unification triggers the occurs check.
+;   an eigen variable is unifiable with a fresh variable created after
+;     eigen.
+;   an eigen variable is not unifiable with anything else.
+;
+; This implementation has been suggested by Chung-chieh Shan.
+;
+; An alternative implementation for eigen will use death records --
+; or delayed occurs check.
+
+(define-syntax eigen
+  (syntax-rules ()
+    ((_ (x ...) g0 g ...)
+     (lambdag@ (s)
+       (let ((x (cons (gensym) s)) ...)
+	   ((all g0 g ...) s))))))
+
 
