@@ -118,6 +118,29 @@
 ; build an inverse index to find the equivalence class of x.
 
 
+; In this version (May 2005), the representation of substitutions differs
+; from the one outlined above. 
+; Besides the proper mappings xi -> ti, the substitutions in minikanren
+; may contain mappings xi -> xi. Such a mapping is to be considered
+; not a part of substitution proper. Rather, that mapping is to be considered
+; a ``birth record'' for a logical variable xi. A free variable is defined
+; as the one that is ``bound to itself''. A substitution may now have
+; several bindings for the same variable. Only the last one takes effect.
+; The old invariant that the substitution has at most one binding for
+; each variable no longer holds. We have a new invariant: each logical
+; variable has at least one binding in the substitution list.
+; Birth records give us a way to implement eigen safely, and once safely.
+; Also, birth record may speed up unification. Before that, the only way
+; to know if a variable is free is to scan the whole subtutution.
+; Now we need to scan only to the birth record, which is quite close
+; (oftentimes, really close -- most created logical variables are bound
+; soon).
+
+(define unbound-binding?
+  (lambda (binding)
+    (eq? (lhs binding) (rhs binding))))
+  
+
 ; Compute the list of (free) variables of a term t, in the depth-first 
 ; term-traversal order; we know that v^ has been walked-strongly.
 (define free-vars
@@ -141,6 +164,7 @@
        (lambda (pr)
          (let ((v (rhs pr)))
            (cond
+	     ((unbound-binding? pr) v) ; pr is a birth record
              ((var? v) (walk v s))
              (else v)))))
       (else x))))

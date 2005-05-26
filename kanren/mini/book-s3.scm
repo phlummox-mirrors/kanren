@@ -155,7 +155,8 @@
     ((_ (x ...) g0 g ...)
      (lambdag@ (s)
        (let ((x (var 'x)) ...)
-         ((all g0 g ...) s))))))
+	 (let* ((s (ext-s x x s)) ...)
+	   ((all g0 g ...) s)))))))
 
 (define-syntax project
   (syntax-rules ()
