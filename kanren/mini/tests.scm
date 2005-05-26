@@ -204,23 +204,43 @@
 (display "eigen-checks") (newline)
 
 (test-check "eigen-equal-to-itself"
-  (run 1 (q) (eigen (x y) (==-check x x) (==-check y y)))
+  (run 1 (q) (eigen (x y) (== x x) (== y y)))
   '(_.0))
 
 (test-check "eigen-not-equal-to-others"
-  (run 1 (q) (eigen (x y) (==-check x y)))
+  (run 1 (q) (eigen (x y) (== x y)))
   '())
 
-(test-check "eigen-not-equal-to-others"
-  (run 1 (q) (eigen (x) (==-check x q)))
+(test-check "eigen-outer-logic-vars"
+  (run 1 (q) (eigen (x) (== x q)))
   '())
 
-(test-check "eigen-not-equal-to-others"
-  (run 1 (q) (fresh (u) (eigen (x) (==-check x u) )))
+(test-check "eigen-outer-logic-vars"
+  (run 1 (q) (fresh (u) (eigen (x) (== x u) )))
+  '())
+
+(test-check "eigen-outer-logic-vars"
+  (run 1 (q) (fresh (u) (eigen (x) (fresh (v) (== x v) (== u v) ))))
+  '())
+
+(test-check "eigen-outer-logic-vars"
+  (run 1 (q) (fresh (u) (eigen (x) (fresh (v) (== u v) (== x v)  ))))
+  '())
+
+(test-check "eigen-outer-logic-vars"
+  (run 1 (q) (fresh (u) (eigen (x) (fresh (v) (== u v) (== (cons x  1) v) ))))
+  '())
+
+(test-check "eigen-outer-logic-vars"
+  (run 1 (q) (fresh (u) (eigen (x) (fresh (v v1) (== x v) (== u v1) ))))
+  '(_.0))
+
+(test-check "eigen-not-equal-to-pairs"
+  (run 1 (q) (eigen (x) (fresh (u v) (== x (cons u v)) )))
   '())
 
 (test-check "eigen-unifies-with-internal logic vars"
-  (run 1 (q) (eigen (x) (fresh (u) (==-check x u) (==-check u u))))
+  (run 1 (q) (eigen (x) (fresh (u) (== x u) (== u u))))
   '(_.0))
 
 (define build

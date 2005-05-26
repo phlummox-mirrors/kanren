@@ -331,42 +331,53 @@
      (lambdag@ (s)
        (let ((x (lambda () (list 'x))) ...) ; A unique value ...
 	 (bind ((all g0 g ...) s)
-	   (lambda (s1) (check-eigen s s1 (list x ...)))))))))
+	   (lambda (s1) 
+	     (if (check-eigen? (list-diff s s1) (list x ...)) (succeed s1)
+	       (fail s1)))))))))
 
-; Test that all bindings within substitution prefix [s0..s1] are proper
+; Given l1 and l2 (the former is the suffix of l2)
+; return l12 so that l2 = (append l12 l1)
+
+(define list-diff
+  (lambda (l1 l2)
+    (if (eq? l1 l2) '()
+      (cons (car l2) (list-diff l1 (cdr l2))))))
+
+; Test that all bindings within substitution prefix s are proper
 ; with respect to each of the eigenvariables x0 ... 
 ; We rely on the fact that any binding to a logical
 ; variable may only occur after that variable's birth record.
 
-(define check-eigen
-  (lambda (s0 s1 eigens)
-    (let ((local-vars (find-created-vars s0 s1)))
-      (let loop ((sc s1))
-	(if (eq? sc s0) (succeed s1)
-	  (let ((binding (car sc)) (sc (cdr sc)))
+(define check-eigen?
+  (lambda (sfull eigens)
+    (let ((local-vars (find-created-vars sfull)))
+      (let loop ((s sfull))
+	(or (null? s)
+	  (let ((binding (car s)) (s (cdr s)))
 	    (cond
-	      ((memq (lhs binding) local-vars) (loop sc))
-	      ((occur? eigens (rhs binding)) (fail s1))
-	      (else (loop sc)))))))))
+	      ((memq (lhs binding) local-vars) (loop s))
+	      ((occur? eigens (rhs binding) sfull) #f)
+	      (else (loop s)))))))))
 
 
-; Scan the substitution prefix [s0..s1] and find all logical variables
+; Scan the substitution prefix s and find all logical variables
 ; (by their birth record) that were created within that prefix.
 ; Return them in a list
 
 (define find-created-vars
-  (lambda (s0 s1)
+  (lambda (s)
     (cond 
-      ((eq? s0 s1) '())
-      ((unbound-binding? (car s1))
-	(cons (lhs (car s1)) (find-created-vars s0 (cdr s1))))
-      (else (find-created-vars s0 (cdr s1))))))
+      ((null? s) '())
+      ((unbound-binding? (car s))
+	(cons (lhs (car s)) (find-created-vars (cdr s))))
+      (else (find-created-vars (cdr s))))))
 
 
 
 ; check to see if any of the terms in patterns occur within `term'
 (define occur?
-  (lambda (patterns term)
-    (or (memq term patterns)
-      (and (pair? term) (or (occur? patterns (car term))
-			    (occur? patterns (cdr term)))))))
+  (lambda (patterns term s)
+    (let ((term (if (var? term) (walk term s) term)))
+      (or (memq term patterns)
+	(and (pair? term) (or (occur? patterns (car term) s)
+			      (occur? patterns (cdr term) s)))))))

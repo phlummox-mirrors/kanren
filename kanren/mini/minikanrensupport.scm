@@ -157,6 +157,8 @@
 
 ; Given a term v and a subst s, return v', the weak normal form of v:
 ; v -->w! v' with respect to s
+; NB! This procedure is to be called only if 'x' has been tested
+; as a variable!
 (define walk
   (lambda (x s)
     (cond
