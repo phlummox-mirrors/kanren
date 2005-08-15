@@ -1,3 +1,11 @@
+; (load "mk.scm")
+; (define nl (string #\newline))
+
+; (define (cout . args)
+;   (for-each (lambda (x)
+;               (if (procedure? x) (x) (display x)))
+;             args))
+
 (load "book-s3.scm")
 
 (define errorf
@@ -134,26 +142,26 @@
          ((== x 100))))))
   '(1 2 100 11 100 3 100 100))
 
-; condo, condu tests
-(test-check "condo-1"
+; conda, condu tests
+(test-check "conda-1"
   (run 3 (q)
-       (condo
+       (conda
           ((conde ((== q 3)) ((== q 4))) succeed)
           ((conde ((== q 5)) ((== q 6))) succeed)
           (else fail)))    
   '(3 4))
 
-(test-check "condo-2"
+(test-check "conda-2"
   (run 3 (q)
-       (condo
+       (conda
     	 ((conde ((== q 3)) ((== q 4))) (== q 4))
 	     (else fail)))    
   '(4))
 
 
-(test-check "condo-3"
+(test-check "conda-3"
   (run 3 (q)
-       (condo
+       (conda
     	 ((conde ((== q 3)) ((== q 4))) (== q 3))
 	     (else fail)))    
   '(3))
