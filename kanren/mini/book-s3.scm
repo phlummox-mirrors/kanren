@@ -135,7 +135,7 @@
 
 ; Kanren combinators
 
-(define-syntax all
+'(define-syntax all
   (syntax-rules ()
     ((_) succeed)
     ((_ g) g)
@@ -200,7 +200,7 @@
   (syntax-rules ()
     ((chopo r s) r)))
 
-(define-syntax condo
+(define-syntax conda
   (syntax-rules ()
     ((_ c ...) (c1 chopo c ...))))
 
@@ -230,7 +230,7 @@
 		  (bind (checker s)
 		    (lambdag@ (s) ((all g ...) s)))))))))))))
 
-(define-syntax alli
+'(define-syntax alli
   (syntax-rules ()
     ((_) succeed)
     ((_ g) g)
@@ -261,6 +261,21 @@
           ((< v n)  (g (ext-s x (+ v 1) s)))
           (else (fail s)))))))
 
+(define-syntax all-aux
+  (syntax-rules ()
+    ((_ bnd) succeed)
+    ((_ bnd g) (lambdag@ (s) (g s)))
+    ((_ bnd g0 g ...)
+     (lambdag@ (s)
+       (bnd (g0 s) (all-aux bnd g ...))))))
+
+(define-syntax all
+  (syntax-rules ()
+    ((_ . args) (all-aux bind . args))))
+
+(define-syntax alli
+  (syntax-rules ()
+    ((_ . args) (all-aux bindi . args))))
 
 ; The following implementation of eigen critically depends on:
 ;  -- the presence of birth records for logical variables in substitution 's'
