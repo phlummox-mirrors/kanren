@@ -15,6 +15,7 @@
 
 
 (load "scheduling.scm")
+;(load "book-s3.scm")
 
 ;------------------------------------------------------------------------
 ; Part I. Converting a formula in the full first-order predicate calculus
@@ -229,17 +230,17 @@
 	(prove a unexpl literals p1)
 	(prove `(or . ,b) unexpl literals p2)
 	(appendo p1 p2 proof)))
-    ((== fml `(forall ,var ,a))		; instantiate univ quantified fml
-      (project () (begin (yield) succeed))
+    ((all (== fml `(forall ,var ,a))	; instantiate univ quantified fml
+	  (appendo unexpl (list fml) u)); put the original formula to the back!
+      ;(conde (fail) (else succeed))
       (fresh (x1)			; divergence may occur here
-	(appendo unexpl (list fml) u)	; put the original formula to the back!
 	(project (a) (prove (a x1) u literals proof))))
     (else				; fml must be a literal
       (letrec ((close-branch
 		 (lambda (literals proof)
 		   (fresh (neg l lrest)
 		     (== literals (cons l lrest))
-		     (conda
+		     (condu
 		       ((conde ((== fml `(not ,neg))) ((== `(not ,fml) neg)))
 			 (conde		; the first choice point
 			   ((==-check neg l) (== proof (list l)))
@@ -250,6 +251,42 @@
 	    (fresh (n)			; or choose another formula
 	      (== unexpl (cons n u))
 	      (prove n u (cons fml literals) proof)))))))))
+
+'(define prove
+  (lambda-limited 12 (fml unexpl literals proof)
+  (let provei ((fml fml) (unexpl unexpl) (literals literals) (proof proof))
+  (fresh (a b u var)
+  (condu
+    ((all (== fml `(and ,a . ,b)) (appendo b unexpl u))
+      (provei a u literals proof))	; try a first and b later
+    ((== fml `(or ,a))
+      (provei a unexpl literals proof))
+    ((== fml `(or ,a . ,b))		; have to close both a and bs
+      (fresh (p1 p2)
+	(provei a unexpl literals p1)
+	(provei `(or . ,b) unexpl literals p2)
+	(appendo p1 p2 proof)))
+    ((all (== fml `(forall ,var ,a))	; instantiate univ quantified fml
+	  (appendo unexpl (list fml) u)); put the original formula to the back!
+      ;(conde (fail) (else succeed))
+      (fresh (x1)			; divergence may occur here
+	(project (a) (prove (a x1) u literals proof))))
+    (else				; fml must be a literal
+      (letrec ((close-branch
+		 (lambda (literals proof)
+		   (fresh (neg l lrest)
+		     (== literals (cons l lrest))
+		     (condu
+		       ((conde ((== fml `(not ,neg))) ((== `(not ,fml) neg)))
+			 (conde		; the first choice point
+			   ((==-check neg l) (== proof (list l)))
+			   (else (close-branch lrest proof)))))))))
+	(conde				; the second choice point
+	  ((close-branch literals proof))
+	  (else
+	    (fresh (n)			; or choose another formula
+	      (== unexpl (cons n u))
+	      (provei n u (cons fml literals) proof)))))))))))
 
 (define appendo 
   (lambda (l1 l2 l3)
@@ -298,7 +335,7 @@
 
 ; (Ex)(Ey)(Pxy -> (Ax)(Ay)Pxy).
 
-; Pelletier problem 35
+(cout nl "Pelletier problem 35" nl)
 (define pelletier-35
   `,(E x ,(E y (=> (p ,x ,y) ,(A x ,(A y (p ,x ,y)))))))
 (time (do-prove-th '() pelletier-35))
@@ -311,6 +348,7 @@
 ; -------------------------------------------------
 ; (Ax)(Ey)Hxy
 
+(cout nl "Pelletier problem 36" nl)
 (time (do-prove-th
   `(
      ,(A x ,(E y (f ,x ,y)))
@@ -329,6 +367,7 @@
 ; ---------------------------------------------
 ; (Ax)(Ey)Rxy
 
+(cout nl "Pelletier problem 37" nl)
 (time (do-prove-th
   `(
      ,(A z ,(E w ,(A x ,(E y
@@ -353,7 +392,8 @@
 ; ----------------------------------
 ;    (Ax)(Ay)(Qxy <-> Qyx)
 
-(time (do-prove-th
+'(cout nl "Pelletier problem 43" nl)
+'(time (do-prove-th
   `(
      ,(A x ,(A y (<=> (q ,x ,y) ,(A z (<=> (f ,z ,x) (f ,z ,y))))))
    )
@@ -371,8 +411,9 @@
 ; (Ax)[-Pa + Px + (Ez)(Ew)Pz & Rxw & Rwz)) &
 ; (-Pa + -(Ey)(Py & Rxy) + (Ez)(Ew)(Pz & Rxw & Rwz))]}
 
-(time (do-prove-th '() 			; no axioms
-  `(=>
+'(cout nl "Pelletier problem 38" nl)
+'(time (do-prove-th '() 			; no axioms
+  `(<=>
      ,(A x (=> (and (p a) (=> (p ,x) ,(E y (and (p ,y) (r ,x ,y)))))
 	       ,(E z ,(E w (and (p ,z) (r ,x ,w) (r ,w ,z))))))
 
@@ -383,3 +424,43 @@
 	         (not ,(E y (and (p ,y) (r ,x ,y))))
 	        ,(E z ,(E w (and (p ,z) (r ,x ,w) (r ,w ,z))))))))
 ))
+
+; Full Predicate Logic (without Identities and Functions). Problem #44
+; (Ax)[Fx -> (Ey)(Gy & Hxy) & (Ez)(Gz & -Hxz)]
+; (Ex)[Jx & (Ay)[Gy -> Hxy]]
+; ---------------------------
+; (Ex)(Jx & -Fx)
+
+(cout nl "Pelletier problem 44" nl)
+(time (do-prove-th
+  `(
+     ,(A x (=> (f ,x) (and ,(E y (and (g ,y) (h ,x ,y)))
+			   ,(E z (and (g ,z) (not (h ,x ,z)))))))
+     ,(E x (and (j ,x) ,(A y (=> (g ,y) (h ,x ,y)))))
+   )
+  `,(E x (and (j ,x) (not (f ,x))))))
+
+
+
+; Full Predicate Logic (without Identities and Functions). Problem #45.
+;
+; (Ax)(Fx & (Ay)[Gy & Hxy -> Jxy] -> (Ay)(Gy & Hxy -> Ky))
+; -(Ey)(Ly & Ky)
+; (Ex)[Fx & (Ay)(Hxy -> Ly) &
+; ---------------------------
+; (Ay)(Gy & Hxy -> Jxy)]
+; ----------------------
+; (Ex)(Fx & -(Ey)(Gy & Hxy))
+
+(cout nl "Pelletier problem 45" nl)
+(time (do-prove-th
+  `(
+     ,(A x (=>
+	     (and (f ,x) ,(A y (=> (and (g ,y) (h ,x ,y)) (j ,x ,y))))
+	     ,(A y (=> (and (g ,y) (h ,x ,y)) (k ,y)))))
+     (not ,(E y (and (l ,y) (k ,y))))
+     ,(E x (and (f ,x)
+	        ,(A y (=> (h ,x ,y) (l ,y)))
+	        ,(A y (=> (and (g ,y) (h ,x ,y)) (j ,x ,y)))))
+   )
+  `,(E x (and (f ,x) (not ,(E y (and (g ,y) (h ,x ,y))))))))
