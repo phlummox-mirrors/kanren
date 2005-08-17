@@ -212,7 +212,12 @@
 	  (display "possible violation of safety in conda/condu")
 	  (newline)
 	  (unit s1))))))
-  
+
+(define check-groundness
+  (lambda (s)
+    (lambda (s1)
+      (unit s1))))
+
 (define-syntax c1
   (syntax-rules (else)
     ((_ chop) fail)

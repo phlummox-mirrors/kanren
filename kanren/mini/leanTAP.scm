@@ -147,6 +147,15 @@
 ; procedure. Because our evaluator is different for Prolog, the NPATH
 ; contraption in the paper is less useful. It's a hassle to implement anyway.
 
+; (define (show-formula1 fml)
+;   (cond
+;     ((not (pair? fml)) fml)
+;     ((eq? (car fml) 'forall) (let ((var (gensym)))
+; 			       `(A ,var ,(show-formula1 ((caddr fml) var)))))
+;     ((eq? (car fml) 'ex) (let ((var (gensym)))
+; 			       `(E ,var ,(show-formula1 ((caddr fml) var)))))
+;     (else (cons (car fml) (map show-formula1 (cdr fml))))))
+
 (define (nnf fml)
   (match-case-simple fml
 
@@ -220,6 +229,11 @@
 
 (define (prove fml unexpl literals proof)
   (fresh (a b u var)
+  (project (fml unexpl literals)
+    (begin (cout "prove: " (show-formula fml) 
+	     nl unexpl 
+	     literals nl)
+      succeed))
   (condu
     ((all (== fml `(and ,a . ,b)) (appendo b unexpl u))
       (prove a u literals proof))	; try a first and b later
@@ -242,18 +256,29 @@
 		     (== literals (cons l lrest))
 		     (condu
 		       ((conde ((== fml `(not ,neg))) ((== `(not ,fml) neg)))
+			 (project (neg) 
+			   (begin
+			     (let* ((lit
+				     (if (and (pair? neg) (eq? 'not (car neg)))
+				       (cadr neg) neg))
+				     (hd (if (pair? lit) (car lit) lit)))
+			       (if (not (memq hd '(sk f g h i j k l p q r)))
+				 (error "bad lit" hd)))
+			     succeed))
 			 (conde		; the first choice point
 			   ((==-check neg l) (== proof (list l)))
 			   (else (close-branch lrest proof)))))))))
 	(conde				; the second choice point
-	  ((close-branch literals proof))
+	  ((close-branch literals proof) (project () 
+					   (begin (cout nl "closed" nl)
+					   succeed)))
 	  (else
 	    (fresh (n)			; or choose another formula
 	      (== unexpl (cons n u))
 	      (prove n u (cons fml literals) proof)))))))))
 
 '(define prove
-  (lambda-limited 12 (fml unexpl literals proof)
+  (lambda-limited 10 (fml unexpl literals proof)
   (let provei ((fml fml) (unexpl unexpl) (literals literals) (proof proof))
   (fresh (a b u var)
   (condu
@@ -298,7 +323,60 @@
           (== l3 (cons x l31))
           (appendo l11 l2 l31))))))
 
-      
+
+(define (provec fml unexpl literals cnt proof)
+  (fresh (a b u var)
+;   (project (fml unexpl literals)
+;     (begin (cout "provec: " cnt " " (show-formula fml) 
+; 	     nl unexpl 
+; 	     literals nl)
+;       succeed))
+  (condu
+    ((all (== fml `(and ,a . ,b)) (appendo b unexpl u))
+      (provec a u literals cnt proof))	; try a first and b later
+    ((== fml `(or ,a))
+      (provec a unexpl literals cnt proof))
+    ((== fml `(or ,a . ,b))		; have to close both a and bs
+      (fresh (p1 p2)
+	(provec a unexpl literals cnt p1)
+	(provec `(or . ,b) unexpl literals cnt p2)
+	(appendo p1 p2 proof)))
+    ((all (== fml `(forall ,var ,a))	; instantiate univ quantified fml
+	  (appendo unexpl (list fml) u)); put the original formula to the back!
+      ;(conde (fail) (else succeed))
+      (if (positive? cnt) succeed fail)
+      (fresh (x1)			; divergence may occur here
+	(project (a) (provec (a x1) u literals (- cnt 1) proof))))
+    (else				; fml must be a literal
+      (letrec ((close-branch
+		 (lambda (literals proof)
+		   (fresh (neg l lrest)
+		     (== literals (cons l lrest))
+		     (condu
+		       ((conde ((== fml `(not ,neg))) ((== `(not ,fml) neg)))
+			 (project (neg) 
+			   (begin
+			     (let* ((lit
+				     (if (and (pair? neg) (eq? 'not (car neg)))
+				       (cadr neg) neg))
+				     (hd (if (pair? lit) (car lit) lit)))
+			       (if (not (memq hd '(sk f g h i j k l p q r)))
+				 (error "bad lit" hd)))
+			     succeed))
+			 (conde		; the first choice point
+			   ((==-check neg l) (== proof (list l)))
+			   (else (close-branch lrest proof)))))))))
+	(conde				; the second choice point
+	  ((close-branch literals proof) 
+; 	    (project () 
+; 					   (begin (cout nl "closed" nl)
+; 					   succeed))
+	    )
+	  (else
+	    (fresh (n)			; or choose another formula
+	      (== unexpl (cons n u))
+	      (provec n u (cons fml literals) cnt proof)))))))))
+ 
 (define problem-01 `,(A x (=> ,x ,x)))
 ; (show-formula (nnf problem-01))
 ; (run 1 (q) (prove (nnf problem-01) '() '() q))
@@ -314,10 +392,34 @@
 	 (nf (nnf neg-formula)))
     (cout "NNF is: " (show-formula nf) nl)
     (cout "The proof is:" 
-      (run 1 (q) (prove nf '() '() q))
+      (run 1 (q) (provec nf '() '() 5 q))
       nl)))
 
-(time (do-prove-th '() problem-01))
+'(time (do-prove-th '() problem-01))
+
+(define p43 (nnf
+  `(and
+     (or (and (q a b) (not (q b a))) (and (not (q a b)) (q b a)))
+     ;(and (q a b) (not (q b a)))
+     ,(A x ,(A y (or (and (q ,x ,y) ,(A z (<=> (f ,z ,x) (f ,z ,y))))
+		     (and (not (q ,x ,y))
+		          (not (<=> (f (sk ,x ,y) ,x) (f (sk ,x ,y) ,y)))))))
+   )))
+;(cout (run 1 (q) (provec p43 '() '() 5 q)) nl)
+
+;#!eof
+
+; (cout nl "Pelletier problem 43" nl)
+; (time (do-prove-th
+;   `(
+;      ,(A x ,(A y (or (and (q ,x ,y) ,(A z (<=> (f ,z ,x) (f ,z ,y))))
+; 		     (and (not (q ,x ,y))
+; 		          (not (<=> (f (sk ,x ,y) ,x) (f (sk ,x ,y) ,y)))))))
+;    )
+;   `,(A x ,(A y (<=> (q ,x ,y) (q ,y ,x))))))
+
+
+;#!eof
 
  
 (define problem-02 `,(A x (=> ,x ,(A y (=> ,y ,x)))))
@@ -392,8 +494,8 @@
 ; ----------------------------------
 ;    (Ax)(Ay)(Qxy <-> Qyx)
 
-'(cout nl "Pelletier problem 43" nl)
-'(time (do-prove-th
+(cout nl "Pelletier problem 43" nl)
+(time (do-prove-th
   `(
      ,(A x ,(A y (<=> (q ,x ,y) ,(A z (<=> (f ,z ,x) (f ,z ,y))))))
    )
@@ -411,8 +513,8 @@
 ; (Ax)[-Pa + Px + (Ez)(Ew)Pz & Rxw & Rwz)) &
 ; (-Pa + -(Ey)(Py & Rxy) + (Ez)(Ew)(Pz & Rxw & Rwz))]}
 
-'(cout nl "Pelletier problem 38" nl)
-'(time (do-prove-th '() 			; no axioms
+(cout nl "Pelletier problem 38" nl)
+(time (do-prove-th '() 			; no axioms
   `(<=>
      ,(A x (=> (and (p a) (=> (p ,x) ,(E y (and (p ,y) (r ,x ,y)))))
 	       ,(E z ,(E w (and (p ,z) (r ,x ,w) (r ,w ,z))))))
