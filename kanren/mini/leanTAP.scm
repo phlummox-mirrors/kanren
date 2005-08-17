@@ -159,7 +159,7 @@
 (define (nnf fml)
   (match-case-simple fml
 
-    ; trivial re-writing using standard tautologies
+    ; trivial re-writing using the standard tautologies
     ((not (not ,a)) ()
       (nnf  a))
     ((not (forall ,var ,gfml)) ()
@@ -217,7 +217,7 @@
 
 
 ;------------------------------------------------------------------------
-; The prover itself
+;			The prover itself
 ; (prove nnf-formula '() '() proof)
 ; succeeds if the NNF formula is derivable. The variable proof is unified
 ; with the proof (note that the paper did not show the proof!)
@@ -229,6 +229,7 @@
 
 (define (prove fml unexpl literals proof)
   (fresh (a b u var)
+    ; just a trace comment...
   (project (fml unexpl literals)
     (begin (cout "prove: " (show-formula fml) 
 	     nl unexpl 
@@ -277,42 +278,6 @@
 	      (== unexpl (cons n u))
 	      (prove n u (cons fml literals) proof)))))))))
 
-'(define prove
-  (lambda-limited 10 (fml unexpl literals proof)
-  (let provei ((fml fml) (unexpl unexpl) (literals literals) (proof proof))
-  (fresh (a b u var)
-  (condu
-    ((all (== fml `(and ,a . ,b)) (appendo b unexpl u))
-      (provei a u literals proof))	; try a first and b later
-    ((== fml `(or ,a))
-      (provei a unexpl literals proof))
-    ((== fml `(or ,a . ,b))		; have to close both a and bs
-      (fresh (p1 p2)
-	(provei a unexpl literals p1)
-	(provei `(or . ,b) unexpl literals p2)
-	(appendo p1 p2 proof)))
-    ((all (== fml `(forall ,var ,a))	; instantiate univ quantified fml
-	  (appendo unexpl (list fml) u)); put the original formula to the back!
-      ;(conde (fail) (else succeed))
-      (fresh (x1)			; divergence may occur here
-	(project (a) (prove (a x1) u literals proof))))
-    (else				; fml must be a literal
-      (letrec ((close-branch
-		 (lambda (literals proof)
-		   (fresh (neg l lrest)
-		     (== literals (cons l lrest))
-		     (condu
-		       ((conde ((== fml `(not ,neg))) ((== `(not ,fml) neg)))
-			 (conde		; the first choice point
-			   ((==-check neg l) (== proof (list l)))
-			   (else (close-branch lrest proof)))))))))
-	(conde				; the second choice point
-	  ((close-branch literals proof))
-	  (else
-	    (fresh (n)			; or choose another formula
-	      (== unexpl (cons n u))
-	      (provei n u (cons fml literals) proof)))))))))))
-
 (define appendo 
   (lambda (l1 l2 l3)
     (conde
@@ -323,6 +288,12 @@
           (== l3 (cons x l31))
           (appendo l11 l2 l31))))))
 
+
+; provec differs from the above in the `cnt' argument, which
+; is the upper bound on the number of application of the `gamma' rule
+; (i.e., instantiation of a forall-quantified formula).
+; Problems like 43 and 38 can only be proven if the application of the
+; gamma rule is strictly restricted, to prevent expanding tableau too much.
 
 (define (provec fml unexpl literals cnt proof)
   (fresh (a b u var)
@@ -367,11 +338,7 @@
 			   ((==-check neg l) (== proof (list l)))
 			   (else (close-branch lrest proof)))))))))
 	(conde				; the second choice point
-	  ((close-branch literals proof) 
-; 	    (project () 
-; 					   (begin (cout nl "closed" nl)
-; 					   succeed))
-	    )
+	  ((close-branch literals proof))
 	  (else
 	    (fresh (n)			; or choose another formula
 	      (== unexpl (cons n u))
@@ -407,8 +374,6 @@
    )))
 ;(cout (run 1 (q) (provec p43 '() '() 5 q)) nl)
 
-;#!eof
-
 ; (cout nl "Pelletier problem 43" nl)
 ; (time (do-prove-th
 ;   `(
@@ -417,9 +382,6 @@
 ; 		          (not (<=> (f (sk ,x ,y) ,x) (f (sk ,x ,y) ,y)))))))
 ;    )
 ;   `,(A x ,(A y (<=> (q ,x ,y) (q ,y ,x))))))
-
-
-;#!eof
 
  
 (define problem-02 `,(A x (=> ,x ,(A y (=> ,y ,x)))))
