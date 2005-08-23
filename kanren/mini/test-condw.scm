@@ -13,13 +13,21 @@
                      'tested-expression expected produced)))))))
 
 
-(define-syntax allw
+'(define-syntax allw
   (syntax-rules ()
     ((_ arg ...) (all arg ...))))
 
-(define-syntax anyw
+(define-syntax allw
+  (syntax-rules ()
+    ((_ arg ...) (all succeed (begin (yield) arg) ...))))
+
+'(define-syntax anyw
   (syntax-rules ()
     ((_ arg ...) (conde (arg) ...))))
+
+(define-syntax anyw
+  (syntax-rules ()
+    ((_ arg ...) (conde (fail) ((begin (yield) arg)) ...))))
 
 (define any*
    (lambda (g)
@@ -211,7 +219,7 @@
    '(5))
 
 ;!!!!
-'(test-check "bat-1"
+(test-check "bat-1"
    (run 1 (q)
      (bat q))
    '(5))
@@ -272,19 +280,19 @@
    '(5 5 5 5 5))
 
 ;!!!
-'(test-check "glaz-1"
+(test-check "glaz-1"
    (run 1 (q)
      (glaz q))
    '(5))
 
 ;!!!
-'(test-check "glaz-2"
+(test-check "glaz-2"
    (run 5 (q)
      (glaz q))
    '(5 5 5 5 5))
 
 ;!!!
-'(test-check "flaz-1"
+(test-check "flaz-1"
    (run 1 (q)
      (flaz q))
    '(5))
