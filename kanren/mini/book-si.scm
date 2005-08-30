@@ -327,6 +327,14 @@
         ((unify v w s) => succeed)
         (else (fail s))))))
 
+(define ==-check
+  (lambda (v w)
+    (lambdag@ (s)
+      (cond
+        ((unify-check v w s) => succeed)
+        (else (fail s))))))
+
+
 (define-syntax fresh
   (syntax-rules ()
     ((_ (x ...) g0 g ...)

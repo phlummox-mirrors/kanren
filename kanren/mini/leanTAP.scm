@@ -14,8 +14,8 @@
 ;    url = "http://citeseer.ist.psu.edu/beckert95leantap.html" }
 
 
-(load "scheduling.scm")
-;(load "book-s3.scm")
+;(load "scheduling.scm")
+(load "book-si.scm")
 
 ;------------------------------------------------------------------------
 ; Part I. Converting a formula in the full first-order predicate calculus
@@ -230,11 +230,11 @@
 (define (prove fml unexpl literals proof)
   (fresh (a b u var)
     ; just a trace comment...
-  (project (fml unexpl literals)
-    (begin (cout "prove: " (show-formula fml) 
-	     nl unexpl 
-	     literals nl)
-      succeed))
+;   (project (fml unexpl literals)
+;     (begin (cout "prove: " (show-formula fml) 
+; 	     nl unexpl 
+; 	     literals nl)
+;       succeed))
   (condu
     ((all (== fml `(and ,a . ,b)) (appendo b unexpl u))
       (prove a u literals proof))	; try a first and b later
@@ -247,7 +247,7 @@
 	(appendo p1 p2 proof)))
     ((all (== fml `(forall ,var ,a))	; instantiate univ quantified fml
 	  (appendo unexpl (list fml) u)); put the original formula to the back!
-      ;(conde (fail) (else succeed))
+      (conde (fail) (else succeed))
       (fresh (x1)			; divergence may occur here
 	(project (a) (prove (a x1) u literals proof))))
     (else				; fml must be a literal
@@ -271,7 +271,7 @@
 			   (else (close-branch lrest proof)))))))))
 	(conde				; the second choice point
 	  ((close-branch literals proof) (project () 
-					   (begin (cout nl "closed" nl)
+					   (begin ;(cout nl "closed" nl)
 					   succeed)))
 	  (else
 	    (fresh (n)			; or choose another formula
@@ -360,6 +360,17 @@
     (cout "NNF is: " (show-formula nf) nl)
     (cout "The proof is:" 
       (run 1 (q) (provec nf '() '() 5 q))
+      nl)))
+
+(define (do-prove-th axioms theorem)
+  (cout nl "Axioms: ")
+  (map (lambda (x) (cout nl (show-formula x))) axioms) 
+  (cout  nl "Theorem: " (show-formula theorem) nl)
+  (let* ((neg-formula `(and (not ,theorem) ,@axioms))
+	 (nf (nnf neg-formula)))
+    (cout "NNF is: " (show-formula nf) nl)
+    (cout "The proof is:" 
+      (run 1 (q) (prove nf '() '() q))
       nl)))
 
 '(time (do-prove-th '() problem-01))
