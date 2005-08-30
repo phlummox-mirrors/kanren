@@ -61,8 +61,6 @@
 ;              Zero -> Zero
 ;              Unit a -> k a
 ;              Choice a f -> mplus (k a) (\() -> bind (f ()) k)
-; actually, should try r one more time...
-;              Incomplete r -> Incomplete $ \() -> (bind (r ()) k)
 
 (define bind
   (lambda (r k)
@@ -106,57 +104,65 @@
 	     ((j) (incomplete (mplus1 (i) j))))
 	))))
 
+; We bias towards depth-first: we try 5 steps in depth. If no solution
+; is forthcoming, we explore other alternatives...
+
 (define mplus
   (lambda (r f)
-    ;(cout "r:" (lambda () (write r))nl)
+    (mplus-aux 5 r f)))
+
+(define mplus-aux
+  (lambda (n r f)
     (case-ans r
       (incomplete-f f)
       ((a) (choice a f))
       ((a f^) (choice a
                 (lambdaf@ () (mplus (f) f^))))
-      ((i) 
-	(incomplete (case-ans (f)
-	     (incomplete-f i)
-	     ((b) (choice b i))
+      ((i)
+	(if (positive? n)
+	  (incomplete (mplus-aux (- n 1) (i) f))
+	  (incomplete 
+	    (case-ans (f)
+	      (incomplete-f i)
+	      ((b) (choice b i))
 ;	     ((b f^^) (choice b (lambdaf@ () (mplus r f^^))))
 ;	     ((b f^^) (incomplete (choice b (lambdaf@ () (mplus r f^^)))))
-	     ((b f^^) (incomplete (mplus (choice b f^^) i)))
+	      ((b f^^) (incomplete (mplus (choice b f^^) i)))
 ;	     ((b f^^) (choice b (lambdaf@ () (mplus1 (i) f^^))))
 ;	     ((b f^^) (choice b (lambdaf@ () (mplus1 (f^^) i))))
-	     ((j) (mplus (i) j)))
-	)))))
+	      ((j) (mplus (i) j)))
+	))))))
 
-'(define mplus
-  (lambda (r f)
-    ;(cout "r:" (lambda () (write r))nl)
-    (case-ans r
-      (incomplete-f f)
-      ((a) (choice a f))
-      ((a f^) (choice a
-                (lambdaf@ () (mplus (f) f^))))
-      ((i) (incomplete (mplus (f) i))))))
+; (define mplus
+;   (lambda (r f)
+;     ;(cout "r:" (lambda () (write r))nl)
+;     (case-ans r
+;       (incomplete-f f)
+;       ((a) (choice a f))
+;       ((a f^) (choice a
+;                 (lambdaf@ () (mplus (f) f^))))
+;       ((i) (incomplete (mplus (f) i))))))
 
 
-'(define mplus1
-  (lambda (r f)
-    (case-ans r
-      (incomplete-f f)
-      ((a) (choice a f))
-      ((a f^) (choice a
-                (lambdaf@ () (mplus1 (f) f^))))
-      ((i) (case-ans (f)
-	     (incomplete-f i)
-	     ((b) (choice b i))
-;	     ((b f^^) (choice b (lambdaf@ () (mplus1 r f^^))))
-;	     ((b f^^) (incomplete (choice b (lambdaf@ () (mplus1 r f^^)))))
-	     ((b f^^) (incomplete (mplus1 (choice b f^^) i)))
-;	     ((b f^^) (incomplete (choice b (lambdaf@ () (mplus1 (i) f^^)))))
-;	     ((b f^^) (choice b (lambdaf@ () (interleave (f^^) i))))
-	     ((j) (incomplete (mplus1 (i) j))))
-	))))
+; (define mplus1
+;   (lambda (r f)
+;     (case-ans r
+;       (incomplete-f f)
+;       ((a) (choice a f))
+;       ((a f^) (choice a
+;                 (lambdaf@ () (mplus1 (f) f^))))
+;       ((i) (case-ans (f)
+; 	     (incomplete-f i)
+; 	     ((b) (choice b i))
+; ;	     ((b f^^) (choice b (lambdaf@ () (mplus1 r f^^))))
+; ;	     ((b f^^) (incomplete (choice b (lambdaf@ () (mplus1 r f^^)))))
+; 	     ((b f^^) (incomplete (mplus1 (choice b f^^) i)))
+; ;	     ((b f^^) (incomplete (choice b (lambdaf@ () (mplus1 (i) f^^)))))
+; ;	     ((b f^^) (choice b (lambdaf@ () (interleave (f^^) i))))
+; 	     ((j) (incomplete (mplus1 (i) j))))
+; 	))))
 
 (define interleave mplus)
-;(define interleave mplus1)
 
 
 ; interleave :: Ans a -> (() -> Ans a) -> Ans a
@@ -391,39 +397,39 @@
     ((_ g) g)
     ((_ g0 g ...)
      (let ((g^ g0))
-       (lambdag@ (s) (bindi (g^ s) (lambdag@ (s) ((alli1 g ...)
+       (lambdag@ (s) (bindi (g^ s) (lambdag@ (s) ((alli g ...)
   s))))))))
 
-(define-syntax alli1
-  (syntax-rules ()
-    ((_) succeed)
-    ((_ g) g)
-    ((_ g0 g ...)
-     (let ((g^ g0))
-       (lambdag@ (s) (bindi1 (g^ s) (lambdag@ (s) ((alli1 g ...)
-  s))))))))
+; (define-syntax alli1
+;   (syntax-rules ()
+;     ((_) succeed)
+;     ((_ g) g)
+;     ((_ g0 g ...)
+;      (let ((g^ g0))
+;        (lambdag@ (s) (bindi1 (g^ s) (lambdag@ (s) ((alli1 g ...)
+;   s))))))))
 
 (define bindi bind)
 
-'(define bindi
-  (lambda (r k)
-    (case-ans r
-      (mzero)
-      ((a) (k a))
-      ((a f) (interleave-reset (k a)
-               (lambdaf@ () (bindi (f) k))))
-      ((i) (incomplete (bindi (i) k)))
-)))
+; '(define bindi
+;   (lambda (r k)
+;     (case-ans r
+;       (mzero)
+;       ((a) (k a))
+;       ((a f) (interleave-reset (k a)
+;                (lambdaf@ () (bindi (f) k))))
+;       ((i) (incomplete (bindi (i) k)))
+; )))
 
-(define bindi1
-  (lambda (r k)
-    (case-ans r
-      (mzero)
-      ((a) (k a))
-      ((a f) (interleave (k a)
-               (lambdaf@ () (bindi1 (f) k))))
-      ((i) (incomplete (bindi1 (i) k)))
-)))
+; (define bindi1
+;   (lambda (r k)
+;     (case-ans r
+;       (mzero)
+;       ((a) (k a))
+;       ((a f) (interleave (k a)
+;                (lambdaf@ () (bindi1 (f) k))))
+;       ((i) (incomplete (bindi1 (i) k)))
+; )))
 
 
 ; Just the lambda...
@@ -484,6 +490,5 @@
     (condu (g succeed) (else fail))))
 
 
-'(define (once x) (incomplete x))
 (define (yield) #f)
 

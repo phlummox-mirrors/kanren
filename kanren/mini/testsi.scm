@@ -2712,17 +2712,18 @@
   (run 10 (q) (expo '(1) '(0 1) q))   
   '((1)))
 
-;;;; limiited-lambda
+;;;; limited-lambda
 
-(define append_1                                                                  (lambda-limited 5 (x y z)
-     (conde                                                                    
-      ((== '() x) (== y z))   
+(define append_1
+  (lambda-limited 5 (x y z)
+     (conde
+      ((== '() x) (== y z))
       (else (fresh (a xs zs)                                                  
               (== `(,a . ,xs) x)                                              
               (== `(,a . ,zs) z)                                              
               (append_1 xs y zs))))))
 
-'(define append_1                                                                
+'(define append_1
   (lambda (x y z)
     (goal-limited 5                                           
     (conde                                                                    
@@ -2735,9 +2736,12 @@
 (pretty-print
   (run 10 (q) (fresh (a b c) (append_1 a b c) (== `(,a ,b ,c) q))))
 
-(define append_2                                                                
+; A few advanced tests...
+
+(define append_2
   (lambda-limited 3 (x y z)                                              
-    (conde                                                                    
+    (conde
+      (fail)
       (succeed                                                                
         (fresh (a xs zs)                                                      
           (== `(,a . ,xs) x)                                                  
