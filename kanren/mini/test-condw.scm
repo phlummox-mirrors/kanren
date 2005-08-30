@@ -1,4 +1,5 @@
-(load "scheduling.scm")
+;(load "scheduling.scm")
+(load "book-si.scm")
 
 (define-syntax test-check
    (syntax-rules ()
@@ -297,7 +298,8 @@
      (flaz q))
    '(5))
 ;!!!
-'(test-check "flaz-2"
+; it passes if the queue size is set to 10
+(test-check "flaz-2"
    (run 5 (q)
      (flaz q))
    '(5 5 5 5 5))

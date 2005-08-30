@@ -85,6 +85,23 @@
 
 ; Initial tests
 
+(test-check "conde extensive 0"
+  (run* (x)
+    (conde
+      ((conde 
+	 ((== x 1))
+	 ((== x 11))))
+      ((conde 
+	 ((== x 2))
+	 ((== x 3)))
+	(trace-vars 21 (x))
+	(conde
+	  ((trace-vars 22 (x)) fail)
+	  ((trace-vars 23 (x)) fail)
+	  ((trace-vars 24 (x)) fail)
+	  (succeed)))))
+  '(1 11 2 3))
+
 (test-check "conde extensive"
   (run* (x)
     (fresh (y)
@@ -224,6 +241,21 @@
 	           (always fail)))
   '(10 11))
 	         
+
+(define insidious 
+  (lambda (x)
+    (fresh ()
+      (condi
+	((== x 1) (trace-vars 1 (x)))
+	(else (insidious x)))
+      (conde
+	(fail)
+	(else succeed)))))
+
+(test-check "insidious recursion"
+  (run 4 (q) (insidious q))
+  '(1 1 1 1))
+
 
 (define build
   (lambda (n)
@@ -623,6 +655,27 @@
          (+o n x m))))))
 
 
+
+'(define <o
+  (lambda (n m)
+    (condi
+      ((<ol n m) (trace-vars 1 (n m)) succeed)
+      ((conde ((== n '(1)) (== m '(1))) ((fresh (x y) (== n (list x 1)) (== m (list y 1))))) ;(=ol n m)
+       (fresh (x)
+         (poso x)
+	(fresh (z) (== z (list n x m)) (trace-vars 2 (z)))
+         (+o n x m) (trace-vars 3 (n m)) )))))
+
+'(define <o
+  (lambda (n m)
+    (condi
+      ((<ol n m) (trace-vars 1 (n m)) succeed)
+      ((=ol n m)
+       (fresh (x)
+         (poso x)
+	(fresh (z) (== z (list n x m)) (trace-vars 2 (z)))
+         (+o n x m) (trace-vars 3 (n m)) )))))
+
 ; (<ol3 q p n m) holds iff
 ; q = '() and (poso p) or
 ; width(q) < (min width(p), width(n) + width(m) + 1)
@@ -697,6 +750,12 @@
     (conde
       ((== '() n) (== '() m))
       (else (=ol^ n m)))))
+
+'(define =ol
+  (lambda (n m)
+    (conde
+      ((== '() n) (== '() m))
+      (else (trace-vars 55 ()) fail))))
 
 (define =ol^
   (lambda (n m)
@@ -1227,7 +1286,7 @@
 ;            (fresh (x y z t)
 ;              (alli (+o x '(1) t)
 ;                (+o t y z))
-; 	     (trace-vars 2 (x y z))
+; 	     (trace-vars 2 (y x z))
 ;              (== x b)
 ;              (== y a)
 ;              (== z c))))))    )
@@ -1241,17 +1300,17 @@
 ;           (== `(,a ,b ,c) q)
 ;          ;(trace-vars 1 (a b c))
 ; 	 )
-;          (once
+;          (begin ; once
 ;            (fresh (x y z t)
 ;              (alli (+o x '(1) t)
 ;                (+o t y z))
-; 	   ;(trace-vars 2 (x y z))
+; 	   (trace-vars 2 (y x z))
 ;              (== x b)
 ;              (== y a)
 ;              (== z c)))))    )
 
 ; (pretty-print
-;   (run 10 (q)
+;   (run 20 (q)
 ;       (fresh (a b c t)
 ;        (alli
 ;           (+o '(1) a t)
@@ -1269,6 +1328,7 @@
 ;  (() (1 0 _.0 . _.1) (0 1 _.0 . _.1))
 ;  ((1) (0 1) (0 0 1)))
 
+; ; The following test should give at least one 5, if everything is to work
 ; (run 5 (q) (condi (always) 
 ; 	     (else (condi (fail) (fail) (fail) (else (== q 5))))))
 
@@ -1593,6 +1653,7 @@
           (== (trans x) q))))    
   ())
 
+;#!eof
 ;(run 1 (q) (fresh (x y) (<o q q)))
 ;;; (test-check "comparison-4"   ())
 

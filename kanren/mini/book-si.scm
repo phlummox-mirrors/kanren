@@ -6,6 +6,10 @@
 ;                   | Incomplete (() -> Ans)
 ; In (Choice a f): a is the current answer; (f) will give further
 ; answers
+;
+; This version implements the equations from FBackTrack.hs
+;
+; $Id$
 
 ; Constructors
 (define-syntax mzero
@@ -36,7 +40,7 @@
      (let ((r e))
        (cond
          ((not r) on-zero)
-	  ((procedure? r) (let ((i r)) on-incomplete))
+	 ((procedure? r) (let ((i r)) on-incomplete))
          ((and (pair? r) (procedure? (cdr r)))
           (let ((a (car r)) (f (cdr r)))
             on-choice))
@@ -74,19 +78,85 @@
 ;     case r of
 ;              Zero -> Incomplete f
 ;              Unit a -> Choice a f
-;              Choice a f' -> Choice a (\() -> mplus (f' ()) f)
-;              Incomplete i -> Incomplete $ \() -> mplus (i ()) f
-; The last but one step is the rotation of the tree
+;              Choice a f' -> Choice a (\() -> mplus (f ()) f')
+;   mplus r@(Incomplete i) r' = 
+;       case r' of
+; 	      Nil         -> r
+; 	      One b       -> Choice b i
+; 	      Choice b r' -> Choice b (mplus i r')
+; 	      -- Choice _ _ -> Incomplete (mplus r' i)
+; 	      Incomplete j -> Incomplete (mplus i j)
 
-(define mplus
+
+'(define mplus
   (lambda (r f)
     (case-ans r
       (incomplete-f f)
       ((a) (choice a f))
       ((a f^) (choice a
-                (lambdaf@ () (mplus (f^) f))))
-      ((i) (incomplete (mplus (i) f)))
-)))
+                (lambdaf@ () (mplus1 (f) f^))))
+      ((i) (case-ans (f)
+	     (incomplete-f i)
+	     ((b) (choice b i))
+;	     ((b f^^) (choice b (lambdaf@ () (mplus r f^^))))
+;	     ((b f^^) (incomplete (choice b (lambdaf@ () (mplus r f^^)))))
+;	     ((b f^^) (incomplete (mplus1 (i) f)))
+	     ((b f^^) (choice b (lambdaf@ () (mplus1 (i) f^^))))
+;	     ((b f^^) (choice b (lambdaf@ () (mplus1 (f^^) i))))
+	     ((j) (incomplete (mplus1 (i) j))))
+	))))
+
+(define mplus
+  (lambda (r f)
+    ;(cout "r:" (lambda () (write r))nl)
+    (case-ans r
+      (incomplete-f f)
+      ((a) (choice a f))
+      ((a f^) (choice a
+                (lambdaf@ () (mplus (f) f^))))
+      ((i) 
+	(incomplete (case-ans (f)
+	     (incomplete-f i)
+	     ((b) (choice b i))
+;	     ((b f^^) (choice b (lambdaf@ () (mplus r f^^))))
+;	     ((b f^^) (incomplete (choice b (lambdaf@ () (mplus r f^^)))))
+	     ((b f^^) (incomplete (mplus (choice b f^^) i)))
+;	     ((b f^^) (choice b (lambdaf@ () (mplus1 (i) f^^))))
+;	     ((b f^^) (choice b (lambdaf@ () (mplus1 (f^^) i))))
+	     ((j) (mplus (i) j)))
+	)))))
+
+'(define mplus
+  (lambda (r f)
+    ;(cout "r:" (lambda () (write r))nl)
+    (case-ans r
+      (incomplete-f f)
+      ((a) (choice a f))
+      ((a f^) (choice a
+                (lambdaf@ () (mplus (f) f^))))
+      ((i) (incomplete (mplus (f) i))))))
+
+
+'(define mplus1
+  (lambda (r f)
+    (case-ans r
+      (incomplete-f f)
+      ((a) (choice a f))
+      ((a f^) (choice a
+                (lambdaf@ () (mplus1 (f) f^))))
+      ((i) (case-ans (f)
+	     (incomplete-f i)
+	     ((b) (choice b i))
+;	     ((b f^^) (choice b (lambdaf@ () (mplus1 r f^^))))
+;	     ((b f^^) (incomplete (choice b (lambdaf@ () (mplus1 r f^^)))))
+	     ((b f^^) (incomplete (mplus1 (choice b f^^) i)))
+;	     ((b f^^) (incomplete (choice b (lambdaf@ () (mplus1 (i) f^^)))))
+;	     ((b f^^) (choice b (lambdaf@ () (interleave (f^^) i))))
+	     ((j) (incomplete (mplus1 (i) j))))
+	))))
+
+(define interleave mplus)
+;(define interleave mplus1)
 
 
 ; interleave :: Ans a -> (() -> Ans a) -> Ans a
@@ -116,47 +186,47 @@
 ;     t2)
 
 ; aka interleave-reset
-(define interleave-reset
-  (lambda (r f)
-    (case-ans r
-      (incomplete-f f)
-      ((a) (choice a f))
-      ((a f^) (choice a
-                (lambdaf@ () (interleave (f) f^))))
-      ((i)
-      (case-ans (f)
-        (incomplete-f i)
-	  ((b) (choice b i))
-;	    ((b f^^) (incomplete (interleave (i) f)))
-;	      ((b f^^)
-;	          (case-ans (i)
-;		        (choice b f^^)
-;			      ((a1) (choice a1 (lambdaf@ ()
-;					 (choice b f^^))))
-;					    ((a1 f^1) (choice a1 (lambdaf@ ()
-;			     (choice b
-;				   (lambdaf@ () (interleave (f^1) f^^))))))
-;	          ((i1) (choice b (lambdaf@ () (interleave (i1) f^^))))))
-	  ((b f^^) (choice b (lambdaf@ () (interleave (i) f^^))))
-;	    ((b f^^) (choice b (lambdaf@ () (interleave (f^^) i))))
-	      ((j) (incomplete (interleave (i) j)))))
-)))
+; (define interleave-reset
+;   (lambda (r f)
+;     (case-ans r
+;       (incomplete-f f)
+;       ((a) (choice a f))
+;       ((a f^) (choice a
+;                 (lambdaf@ () (interleave (f) f^))))
+;       ((i)
+;       (case-ans (f)
+;         (incomplete-f i)
+; 	  ((b) (choice b i))
+; ;	    ((b f^^) (incomplete (interleave (i) f)))
+; ;	      ((b f^^)
+; ;	          (case-ans (i)
+; ;		        (choice b f^^)
+; ;			      ((a1) (choice a1 (lambdaf@ ()
+; ;					 (choice b f^^))))
+; ;					    ((a1 f^1) (choice a1 (lambdaf@ ()
+; ;			     (choice b
+; ;				   (lambdaf@ () (interleave (f^1) f^^))))))
+; ;	          ((i1) (choice b (lambdaf@ () (interleave (i1) f^^))))))
+; 	  ((b f^^) (choice b (lambdaf@ () (interleave (i) f^^))))
+; ;	    ((b f^^) (choice b (lambdaf@ () (interleave (f^^) i))))
+; 	      ((j) (incomplete (interleave (i) j)))))
+; )))
 
 
-(define interleave ;-shift
-  (lambda (r f)
-    (case-ans r
-      (incomplete-f f)
-      ((a) (choice a f))
-      ((a f^) (choice a
-                (lambdaf@ () (interleave (f) f^))))
-      ((i)
-      (case-ans (f)
-        (incomplete-f i)
-	  ((b) (choice b i))
-	    ((b f^^) (incomplete (interleave (choice b f^^) i)))
-	      ((j) (incomplete (interleave (i) j)))))
-)))
+; (define interleave ;-shift
+;   (lambda (r f)
+;     (case-ans r
+;       (incomplete-f f)
+;       ((a) (choice a f))
+;       ((a f^) (choice a
+;                 (lambdaf@ () (interleave (f) f^))))
+;       ((i)
+;       (case-ans (f)
+;         (incomplete-f i)
+; 	  ((b) (choice b i))
+; 	    ((b f^^) (incomplete (interleave (choice b f^^) i)))
+; 	      ((j) (incomplete (interleave (i) j)))))
+; )))
 
 ; Kanren implementation
 (define succeed (lambdag@ (s) (unit s)))
@@ -279,8 +349,8 @@
     ((_ combine (else g ...)) (all g ...))
     ((_ combine (g ...) c ...)
      (let ((g^ (all g ...)))
-       (lambdag@ (s) (combine (g^ s) (lambdaf@ () ((c@ combine c ...)
-  s))))))))
+       (lambdag@ (s) (combine (g^ s) 
+		       (lambdaf@ () ((c@ combine c ...) s))))))))
 
 (define-syntax chop1
   (syntax-rules ()
@@ -312,7 +382,7 @@
              ((s) ((all g ...) s)) ; g0 is deterministic
              ((s f)                ; at least one answer from g0
               (bind (chop r s) (lambdag@ (s) ((all g ...) s))))
-	           ((i) (incomplete (loop (i))))
+	     ((i) (incomplete (loop (i)))) ; need at least one asnwer...
 )))))))
 
 (define-syntax alli
@@ -333,7 +403,9 @@
        (lambdag@ (s) (bindi1 (g^ s) (lambdag@ (s) ((alli1 g ...)
   s))))))))
 
-(define bindi
+(define bindi bind)
+
+'(define bindi
   (lambda (r k)
     (case-ans r
       (mzero)
@@ -354,69 +426,64 @@
 )))
 
 
+; Just the lambda...
 (define-syntax lambda-limited
   (syntax-rules ()
     ((_ n formals g)                                          
-     (let ((x (var 'x)))                                                      
-       (lambda formals (ll n x g))))))
+       (lambda formals g))))
 
-(define ll
-  (lambda (n x g)
-    (lambdag@ (s)
-      (let ((v (walk x s)))
-        (cond
-          ((var? v) (g (ext-s x 1 s)))
-          ((< v n)  (g (ext-s x (+ v 1) s)))
-          (else (fail s)))))))
+; (define-syntax allw
+;   (syntax-rules ()
+;     ((_) succeed)
+;     ((_ g) g)
+;     ((_ g1 g2) (allw-1 g1 g2))
+;     ((_ g0 g1 g2 ...) (allw (allw g0 g1) g2 ...))))
 
-(define-syntax allw
-  (syntax-rules ()
-    ((_) succeed)
-    ((_ g) g)
-    ((_ g1 g2) (allw-1 g1 g2))
-    ((_ g0 g1 g2 ...) (allw (allw g0 g1) g2 ...))))
+; (define allw-1
+;   (lambda (g1 g2)
+;     (fresh (choice failed)                                                   
+;       (all
+;         (oracle g1 g2 failed choice)
+;         (condu
+;           ((== #t failed) fail)
+;           ((== #t choice) (alli g1 g2))                                      
+;           ((== #f choice) (alli g2 g1)))))))                    
 
-(define allw-1
-  (lambda (g1 g2)
-    (fresh (choice failed)                                                   
-      (all
-        (oracle g1 g2 failed choice)
-        (condu
-          ((== #t failed) fail)
-          ((== #t choice) (alli g1 g2))                                      
-          ((== #f choice) (alli g2 g1)))))))                    
+; ;;; If 'g' succeeds or fails, then (terminates failed g) succeeds,
+; ;;; and in the process sets failed to #t if g fails and sets failed
+; ;;; to #f if g succeeds, but without extending the substitution.
+; ;;; If 'g' diverges, (terminates failed g) diverges.
 
-;;; If 'g' succeeds or fails, then (terminates failed g) succeeds,
-;;; and in the process sets failed to #t if g fails and sets failed
-;;; to #f if g succeeds, but without extending the substitution.
-;;; If 'g' diverges, (terminates failed g) diverges.
+; (define oracle
+;   (lambda (g1 g2 failed choice)
+;     (once
+;       (condi
+;         ((terminates failed (alli g1 g2)) (== #t choice))              
+;         ((terminates failed (alli g2 g1)) (== #f choice))))))
 
-(define oracle
-  (lambda (g1 g2 failed choice)
-    (once
-      (condi
-        ((terminates failed (alli g1 g2)) (== #t choice))              
-        ((terminates failed (alli g2 g1)) (== #f choice))))))
+; (define terminates
+;   (lambda (failed g)
+;     (condu
+;       ((succeeds
+;          (condu
+;            [g succeed]
+;            [else fail]))
+;        (== #f failed))
+;       (else (== #t failed)))))
 
-(define terminates
-  (lambda (failed g)
-    (condu
-      ((succeeds
-         (condu
-           [g succeed]
-           [else fail]))
-       (== #f failed))
-      (else (== #t failed)))))
+; (define succeeds
+;   (lambda (g)
+;     (fails (fails g))))
 
-(define succeeds
-  (lambda (g)
-    (fails (fails g))))
-
-(define fails
-  (lambda (g)
-    (condu [g fail] [else succeed])))
+; (define fails
+;   (lambda (g)
+;     (condu [g fail] [else succeed])))
 
 (define once
   (lambda (g)
-    (condu [g succeed] [else fail])))
+    (condu (g succeed) (else fail))))
+
+
+'(define (once x) (incomplete x))
+(define (yield) #f)
 
