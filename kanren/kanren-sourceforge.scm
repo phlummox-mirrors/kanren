@@ -7,7 +7,7 @@
    (title "A declarative logic programming system")
    (description "An applicative logic programming system with a
 declarative set-theoretical semantics, and its applications")
-   (Date-Revision-yyyymmdd "20040820")
+   (Date-Revision-yyyymmdd "20050909")
    (Date-Creation-yyyymmdd "20040121")
    (keywords "Logic Programming, meta-logic programming, relations,
 iterative deepening, proof assistant, Scheme")
@@ -61,7 +61,7 @@ command-line interface provided by the host Scheme implementation.")
       (li (local-ref "Documentation"))
       (li (local-ref "Availability")
 	(ul (li (local-ref "CVS"))
-	    ;(li (local-ref "Distributions"))
+	    (li (local-ref "Distributions"))
 	  ))
 ;       (li (local-ref "Related")
 ;       (li 
@@ -82,11 +82,12 @@ command-line interface provided by the host Scheme implementation.")
      (dt (cvs-ref "examples/zebra.scm"))
      (dd "The classic Zebra puzzle")
 
-     (dt (cvs-ref "examples/typeclasses.scm"))
-     (dd "Functional dependency satisfaction in Haskell typeclasses
-and deriving counter-examples.  Overloading resolution for
-Haskell typeclasses in open and closed worlds.  Our method can
-typecheck more programs than it is currently possible in Haskell.")
+     (dt (cvs-ref "mini/leanTAP.scm"))
+     (dd "leanTAP theorem prover by Bernhard Beckert and Joachim
+Posegga.  The miniKanren implementation uses higher-order syntax (to
+avoid " (code "copy_term") ") and an advanced evaluator that removes
+the need for explicit iterative deepening.")
+
 
      (dt (cvs-ref "examples/mirror.scm"))
      (dd "Structural induction proof.  We write an outline of an
@@ -100,6 +101,12 @@ verifier.")
      (dd "Structural induction proof in equational theory. We can
 truly write the equivalence axioms, including the symmetry axiom
 " (code "(myeq a b) |- (myeq b a)") ". Try to do that in Prolog!")
+
+     (dt (cvs-ref "examples/typeclasses.scm"))
+     (dd "Functional dependency satisfaction in Haskell typeclasses
+and deriving counter-examples.  Overloading resolution for
+Haskell typeclasses in open and closed worlds.  Our method can
+typecheck more programs than it is currently possible in Haskell.")
 
      (dt (cvs-ref "examples/deduction.scm"))
      (dd "Proving the Deduction Theorem for Hilbert Propositional Calculus
@@ -126,67 +133,86 @@ re-written for KANREN.")
    (p "miniKANREN is a simplified KANREN without many bells, whistles,
 and optimizations of the full system. The goal of the simplifications was
 to make miniKANREN easier to explain. Many tutorials below are specifically
-miniKANREN tutorials. Incidentally, miniKANREN is not that inefficient.")
+miniKANREN tutorials. Incidentally, miniKANREN is quite efficient.")
+
+    (dl
+      (dt (cvs-ref "mini/mk.scm"))
+      (dd "The complete implementation (used in the book).")
+
+      (dt (cvs-ref "mini/mktests.scm"))
+      (dd "All the examples used in the book.")
+    )
+
 
 
    (Section 3 "Documentation" " and tutorials")
 
-   (dl
-     (dt "Detailed description of the system")
-     (dd 
-       "<" (a (@ (href "http://www.cs.indiana.edu/l/www/classes/b521/qs.ps"))
-	     "http://www.cs.indiana.edu/l/www/classes/b521/qs.ps") ">" (br)
-       "<" (a (@ (href "http://www.cs.indiana.edu/l/www/classes/b521/qs.pdf"))
-	     "http://www.cs.indiana.edu/l/www/classes/b521/qs.pdf") ">" (br)
-       (n_)
-    )
+  (p (em "The Reasoned Schemer") (br)
+    "Daniel P. Friedman and William E. Byrd and Oleg Kiselyov" (br)
+    "MIT Press, Cambridge, MA, 2005.")
 
-   (dt "C311 class notes (Indiana University)")
-   (dd "<" (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/"))
-	     "http://www.cs.indiana.edu/l/www/classes/c311/") ">")
+;    (dl
+;      (dt "Detailed description of the system")
+;      (dd 
+;        "<" (a (@ (href "http://www.cs.indiana.edu/l/www/classes/b521/qs.ps"))
+; 	     "http://www.cs.indiana.edu/l/www/classes/b521/qs.ps") ">" (br)
+;        "<" (a (@ (href "http://www.cs.indiana.edu/l/www/classes/b521/qs.pdf"))
+; 	     "http://www.cs.indiana.edu/l/www/classes/b521/qs.pdf") ">" (br)
+;        (n_)
+;     )
 
-   (dt "miniKANREN tutorials (PDF), from the C311 class notes page")
-   (dd 
-     (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/miniaop.pdf"))
-	     "Outcome-Oriented Programming") (br)
-     (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/minirop.pdf"))
-	     "Relation-Oriented Programming") (br)
-     (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/minilop.pdf"))
-	     "Logic-Oriented Programming") (br)
-     (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/miniunify.pdf"))
-	     "Understanding Unification") (br)
-     (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/minitypes.pdf"))
-	     "Type Inference and Type Habitation") (br)
-     (n_)
-    )
+;    (dt "C311 class notes (Indiana University)")
+;    (dd "<" (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/"))
+; 	     "http://www.cs.indiana.edu/l/www/classes/c311/") ">")
 
-   (dt (cvs-ref "docs/Substitution-Properties.txt"))
-   (dd
-     "Properties of Substitutions: "
-     "Nine propositions about substitutions and the KANREN
-unifier. The propositions justify several pieces of KANREN code, e.g.,
-a " (code "head-let") " form of relation. The propositions were put
-forth and proven " (em "before") " the code was written.")
-     )
+;    (dt "miniKANREN tutorials (PDF), from the C311 class notes page")
+;    (dd 
+;      (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/miniaop.pdf"))
+; 	     "Outcome-Oriented Programming") (br)
+;      (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/minirop.pdf"))
+; 	     "Relation-Oriented Programming") (br)
+;      (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/minilop.pdf"))
+; 	     "Logic-Oriented Programming") (br)
+;      (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/miniunify.pdf"))
+; 	     "Understanding Unification") (br)
+;      (a (@ (href "http://www.cs.indiana.edu/l/www/classes/c311/minitypes.pdf"))
+; 	     "Type Inference and Type Habitation") (br)
+;      (n_)
+;     )
+
+;    (dt (cvs-ref "docs/Substitution-Properties.txt"))
+;    (dd
+;      "Properties of Substitutions: "
+;      "Nine propositions about substitutions and the KANREN
+; unifier. The propositions justify several pieces of KANREN code, e.g.,
+; a " (code "head-let") " form of relation. The propositions were put
+; forth and proven " (em "before") " the code was written.")
+;      )
 
 
    (Section 3 "Availability")
-   (p "The current version of KANREN is 4.11. KANREN is OpenSource,
+   (p "The current version of KANREN is 4.50. KANREN is OpenSource,
 distributed under the MIT license.")
    (p
      "KANREN has been tested on the following Scheme systems:"
      (br)
      "Petite Chez Scheme, Chez Scheme, SCM, Gauche.")
 
-;    (Section 3 "Distributions")
-;    (p "KANREN download site at SourceForge:"
-;       (URL "http://sf.net/project/showfiles.php?group_id=99654"))
+   (p
+     "mini-KANREN has been tested on the following Scheme systems:"
+     (br)
+     "Petite Chez Scheme, Chez Scheme, SCM, Gauche, PLT Scheme")
+
+   (Section 3 "Distributions")
+   (p "KANREN download site at SourceForge:"
+      (URL "http://sf.net/project/showfiles.php?group_id=99654"))
 
   (Section 3 "CVS" " Tree")
   (p (a (@ (href "http://sourceforge.net/cvs/?group_id=99654"))
 	"The CVS Tree")
-     " includes the complete KANREN code, extensive documentation, a tutorial,
-validation tests, as well as several sample applications.")
+     " includes the complete KANREN and mini-KANREN code, extensive
+documentation, a tutorial, validation tests, as well as several sample
+applications.")
   (p "You can "
      (a (@ (href "http://cvs.sourceforge.net/viewcvs.py/kanren"))
 	"browse the files in the CVS tree")
