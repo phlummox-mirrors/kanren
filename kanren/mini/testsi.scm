@@ -2781,3 +2781,47 @@
   (run 3 (q)
     (fresh (x y)
       (swappende x y q))))
+
+
+; additional tests from Dan Friedman and Will Bird
+(define lengtho
+   (lambda (ls out)
+     (conde
+       ((== '() ls) (== '() out))
+       ((fresh (d res)
+          (cdro ls d)
+	  (+o '(1) res out)
+	  (lengtho d res))))))
+
+
+(test-check "lengtho-1"
+   (run 1 (q)
+     (lengtho '(a b c) q))
+  '((1 1)))
+
+
+(test-check "lengtho-2"
+   (run 2 (q)
+     (lengtho q '(1 1)))
+   '((_.0 _.1 _.2)))
+
+; swapping the two last lines...
+(define lengtho
+   (lambda (ls out)
+     (conde
+       ((== '() ls) (== '() out))
+       ((fresh (d res)
+          (cdro ls d)
+	  (lengtho d res)
+	  (+o '(1) res out))))))
+
+(test-check "lengtho-3"
+   (run 2 (q)
+     (lengtho '(a b c) q))
+  '((1 1)))
+
+
+(test-check "lengtho-4"
+   (run 1 (q)
+     (lengtho q '(1 1)))
+   '((_.0 _.1 _.2)))
