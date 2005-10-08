@@ -139,6 +139,12 @@ miniKANREN tutorials. Incidentally, miniKANREN is quite efficient.")
       (dt (cvs-ref "mini/mk.scm"))
       (dd "The complete implementation (used in the book).")
 
+      (dt (cvs-ref "mini/mkextraforms.scm"))
+      (dd "Extra forms appearing in the framenotes of the book.")
+
+      (dt (cvs-ref "mini/mkprelude.scm"))
+      (dd "Useful definitions from the book.")
+
       (dt (cvs-ref "mini/mktests.scm"))
       (dd "All the examples used in the book.")
     )
@@ -148,7 +154,7 @@ miniKANREN tutorials. Incidentally, miniKANREN is quite efficient.")
    (Section 3 "Documentation" " and tutorials")
 
   (p (em "The Reasoned Schemer") (br)
-    "Daniel P. Friedman and William E. Byrd and Oleg Kiselyov" (br)
+    "Daniel P. Friedman, William E. Byrd and Oleg Kiselyov" (br)
     "MIT Press, Cambridge, MA, 2005.")
 
 ;    (dl
