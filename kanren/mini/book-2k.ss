@@ -1,7 +1,7 @@
 ; Hello!
 
 ; 	I have re-written all of your tagging, in, hopefully a
-; principle way. My tagging is stronger -- I found a type error in your
+; principled way. My tagging is stronger -- I found a type error in your
 ; tagging (in alli and condi). The `type system' so to speak keeps track
 ; of what is applied to what and how many times. To be more precise, the
 ; type system keeps track of partial applications and repeated
