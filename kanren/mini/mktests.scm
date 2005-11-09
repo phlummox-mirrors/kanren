@@ -3063,7 +3063,7 @@
 (define exp2
   (lambda (n b q)
     (condi
-      ((== '(1) n) (== () q))
+      ((== '(1) n) (== '() q))
       ((>1o n) (== '(1) q)
        (fresh (s)
          (splito n b s '(1))))
@@ -3088,7 +3088,7 @@
 (define repeated-mul
   (lambda (n q nq)
     (conde
-      ((poso n) (== () q) (== '(1) nq))
+      ((poso n) (== '() q) (== '(1) nq))
       ((== '(1) q) (== n nq))
       ((>1o q)
        (fresh (q1 nq1)
