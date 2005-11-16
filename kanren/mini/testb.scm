@@ -15,9 +15,9 @@
 (define-syntax trace-vars
   (syntax-rules ()
     [(_ name (id* ...))
-      (lambda (s)
+      (lambda (n s a o)
 	(pretty-print (list name (reify id* s) ...))
-	(succeed s))]))
+	(succeed n s a o))]))
 
 (define tex #f)
 
