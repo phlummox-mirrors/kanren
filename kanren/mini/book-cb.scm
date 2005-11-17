@@ -9,7 +9,7 @@
 
 ; a is the substitution;
 ;
-; This implementation uses a ``final algebra'' -- or a threded interpreter
+; This implementation uses a ``final algebra'' -- or a threaded interpreter
 ; (aka the one in Forth) rather than an interpreter over a data structure.
 
 ; $Id$
@@ -17,12 +17,21 @@
 (define depth-quantum 5)
 
 ; Two-level queue:
-; type OR-queue = [And-queue]
+; type OR-queue = [Either And-queue Mark]
 ; data And-queue = And-queue Subst [Goal]
 ; type Goal = Limit -> Subst -> ANDqueue -> ORqueue -> Ans a
+; At present, there may be at most one mark in teh OrQ
 
 (define (enq-last  e q) (append q (list e)))
 (define (enq-last2 e1 e2 q) (append q (list e1 e2)))
+
+(define enq-first  cons)
+(define (enq-first2 e1 e2 q) (cons e1 (cons e2 q)))
+
+; assuming that l1 is the suffix of l2, return the prefix of l2
+(define (prefixq l1 l2)
+  (if (eq? l1 l2) '()
+    (cons (car l2) (prefixq l1 (cdr l2)))))
 
 ; constructor of a suspension: Limit -> Ans a
 (define-syntax lambdaf@
@@ -34,19 +43,33 @@
   (syntax-rules ()
     ((_ (n s andq orq) e) (lambda (n s andq orq) e))))
 
+; Pick a new element from OrQ to run.
+; But first we check for the mark. If there is, we put the prefix
+; before the mark at the end of the queue and remove the mark.
+; We thus rotate the queue.
+; We place the mark at the top of the queue when we're about to
+; run the chosen element.
+; The mark is represented as #f
+
 (define schedule
-  (lambda (orq)				; orq isn't empty
+  (lambda (orq)	
     (lambdaf@ (n)
-      (let* ((ande (car orq)) (orq  (cdr orq))
-	     (s (car ande))   (andq (cdr ande)))
-	((car andq) n s (cdr andq) orq)))))
+      (let* 
+	((marked-suffix (memq #f orq))
+	 (orq (if marked-suffix 
+		(append (cdr marked-suffix) (prefixq marked-suffix orq))
+		orq)))
+	(and (pair? orq)
+	  (let* ((ande (car orq)) (orq  (cdr orq))
+		  (s (car ande))   (andq (cdr ande)))
+	    ((car andq) n s (cdr andq) (enq-first #f orq))))))))
 
 
 ; Kanren implementation
 (define succeed 
   (lambdag@ (n s andq orq)
     (if (null? andq)		; we have the answer
-      (if (null? orq) (cons s #f) (cons s (schedule orq)))
+      (cons s (schedule orq))
       ; Run the rest of the andq
       (let ((h (car andq)) (andq (cdr andq)))
 	(h (+ n 1) s andq orq)))))
@@ -64,17 +87,17 @@
     (lambdag@ (n s andq orq)
       (if (positive? n)			; positive balance: run depth-first
 	(g1 (- n 1) s (enq-last g2 andq) orq)
-	(schedule (enq-last (cons s (enq-last2 g1 g2 andq)) orq))))))
+	(schedule (enq-first (cons s (enq-last2 g1 g2 andq)) orq))))))
 
 ; ((G1 | G2) & AndQ) | OrQ
 (define choice
   (lambda (g1 g2)
     (lambdag@ (n s andq orq)
       (if (positive? n)			; positive balance: run depth-first
-	(g1 (- n 1) s andq (enq-last (cons s (enq-last g2 andq)) orq))
+	(g1 (- n 1) s andq (enq-first (cons s (enq-last g2 andq)) orq))
 	(let ((ande1 (cons s (enq-last g1 andq)))
 	      (ande2 (cons s (enq-last g2 andq))))
-	  (schedule (enq-last2 ande1 ande2 orq)))))))
+	  (schedule (enq-first2 ande1 ande2 orq)))))))
 
 (define-syntax run*
   (syntax-rules ()

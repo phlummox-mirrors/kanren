@@ -82,7 +82,6 @@
      ((eq? (car x) #\.) '())
      (else (cons (car x) (prefix-id (cdr x)))))))
 
-
 ; Initial tests
 
 (test-check "conde extensive 0"
