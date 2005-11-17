@@ -29,9 +29,12 @@
 (define (enq-first2 e1 e2 q) (cons e1 (cons e2 q)))
 
 ; assuming that l1 is the suffix of l2, return the prefix of l2
+; we remove #f along the way
 (define (prefixq l1 l2)
-  (if (eq? l1 l2) '()
-    (cons (car l2) (prefixq l1 (cdr l2)))))
+  (cond 
+    ((eq? l1 l2) '())
+    ((eq? (car l2) #f) (prefixq l1 (cdr l2)))
+    (else (cons (car l2) (prefixq l1 (cdr l2))))))
 
 ; constructor of a suspension: Limit -> Ans a
 (define-syntax lambdaf@
@@ -53,12 +56,17 @@
 
 (define schedule
   (lambda (orq)	
+      ;(display "orq len: ") (display (length orq)) (newline)
     (lambdaf@ (n)
       (let* 
 	((marked-suffix (memq #f orq))
-	 (orq (if marked-suffix 
-		(append (cdr marked-suffix) (prefixq marked-suffix orq))
-		orq)))
+	  ; check for the second mark
+	 (marked-suffix (and marked-suffix (memq #f (cdr marked-suffix))))
+	 (orq (cond
+		(marked-suffix 
+		  (append (cdr marked-suffix) (prefixq marked-suffix orq)))
+		((and (pair? orq) (eq? (car orq) #f)) (cdr orq))
+		(else orq))))
 	(and (pair? orq)
 	  (let* ((ande (car orq)) (orq  (cdr orq))
 		  (s (car ande))   (andq (cdr ande)))
