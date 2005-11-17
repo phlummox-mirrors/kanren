@@ -2783,7 +2783,7 @@
       (swappende x y q))))
 
 
-; additional tests from Dan Friedman and Will Bird
+; additional tests from Dan Friedman and Will Byrd
 (define lengtho
    (lambda (ls out)
      (conde
