@@ -699,7 +699,7 @@
   (list `_.0))
 
 ; 3.1.1
-(define list?
+'(define list?
   (lambda (l)
     (cond
       ((null? l) #t)
@@ -1388,7 +1388,7 @@
   `(b))
 
 ; 5.2.1
-(define append
+'(define append
   (lambda (l s)
     (cond
       ((null? l) s)
