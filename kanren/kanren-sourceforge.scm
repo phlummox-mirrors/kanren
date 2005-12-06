@@ -7,7 +7,7 @@
    (title "A declarative logic programming system")
    (description "An applicative logic programming system with a
 declarative set-theoretical semantics, and its applications")
-   (Date-Revision-yyyymmdd "20050909")
+   (Date-Revision-yyyymmdd "20051205")
    (Date-Creation-yyyymmdd "20040121")
    (keywords "Logic Programming, meta-logic programming, relations,
 iterative deepening, proof assistant, Scheme")
@@ -207,7 +207,8 @@ distributed under the MIT license.")
    (p
      "mini-KANREN has been tested on the following Scheme systems:"
      (br)
-     "Petite Chez Scheme, Chez Scheme, SCM, Gauche, PLT Scheme")
+     "Petite Chez Scheme, Chez Scheme, SCM, Gauche, 
+PLT Scheme/DrScheme v209 and v299.400.")
 
    (Section 3 "Distributions")
    (p "KANREN download site at SourceForge:"
