@@ -17,14 +17,27 @@
 (define depth-quantum 5)
 
 ; Two-level queue:
-; type OR-queue = [And-queue]
+; type OR-queue = OrQ{backup-slot: [And-queue], anq = [And-queue]}
 ; data And-queue = And-queue Subst [Goal]
 ; type Goal = Limit -> Subst -> ANDqueue -> ORqueue -> Ans a
+; The backup slot of the OR-queue may be either open or closed.
+; The closed slot has #f at the top.
+; The backup slot is a high-priority queue. Elements can be added only
+; if the slot is open. When the slot is being drained, it is closed.
 
 (define enq-first  cons)
 (define (enq-first2 e1 e2 q) (cons e1 (cons e2 q)))
 (define (enq-last  e q) (append q (list e)))
 (define (enq-last2 e1 e2 q) (append q (list e1 e2)))
+
+; Put an element into the backup slot, if open
+(define (enq-prio e orq)
+  (let ((backup-slot (car orq))
+	(rest (cdr orq)))
+    (if (and (pair? backup-slot) (eq? #f (car backup-slot)))
+      (cons backup-slot (enq-last e rest))
+      (cons (cons e backup-slot) rest)))) ; add to the backup slot
+
 
 ; constructor of a suspension: Limit -> Ans a
 (define-syntax lambdaf@
@@ -36,14 +49,32 @@
   (syntax-rules ()
     ((_ (n s andq orq) e) (lambda (n s andq orq) e))))
 
+; Drain the backup slot if non-empty. If the new element is taken from
+; the backup slot, close the slot.
+
+(define (launch n ande orq)
+  (let ((s (car ande)) (andq (cdr ande)))
+    ((car andq) n s (cdr andq) orq)))
+
+
 (define schedule
   (lambda (orq)
       ;(display "orq len: ") (display (length orq)) (newline)
     (lambdaf@ (n)
-      (and (pair? orq)
-       (let* ((ande (car orq)) (orq  (cdr orq))
-	     (s (car ande))   (andq (cdr ande)))
-	((car andq) n s (cdr andq) orq))))))
+      (let ((backup-slot (car orq))
+	    (rest (cdr orq)))
+	(cond
+	  ((null? backup-slot)
+	    (and (pair? rest) (launch n (car rest) (cons '() (cdr rest)))))
+	  ((eq? (car backup-slot) #f)	  ; closed slot
+	    (if (null? (cdr backup-slot)) ; fully drained
+	      (and (pair? rest) (launch n (car rest) (cons '() (cdr rest))))
+	      (launch n (cadr backup-slot) ; drain the slot, keeping it closed
+		(cons (cons #f (cddr backup-slot)) rest))))
+	  (else
+	    (launch n (car backup-slot)
+	      (cons (cons #f (cdr backup-slot)) rest))))))))
+
 
 
 ; Kanren implementation
@@ -69,14 +100,15 @@
 	(schedule (enq-last (cons s (enq-last2 g1 g2 andq)) orq))))))
 
 ; ((G1 | G2) & AndQ) | OrQ
+; neither g1 nor g2 can split right away, so we enqueue them first
 (define choice*
   (lambda (g1 g2)
     (lambdag@ (n s andq orq)
       (if (positive? n)			; positive balance: run depth-first
-	(g1 (- n 1) s andq (enq-last (cons s (enq-last g2 andq)) orq))
-	(let ((ande1 (cons s (enq-last g1 andq)))
-	      (ande2 (cons s (enq-last g2 andq))))
-	  (schedule (enq-last2 ande1 ande2 orq)))))))
+	(g1 (- n 1) s andq (enq-prio (cons s (enq-last g2 andq)) orq))
+	(let ((ande1 (cons s (enq-first g1 andq)))
+	      (ande2 (cons s (enq-first g2 andq))))
+	  (schedule (enq-prio ande2 (enq-last ande1 orq))))))))
 
 ; The first time around, don't execute the choice, merely suspend it.
 ; Let other AND threads to run, if any.
@@ -101,7 +133,7 @@
 (define rn
   (lambda (x g filter)
     (map (lambda (s) (reify x s)) 
-      (filter (schedule (list (list empty-s g)))))))
+      (filter (schedule (list '() (list empty-s g)))))))
 
 ; (define run-OR
 ;   (lambda (and-el or-queue)

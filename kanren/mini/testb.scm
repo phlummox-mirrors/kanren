@@ -1258,14 +1258,14 @@
 
 
 ; Takes too long, but works
-'(test-check "multiplication-all-2"
+(test-check "multiplication-all-2"
   (map (lambda (e) (map trans e))
   (run 10 (x)
       (fresh (y z)
         (xo y z (build 24))
          (== (list y z) x))))    
   '((1 24) (24 1) (2 12) (3 8) (4 6) (6 4) (8 3) (12 2)))
-#!eof
+;#!eof
 (cout "Testing strong commutativity with 1" nl)
 (pretty-print
   (run 6 (q)
@@ -1357,12 +1357,17 @@
           (-o n '(1) m)
           (bump m x))))))
 
+'(run* (q)
+    (bump (build 20) q)
+    ;(begin (compositeo q))
+)
 
+#!eof
 ;; Generate all composite numbers up to 20.
 (test-check "compositeo"
   (run* (q)
     (bump (build 20) q)
-    (once (compositeo q)))
+    (begin (compositeo q)))
   '((0 0 1 0 1)
     (0 1 0 0 1)
     (0 0 0 0 1)
@@ -2807,6 +2812,7 @@
      (lengtho '(a b c) q))
   '((1 1)))
 
+#!eof
 
 (test-check "lengtho-2"
    (run 2 (q)
