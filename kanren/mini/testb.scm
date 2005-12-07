@@ -14,10 +14,11 @@
 
 (define-syntax trace-vars
   (syntax-rules ()
-    [(_ name (id* ...))
+    [(_ name (id* ...) rel)
       (lambda (n s a o)
-	(pretty-print (list name (reify id* s) ...))
-	(succeed n s a o))]))
+	(pretty-print (list name (reify (list id* ...) s)))
+	(rel n s a o)
+	)]))
 
 (define tex #f)
 
@@ -93,12 +94,12 @@
       ((conde 
 	 ((== x 2))
 	 ((== x 3)))
-	(trace-vars 21 (x))
+	(trace-vars 21 (x)
 	(conde
-	  ((trace-vars 22 (x)) fail)
-	  ((trace-vars 23 (x)) fail)
-	  ((trace-vars 24 (x)) fail)
-	  (succeed)))))
+	  ((trace-vars 22 (x) fail))
+	  ((trace-vars 23 (x) fail))
+	  ((trace-vars 24 (x) fail))
+	  (succeed))))))
   '(1 11 2 3))
 
 (test-check "conde extensive"
@@ -254,7 +255,7 @@
   (lambda (x)
     (fresh ()
       (condi
-	((== x 1) (trace-vars 1 (x)))
+	((== x 1) (trace-vars 1 (x) succeed))
 	(else (insidious x)))
       (conde
 	(fail)
@@ -1356,6 +1357,86 @@
         (fresh (m)
           (-o n '(1) m)
           (bump m x))))))
+#!eof
+
+; the bad test, which shows how a refutationally complete evaluator
+; can really blow off...
+; unify v and w with delay n
+(define set-with-delay
+  (lambda (n v w)
+    (if (zero? n) (== v w)
+      (fresh (x)
+	(== v x)
+	(conde 
+	  (succeed succeed fail)
+	  (else (set-with-delay (- n 1) x w)))))))
+(define set-with-delay
+  (lambda (n v w)
+    (if (zero? n) (== v w)
+      (fresh (x)
+	(== v x)
+	(set-with-delay (- n 1) x w)))))
+(define td
+  (lambda (n x v)
+    (fresh ()
+      (set-with-delay n x v)
+      ;(trace-vars 1 (x) (td n x (cons '() v)))
+      (td n x (cons '() v))
+      always)))
+(run 1 (q) (td 1 q 1))
+
+(define bump
+  (lambda (n x)
+    (conde
+      ((== n x) succeed)
+      (else
+        (fresh (m)
+	  (trace-vars 1 (n m x) (-o n '(1) m))
+          (bump m x))))))
+
+(define bump
+  (lambda (n)
+    (conde
+      (fail)
+      (else
+        (fresh (m)
+	  (+o '(1) m n)
+	  ;(trace-vars 1 (n m) (+o '(1) m n))
+          (bump m))))))
+
+(define ad
+    (lambda (n m r)
+      (fresh (a b c e x y z)
+        (== `(,a . ,x) n)
+        (== `(,b . ,y) m)
+        (poso y)       
+        (== `(,c . ,z) r)
+        (poso z)
+        (fresh (e)
+          (alli
+           (full-adder d a b c e)
+           ((adder e) x y z)))))))
+
+(define bump
+  (lambda (n)
+    (conde
+      (fail)
+      (else
+        (fresh (m)
+	  (trace-vars 1 (n m) (ad m n))
+          (bump m))))))
+
+(define bump
+  (lambda (n)
+    (conde
+      (fail)
+      (else
+        (fresh (m)
+	  ;(trace-vars 1 (n m) (<ol m n))
+	  (<ol m n)
+          (bump m))))))
+
+(run-1 1 30 (q) (bump '(0 1)))
 
 '(run* (q)
     (bump (build 20) q)
