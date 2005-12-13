@@ -39,6 +39,17 @@
       (cons (cons e backup-slot) rest)))) ; add to the backup slot
 
 
+(define (print-orq title q)
+  (for-each display
+    (list title ": " (length q) #\newline))
+  (for-each (lambda (e)
+	      (for-each display
+		(list "  andq: " (length (cdr e))
+		      ", subst " (length (car e))
+		      #\newline)))
+    q))
+
+
 ; constructor of a suspension: Limit -> Ans a
 (define-syntax lambdaf@
   (syntax-rules ()
@@ -59,6 +70,8 @@
 
 (define schedule
   (lambda (orq)
+    (print-orq "backup" (car orq))
+    (print-orq "rest " (cdr orq))
       ;(display "orq len: ") (display (length orq)) (newline)
     (lambdaf@ (n)
       (let ((backup-slot (car orq))
@@ -73,7 +86,8 @@
 		(cons (cons #f (cddr backup-slot)) rest))))
 	  (else
 	    (launch n (car backup-slot)
-	      (cons (cons #f (cdr backup-slot)) rest))))))))
+	      (cons (cdr backup-slot) rest))))))))
+;	      (cons (cons #f (cdr backup-slot)) rest))))))))
 
 
 
@@ -97,11 +111,12 @@
     (lambdag@ (n s andq orq)
       (if (positive? n)			; positive balance: run depth-first
 	(g1 (- n 1) s (enq-last g2 andq) orq)
-	(schedule (enq-last (cons s (enq-last2 g1 g2 andq)) orq))))))
+	(schedule (enq-prio (cons s (enq-last2 g1 g2 andq)) orq))))))
+;	(schedule (enq-last (cons s (enq-last2 g1 g2 andq)) orq))))))
 
 ; ((G1 | G2) & AndQ) | OrQ
 ; neither g1 nor g2 can split right away, so we enqueue them first
-(define choice*
+'(define choice*
   (lambda (g1 g2)
     (lambdag@ (n s andq orq)
       (if (positive? n)			; positive balance: run depth-first
@@ -109,6 +124,16 @@
 	(let ((ande1 (cons s (enq-first g1 andq)))
 	      (ande2 (cons s (enq-first g2 andq))))
 	  (schedule (enq-prio ande2 (enq-last ande1 orq))))))))
+
+; DFS in the OR queue
+(define choice*
+  (lambda (g1 g2)
+    (lambdag@ (n s andq orq)
+      (if (positive? n)			; positive balance: run depth-first
+	(g1 (- n 1) s andq (enq-prio (cons s (enq-last g2 andq)) orq))
+	(let ((ande1 (cons s (enq-first g1 andq)))
+	      (ande2 (cons s (enq-first g2 andq))))
+	  (schedule (enq-prio ande1 (enq-prio ande2 orq))))))))
 
 ; The first time around, don't execute the choice, merely suspend it.
 ; Let other AND threads to run, if any.
