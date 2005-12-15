@@ -8,6 +8,7 @@
 
 
 (load "book-si.scm")			; Our complete evaluator
+(define unify unify-check)		; If we don't want recursive types
 
 (define-syntax test-check
   (syntax-rules ()
@@ -417,7 +418,86 @@
 	
 (define c!- (sc!- sc!-))
 
-(test-check 'type-habitation-4
+(time
   (map unparse
     (run 10 (q) 
-      (fresh (_) (== q `(lambda . ,_)) (c!- q `(--> (--> a a) (--> a a))))))
+      (fresh (_) (== q `(lambda . ,_)) (c!- q `(--> (--> a a) (--> a a)))))))
+
+(cout nl "Some examples from Djinn: inferring morphisms of the continuation
+monad" nl)
+; Some examples from Djinn: deriving the type of return and call/cc
+; in the continuation monad:
+
+;    Djinn> returnC ? a -> C a
+;    returnC :: a -> C a
+;    returnC x1 x2 = x2 x1
+
+(define (cont a) `(--> (--> ,a r) r))
+(display (map unparse (run 1 (q)  (c!- q `(--> a ,(cont 'a))))))
+(newline)
+
+;    Djinn> bindC ? C a -> (a -> C b) -> C b
+;    bindC :: C a -> (a -> C b) -> C b
+;    bindC x1 x2 x3 = x1 (\ c15 -> x2 c15 (\ c17 -> x3 c17))
+
+; Deriving the expression for call/cc and bind is really difficult. So,
+; we restrict the app-rel to avoid the redexes. We don't want to generate
+; terms with redexes anyway...
+
+(define app-rel
+  (lambda (s!-)
+    (let ((!- (s!- s!-)))
+      (lambda (e t)
+	(fresh (t-rand rand rator)
+	  (== e `(app ,rator ,rand))
+	  (fresh (_) (conde ((== rator `(var ,_))) 
+		            (else (== rator `(app . ,_)))))
+	  (!- rator `(--> ,t-rand ,t))
+	  (!- rand t-rand))))))
+
+(cout nl "bind" nl)
+(cout
+(time 
+  (map unparse 
+    (run 1 (q) 
+     (fresh (x1 x2 _) (== q `(lambda (,x1) (lambda (,x2) . ,_)))
+      (c!- q `(--> ,(cont 'a) (--> (--> a ,(cont 'b)) ,(cont 'b))))))))
+nl)
+
+;    Djinn> type C a = (a -> r) -> r
+;    Djinn> callCC ? ((a -> C b) -> C a) -> C a
+;   callCC x1 x2 = x1 (\ c15 _ -> x2 c15) (\ c11 -> x2 c11)
+
+(cout nl "call/cc" nl)
+(cout
+ (time 
+  (map unparse 
+    (run 1 (q) 
+     (fresh (x1 x2 _) (== q `(lambda (,x1) (lambda (,x2) . ,_)))
+      (c!- q `(--> (--> (--> a ,(cont 'b)) ,(cont 'a)) ,(cont 'a)))))))
+nl)
+
+
+(cout nl "Inferring the expressions for shift and reset" nl)
+
+(define (cont a r) `(--> (--> ,a ,r) ,r))
+
+(cout nl "reset" nl)
+(cout
+ (time 
+  (map unparse 
+    (run 1 (q) 
+     (fresh (x1 x2 _) (== q `(lambda (,x1) (lambda (,x2) . ,_)))
+      (c!- q `(--> ,(cont 'a 'a) ,(cont 'a 'r)))))))
+ nl)
+
+(cout nl "shift" nl)
+(cout
+ (time 
+  (map unparse 
+    (run 1 (q) 
+     (fresh (x1 x2 _) (== q `(lambda (,x1) (lambda (,x2) . ,_)))
+      (c!- q `(--> (--> (--> a ,(cont 'b 'r)) ,(cont 'b 'b)) 
+		  ,(cont 'a 'b)))))))
+ nl)
+

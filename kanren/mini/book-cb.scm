@@ -43,10 +43,11 @@
   (for-each display
     (list title ": " (length q) #\newline))
   (for-each (lambda (e)
+	      (and e
 	      (for-each display
 		(list "  andq: " (length (cdr e))
 		      ", subst " (length (car e))
-		      #\newline)))
+		      #\newline))))
     q))
 
 
@@ -65,14 +66,11 @@
 
 (define (launch n ande orq)
   (let ((s (car ande)) (andq (cdr ande)))
-    ((car andq) n s (cdr andq) orq)))
+    ((car andq) (length andq) s (cdr andq) orq)))
 
 
 (define schedule
   (lambda (orq)
-    (print-orq "backup" (car orq))
-    (print-orq "rest " (cdr orq))
-      ;(display "orq len: ") (display (length orq)) (newline)
     (lambdaf@ (n)
       (let ((backup-slot (car orq))
 	    (rest (cdr orq)))
@@ -86,10 +84,16 @@
 		(cons (cons #f (cddr backup-slot)) rest))))
 	  (else
 	    (launch n (car backup-slot)
-	      (cons (cdr backup-slot) rest))))))))
-;	      (cons (cons #f (cdr backup-slot)) rest))))))))
+	      ;(cons (cdr backup-slot) rest))))))))
+	      (cons (cons #f (cdr backup-slot)) rest))))))))
 
 
+(define schedule* schedule)
+(define (schedule orq)
+   (print-orq "backup" (car orq))
+   (print-orq "rest " (cdr orq))
+   ;(display "orq len: ") (display (length orq)) (newline)
+  (schedule* orq))
 
 ; Kanren implementation
 (define succeed 
@@ -106,13 +110,16 @@
 
 
 ; ((G1 & G2) & AndQ) | OrQ
-(define seq
+(define seq*
   (lambda (g1 g2)
     (lambdag@ (n s andq orq)
-      (if (positive? n)			; positive balance: run depth-first
-	(g1 (- n 1) s (enq-last g2 andq) orq)
-	(schedule (enq-prio (cons s (enq-last2 g1 g2 andq)) orq))))))
+      (let ((andq (enq-last2 g1 g2 andq)))
+	(if (positive? n)		; positive balance: run again
+	  ((car andq) (- n 1) s (cdr andq) orq)
+	  (schedule (enq-prio (cons s andq) orq)))))))
 ;	(schedule (enq-last (cons s (enq-last2 g1 g2 andq)) orq))))))
+
+(define (seq g1 g2) (suspend (seq* g1 g2)))
 
 ; ((G1 | G2) & AndQ) | OrQ
 ; neither g1 nor g2 can split right away, so we enqueue them first
@@ -129,24 +136,28 @@
 (define choice*
   (lambda (g1 g2)
     (lambdag@ (n s andq orq)
-      (if (positive? n)			; positive balance: run depth-first
+      (if #f ;(positive? n)			; positive balance: run depth-first
 	(g1 (- n 1) s andq (enq-prio (cons s (enq-last g2 andq)) orq))
 	(let ((ande1 (cons s (enq-first g1 andq)))
 	      (ande2 (cons s (enq-first g2 andq))))
 	  (schedule (enq-prio ande1 (enq-prio ande2 orq))))))))
 
+(define (suspend g)
+  (lambdag@ (n s andq orq)
+    (if (null? andq) (g n s andq orq)
+      (let ((ande1 (car andq))
+	     (andq 			; enque the suspended choice point
+	       (enq-last 
+		 (lambdag@ (n s andq orq) (g n s andq orq))
+		  (cdr andq))))
+	(ande1 (- n 1) s andq orq)))))
+
+
 ; The first time around, don't execute the choice, merely suspend it.
 ; Let other AND threads to run, if any.
 (define choice
   (lambda (g1 g2)
-    (lambdag@ (n s andq orq)
-      (if (null? andq) ((choice* g1 g2) n s andq orq)
-	(let ((ande1 (car andq))
-	      (andq 			; enque the suspended choice point
-		(enq-last 
-		  (lambdag@ (n s andq orq) ((choice* g1 g2) n s andq orq))
-		  (cdr andq))))
-	  (ande1 n s andq orq))))))
+    (suspend (suspend (choice* g1 g2)))))
 
 
 (define-syntax run*
