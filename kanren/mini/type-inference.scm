@@ -29,6 +29,11 @@
 ; We use a subset of Scheme itself as the source language
 ; The following two functions translate between the source language
 ; and intermediate one.
+; NB: the function parse should actually alpha-convert all lambda-forms
+; so that the names of all bound variables are unique. We use this fact later
+; in the code. The function 'parse' is somewhat similar to the syntax-rule
+; processor in that both produce AST from a surafce language -- and both
+; annotate identifiers so that the names of all bound identifiers are unique.
 
 (define parse
   (lambda (e)
