@@ -4,6 +4,14 @@
 ; Kanren: ../examples/type-inference.scm (version 4.50 2005/02/12)
 ; We use only the second approach from that file.
 ;
+; Future plans: make sure that in the generation phase, all given
+; variables are used (or used only once, etc). So, we can generate
+; _or_ typecheck terms using uniqueness, linearity, etc. constraints.
+; Regarding linearity: the `if' form has to be handled carefully,
+; as its two branches are `parallel'.
+; Add call/cc or abort as a primitive, and try to generate some formulas
+; from classical logic.
+
 ; $Id$
 
 
@@ -448,7 +456,9 @@ monad" nl)
 ; Deriving the expression for call/cc and bind is really difficult. So,
 ; we restrict the app-rel to avoid the redexes. We don't want to generate
 ; terms with redexes anyway...
-
+; The above prevents call-by-name redexes. We may wish to exclude only CBV
+; redexes (lambdas and variables in the operand position). It is interesting
+; how it changes the result...
 (define app-rel
   (lambda (s!-)
     (let ((!- (s!- s!-)))
