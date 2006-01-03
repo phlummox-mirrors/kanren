@@ -1,9 +1,35 @@
-; Hindley-Milner type inference and type population (generating a type
-; for a term)
+;	Hindley-Milner type inference and type population _relation_
+;
+; This is a _pure_ relation that realtes a term and its type. It can
+; be used for type inference (determining the type for a term),
+; type checking (making sure that a term is of specified type),
+; and term reconstruction (constructing a term that has the desired type).
+; We may also specify a part of a term and a part of a type, and ask
+; the system to fill in the rest. In the latter applications, this
+; code acts as a theorem prover in intuitionistic logic.
+;
+; When generating a term for a type, we may ask for terms in normal form
+; only. We fully support polymorphic types and let-polymorphism.
+; 
+; Near the end of the file shows the applications of type reconstructions
+; to deriving CPS terms for call/cc, shift and reset from their types.
+;
 ; This code is a re-write in mini-Kanren of the type checker in the full
 ; Kanren: ../examples/type-inference.scm (version 4.50 2005/02/12)
 ; We use only the second approach from that file.
 ;
+; The term language is Scheme: integers, booleans, and pairs (aka products)
+; are supported, along with a sum data type:
+;  constructors are (inl X), (inr X), and deconstructor is
+;  (either (var Exp) on-left on-right)
+;
+; The internal term language is similar, with the explicit tags for
+; integer and boolean literals.
+; The type language is infix, with constants int, bool
+; and infix constructors ->, *, +
+; The constructor -> is _right_ associative.
+;
+
 ; Future plans: make sure that in the generation phase, all given
 ; variables are used (or used only once, etc). So, we can generate
 ; _or_ typecheck terms using uniqueness, linearity, etc. constraints.
@@ -18,6 +44,7 @@
 (load "book-si.scm")			; Our complete evaluator
 (define unify unify-check)		; If we don't want recursive types
 
+; The Unit testing framework
 (define-syntax test-check
   (syntax-rules ()
     ((_ title tested-expression expected-result)
@@ -36,49 +63,75 @@
 
 ; We use a subset of Scheme itself as the source language
 ; The following two functions translate between the source language
-; and intermediate one.
-; NB: the function parse should actually alpha-convert all lambda-forms
-; so that the names of all bound variables are unique. We use this fact later
-; in the code. The function 'parse' is somewhat similar to the syntax-rule
-; processor in that both produce AST from a surafce language -- and both
+; and the internal term language. 
+; NB! In the term language, all bound variables must be unique. Thus
+; this function should also do alpha-renaming.
+; The function 'parse' is somewhat similar to the syntax-rule
+; processor in that both produce AST from a surface language -- and both
 ; annotate identifiers so that the names of all bound identifiers are unique.
 
 (define parse
-  (lambda (e)
+  (lambda (term) (parse-env term '())))
+
+(define (parse-env e env)
+  (define (fmap e) (cons (car e) (map (lambda (t) (parse-env t env)) (cdr e))))
+  ; extend the env and support renaming. We rename the identifier
+  ; only in the case of a conflict.
+  ; the algorithm below is very dumb (but short)
+  (define (env-ext v env)
+    (if (not (assq v env)) (cons (cons v v) env) ; identity mapping
+      (let loop ((cnt 1))
+	(let ((new-v 
+		(string->symbol
+		  (string-append (symbol->string v) (number->string cnt)))))
+	  (if (assq new-v env) (loop (+ 1 cnt))
+	    (cons (cons v new-v) env))))))
     (cond
-      ((symbol? e) `(var ,e))
+      ((symbol? e) `(var ,(cdr (assq e env)))); support alpha-renaming
       ((number? e) `(intc ,e))
       ((boolean? e) `(boolc ,e))
       (else 
 	(case (car e)
-	  ((zero?) `(zero? ,(parse (cadr e))))
-	  ((sub1) `(sub1 ,(parse (cadr e))))
-	  ((+) `(+ ,(parse (cadr e)) ,(parse (caddr e))))
-	  ((if) `(if ,(parse (cadr e)) ,(parse (caddr e)) ,(parse (cadddr e))))
-	  ((fix) `(fix ,(parse (cadr e))))
-	  ((lambda) `(lambda ,(cadr e) ,(parse (caddr e))))
-	  ((let) `(let ((,(car (car (cadr e))) ,(parse (cadr (car (cadr e))))))
-		    ,(parse (caddr e))))
-	  (else `(app ,(parse (car e)) ,(parse (cadr e)))))))))
+	  ((zero? sub1 + if cons car cdr inl inr fix)
+	    (fmap e))
+	  ((lambda)
+	    (let* ((old-v (caadr e))
+		   (new-env (env-ext old-v env))
+		   (new-v (cdr (assq old-v new-env))))
+	      `(lambda (,new-v) ,(parse-env (caddr e) new-env))))
+	  ((let) 
+	    (let* ((old-v (caar (cadr e)))
+		   (new-env (env-ext old-v env))
+		   (new-v (cdr (assq old-v new-env))))
+	      `(let ((,new-v ,(parse-env (cadar (cadr e)) env)))
+		 ,(parse-env (caddr e) new-env))))
+	  ((either) 
+	    (let* ((old-v (car (cadr e)))
+		   (new-env (env-ext old-v env))
+		   (new-v (cdr (assq old-v new-env))))
+	      `(either (,new-v ,(parse-env (cadr (cadr e)) env))
+		 ,(parse-env (caddr e) new-env))))
+	  (else (fmap (cons 'app e)))))))
 
-(define unparse
+
+(define (unparse e)
+  (define (fmap e) (cons (car e) (map unparse (cdr e))))
   (lambda (e)
     (case (car e)
       ((var) (cadr e))
       ((intc) (cadr e))
       ((boolc) (cadr e))
-      ((zero?) `(zero? ,(unparse (cadr e))))
-      ((sub1) `(sub1 ,(unparse (cadr e))))
-      ((+) `(+ ,(unparse (cadr e)) ,(unparse (caddr e))))
-      ((if) `(if ,(unparse (cadr e)) 
-	       ,(unparse (caddr e)) ,(unparse (cadddr e))))
-      ((fix) `(fix ,(unparse (cadr e))))
+      ((zero? sub1 + if cons car cdr inl inr fix) (fmap e))
       ((lambda) `(lambda (,(car (cadr e))) ,(unparse (caddr e))))
       ((let) 
        `(let ((,(car (car (cadr e)))
                ,(unparse (cadr (car (cadr e))))))
           ,(unparse (caddr e))))
-      ((app) `(,(unparse (cadr e)) ,(unparse (caddr e)))))))
+      ((either) 
+       `(either (,(car (cadr e))
+		 ,(unparse (cadr (cadr e))))
+          ,(unparse (caddr e))))
+      ((app) (cdr (fmap e))))))
 
 
 ; We define a first-class (and recursive) relation !-
@@ -139,6 +192,52 @@
 	  (== t 'int)			; the type
 	  (!- x 'int)  (!- y 'int))))))	; provided that x,y are int
 
+; products
+(define cons-rel
+  (lambda (s!-)
+    (let ((!- (s!- s!-)))
+      (lambda (e t)
+	(fresh (x y tx ty)
+	  (== e `(cons ,x ,y))		; the term
+	  (== t `(,tx * ,ty))		; the type
+	  (!- x tx)  (!- y ty))))))	; provided that x,y are typeable
+
+(define car-rel
+  (lambda (s!-)
+    (let ((!- (s!- s!-)))
+      (lambda (e t)
+	(fresh (x t2)
+	  (== e `(car ,x))		; the term
+	  (!- x `(,t * ,t2)))))))	; provided that x is a product type
+
+(define cdr-rel
+  (lambda (s!-)
+    (let ((!- (s!- s!-)))
+      (lambda (e t)
+	(fresh (x t2)
+	  (== e `(cdr ,x))		; the term
+	  (!- x `(,t2 * ,t)))))))	; provided that x is a product type
+; sums
+(define inl-rel
+  (lambda (s!-)
+    (let ((!- (s!- s!-)))
+      (lambda (e t)
+	(fresh (x tl tr)
+	  (== e `(inl ,x))		; the term
+	  (== t `(,tl + ,tr))		; the type
+	  (!- x tl))))))		; provided that x is typeable
+
+(define inr-rel
+  (lambda (s!-)
+    (let ((!- (s!- s!-)))
+      (lambda (e t)
+	(fresh (x tl tr)
+	  (== e `(inr ,x))		; the term
+	  (== t `(,tl + ,tr))		; the type
+	  (!- x tr))))))		; provided that x is typeable
+
+
+; conditionals
 
 (define if-rel
   (lambda (s!-)
@@ -151,7 +250,7 @@
 	  (!- alt t))))))		; and conseq, alt are of the same type
 
 
-; Abstraction, application, fixpoint
+; Abstraction, application, fixpoint, and other bidning forms
 
 ; Here we extend !- with an additional assumption that v has the type
 ; type-v. This extension corresponds to a non-generic, regular type.
@@ -160,7 +259,7 @@
     (lambda (e t)
       (fresh (v tb body type-v)
 	(== e `(lambda (,v) ,body))
-	(== t `(--> ,type-v ,tb))
+	(== t `(,type-v -> . ,tb))
 	(let* ((snew-!-
 		 (lambda (self)
 		   (lambda (e t)
@@ -170,6 +269,34 @@
 		(!- (snew-!- snew-!-)))
 	  (!- body tb))))))		; check body in so extended env
 
+; This is also a binding form
+(define either-rel
+  (lambda (s!-)
+    (let ((!- (s!- s!-)))
+      (lambda (e t)
+	(fresh (x tl tr)
+	  (== e `(either (v ,x) onl onr)) ; the term
+	  (!- x `(,tl + ,tr))		; the sum type
+	  ; if onl is evaluated, v has the type tl
+	  ; this is similar to GADT!
+	  (let* ((snew-!-
+		 (lambda (self)
+		   (lambda (e t)
+		     (conde ; lexically-scoped relation
+		       ((== e `(var ,v)) (== t tl))
+		       (else ((s!- self) e t))))))
+		(!- (snew-!- snew-!-)))
+	    (!- onl t))
+	  ; if onr is evaluated, v has the type tr
+	  (let* ((snew-!-
+		 (lambda (self)
+		   (lambda (e t)
+		     (conde ; lexically-scoped relation
+		       ((== e `(var ,v)) (== t tlr))
+		       (else ((s!- self) e t))))))
+		(!- (snew-!- snew-!-)))
+	    (!- onr t))
+	  )))))
 
 (define app-rel
   (lambda (s!-)
@@ -177,7 +304,7 @@
       (lambda (e t)
 	(fresh (t-rand rand rator)
 	  (== e `(app ,rator ,rand))
-	  (!- rator `(--> ,t-rand ,t))
+	  (!- rator `(,t-rand -> . ,t))
 	  (!- rand t-rand))))))
 
 (define fix-rel
@@ -186,7 +313,7 @@
       (lambda (e t)
 	(fresh (rand)
 	  (== e `(fix ,rand))
-	  (!- rand `(--> ,t ,t)))))))
+	  (!- rand `(,t -> . ,t)))))))
 
 ; Let with let-polymorphism
 ; The reason to test `(!- g rand some-type)' at the very beginning is
@@ -222,6 +349,12 @@
 	(((zero?-rel self) e t))
 	(((sub1-rel self) e t))
 	(((+-rel self) e t))
+	(((cons-rel self) e t))
+	(((car-rel self) e t))
+	(((cdr-rel self) e t))
+	(((inl-rel self) e t))
+	(((inr-rel self) e t))
+	(((either-rel self) e t))
 	(((if-rel self) e t))
 	(((lambda-rel self) e t))
 	(((app-rel self) e t))
@@ -230,7 +363,6 @@
 	))))
 	
 (define !- (s!- s!-))
-
 
 ;------------------------------------------------------------------------
 ;			tests
@@ -268,15 +400,19 @@
       q))
   '(int))
 
+(test-check 'test-parse
+  (parse '(lambda (x) (lambda (x) x)))
+  '(lambda (x) (lambda (x1) (var x1))))
+
 
 (test-check 'variables-4a
   (run* (q) (!- '(lambda (x) (+ (var x) (intc 5))) q))
-  '((--> int int)))
+  '((int -> . int)))
 
 
 (test-check 'variables-4c
   (run* (q) (!- '(lambda (a) (lambda (x) (+ (var x) (var a)))) q))
-  '((--> int (--> int int))))
+  '((int -> int -> . int)))
 
 (test-check 'everything-but-polymorphic-let-1
   (run* (q) 
@@ -285,7 +421,7 @@
 	     (lambda (x)
 	       ((f x) x))))
       q))
-  '((--> (--> _.0 (--> _.0 _.1)) (--> _.0 _.1))))
+  '(((_.0 -> _.0 -> . _.1) -> _.0 -> . _.1)))
 
 
 (test-check 'everything-but-polymorphic-let-2
@@ -343,6 +479,7 @@
         q))
   '(int))
 
+#!eof
 
 ; Generating a term for a type
 (test-check 'type-habitation-1
