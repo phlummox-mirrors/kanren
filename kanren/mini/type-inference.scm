@@ -1,6 +1,6 @@
 ;	Hindley-Milner type inference and type population _relation_
 ;
-; This is a _pure_ relation that realtes a term and its type. It can
+; This is a _pure_ relation that relates a term and its type. It can
 ; be used for type inference (determining the type for a term),
 ; type checking (making sure that a term is of specified type),
 ; and term reconstruction (constructing a term that has the desired type).
@@ -11,7 +11,7 @@
 ; When generating a term for a type, we may ask for terms in normal form
 ; only. We fully support polymorphic types and let-polymorphism.
 ; 
-; Near the end of the file shows the applications of type reconstructions
+; The end of the file shows the applications of the type reconstruction
 ; to deriving CPS terms for call/cc, shift and reset from their types.
 ;
 ; This code is a re-write in mini-Kanren of the type checker in the full
@@ -26,7 +26,7 @@
 ; The internal term language is similar, with the explicit tags for
 ; integer and boolean literals.
 ; The type language is infix, with constants int, bool
-; and infix constructors ->, *, +
+; and _infix_ constructors ->, *, +
 ; The constructor -> is _right_ associative.
 ;
 
@@ -59,6 +59,17 @@
              (error 'test-check
                      "Failed ~s: ~a~%Expected: ~a~%Computed: ~a~%"
                      title 'tested-expression expected produced)))))))
+
+; Unlike products -- car, cdr, cons -- sums are not standard in Scheme.
+; The following is their simple implementation 
+(define (inl x) (vector #f x))
+(define (inr x) (vector #t x))
+(define-syntax either
+  (syntax-rules ()
+    ((either (v exp) onl onr)
+     (let* ((x exp)
+	    (v (vector-ref x 1)))
+       (if (vector-ref x 0) onr onl)))))
 
 
 ; We use a subset of Scheme itself as the source language
@@ -110,7 +121,8 @@
 		   (new-env (env-ext old-v env))
 		   (new-v (cdr (assq old-v new-env))))
 	      `(either (,new-v ,(parse-env (cadr (cadr e)) env))
-		 ,(parse-env (caddr e) new-env))))
+		 ,(parse-env (caddr e) new-env)
+		 ,(parse-env (cadddr e) new-env))))
 	  (else (fmap (cons 'app e)))))))
 
 
@@ -274,8 +286,8 @@
   (lambda (s!-)
     (let ((!- (s!- s!-)))
       (lambda (e t)
-	(fresh (x tl tr)
-	  (== e `(either (v ,x) onl onr)) ; the term
+	(fresh (v x onl onr tl tr)
+	  (== e `(either (,v ,x) ,onl ,onr)) ; the term
 	  (!- x `(,tl + ,tr))		; the sum type
 	  ; if onl is evaluated, v has the type tl
 	  ; this is similar to GADT!
@@ -292,7 +304,7 @@
 		 (lambda (self)
 		   (lambda (e t)
 		     (conde ; lexically-scoped relation
-		       ((== e `(var ,v)) (== t tlr))
+		       ((== e `(var ,v)) (== t tr))
 		       (else ((s!- self) e t))))))
 		(!- (snew-!- snew-!-)))
 	    (!- onr t))
@@ -354,7 +366,7 @@
 	(((cdr-rel self) e t))
 	(((inl-rel self) e t))
 	(((inr-rel self) e t))
-	(((either-rel self) e t))
+ 	(((either-rel self) e t))
 	(((if-rel self) e t))
 	(((lambda-rel self) e t))
 	(((app-rel self) e t))
@@ -413,6 +425,18 @@
 (test-check 'variables-4c
   (run* (q) (!- '(lambda (a) (lambda (x) (+ (var x) (var a)))) q))
   '((int -> int -> . int)))
+
+
+(test-check 'variables-product
+  (run* (q) (!- (parse '(lambda (a) (cdr (car (cons a 1))))) q))
+  '(((_.0 * _.1) -> . _.1)))
+
+(test-check 'variables-sum
+  (run* (q) (!- 
+	      (parse 
+		'(lambda (x) (either (v x) (inl (car v)) (inr (cdr v)))))
+	      q))
+  '((((_.0 * _.1) + (_.2 * _.3)) -> . (_.0 + _.3))))
 
 (test-check 'everything-but-polymorphic-let-1
   (run* (q) 
@@ -483,16 +507,18 @@
 
 ; Generating a term for a type
 (test-check 'type-habitation-1
-  (run 5 (q) (!- q 'int))
+  (run 7 (q) (!- q 'int))
   '((intc _.0)
-    (sub1 (intc _.0))
-    (+ (intc _.0) (intc _.1))
-    (sub1 (sub1 (intc _.0)))
-    (if (boolc _.0) (intc _.1) (intc _.2)))
+     (sub1 (intc _.0))
+     (+ (intc _.0) (intc _.1))
+     (sub1 (sub1 (intc _.0)))
+     (sub1 (+ (intc _.0) (intc _.1)))
+     (car (cons (intc _.0) (intc _.1)))
+     (sub1 (sub1 (sub1 (intc _.0)))))
 )
 
 (test-check 'type-habitation-2
-  (run 5 (q) (!- q '(--> int int)))
+  (run 5 (q) (!- q '(int -> . int)))
   '((lambda (_.0) (var _.0))
      (if (boolc _.0)
      (lambda (_.1) (var _.1))
