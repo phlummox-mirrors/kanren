@@ -1,18 +1,18 @@
 ;	Hindley-Milner type inference and type population _relation_
 ;
 ; This is a _pure_ relation that relates a term and its type. It can
-; be used for type inference (determining the type for a term),
-; type checking (making sure that a term is of specified type),
-; and term reconstruction (constructing a term that has the desired type).
-; We may also specify a part of a term and a part of a type, and ask
-; the system to fill in the rest. In the latter applications, this
-; code acts as a theorem prover in intuitionistic logic.
+; be used for type inference (determining the type for a term), type
+; checking (making sure that a term is of the given type), and term
+; reconstruction (constructing a term that has the desired type).  We
+; may also specify a part of a term and a part of a type, and ask the
+; system to fill in the rest. In the latter applications, this code
+; acts as a theorem prover in intuitionistic logic.
 ;
 ; When generating a term for a type, we may ask for terms in normal form
 ; only. We fully support polymorphic types and let-polymorphism.
 ; 
 ; The end of the file shows the applications of the type reconstruction
-; to deriving CPS terms for call/cc, shift and reset from their types.
+; to deriving CPS terms for call/cc, shift, and reset from their types.
 ;
 ; This code is a re-write in mini-Kanren of the type checker in the full
 ; Kanren: ../examples/type-inference.scm (version 4.50 2005/02/12)
@@ -20,7 +20,7 @@
 ;
 ; The term language is Scheme: integers, booleans, and pairs (aka products)
 ; are supported, along with a sum data type:
-;  constructors are (inl X), (inr X), and deconstructor is
+;  constructors are (inl X), (inr X), and the deconstructor is
 ;  (either (var Exp) on-left on-right)
 ;
 ; The internal term language is similar, with the explicit tags for
@@ -75,10 +75,10 @@
 ; We use a subset of Scheme itself as the source language
 ; The following two functions translate between the source language
 ; and the internal term language. 
-; NB! In the term language, all bound variables must be unique. Thus
+; NB! In the term language, all bound variables must be unique. So
 ; this function should also do alpha-renaming.
 ; The function 'parse' is somewhat similar to the syntax-rule
-; processor in that both produce AST from a surface language -- and both
+; processor in that both produce AST from the surface language -- and both
 ; annotate identifiers so that the names of all bound identifiers are unique.
 
 (define parse
@@ -128,7 +128,6 @@
 
 (define (unparse e)
   (define (fmap e) (cons (car e) (map unparse (cdr e))))
-  (lambda (e)
     (case (car e)
       ((var) (cadr e))
       ((intc) (cadr e))
@@ -143,7 +142,7 @@
        `(either (,(car (cadr e))
 		 ,(unparse (cadr (cadr e))))
           ,(unparse (caddr e))))
-      ((app) (cdr (fmap e))))))
+      ((app) (cdr (fmap e)))))
 
 
 ; We define a first-class (and recursive) relation !-
@@ -262,7 +261,7 @@
 	  (!- alt t))))))		; and conseq, alt are of the same type
 
 
-; Abstraction, application, fixpoint, and other bidning forms
+; Abstraction, application, fixpoint, and other binding forms
 
 ; Here we extend !- with an additional assumption that v has the type
 ; type-v. This extension corresponds to a non-generic, regular type.
@@ -375,6 +374,7 @@
 	))))
 	
 (define !- (s!- s!-))
+
 
 ;------------------------------------------------------------------------
 ;			tests
@@ -503,101 +503,91 @@
         q))
   '(int))
 
-#!eof
 
 ; Generating a term for a type
 (test-check 'type-habitation-1
-  (run 7 (q) (!- q 'int))
+  (run 10 (q) (!- q 'int))
   '((intc _.0)
-     (sub1 (intc _.0))
-     (+ (intc _.0) (intc _.1))
-     (sub1 (sub1 (intc _.0)))
-     (sub1 (+ (intc _.0) (intc _.1)))
-     (car (cons (intc _.0) (intc _.1)))
-     (sub1 (sub1 (sub1 (intc _.0)))))
+ (sub1 (intc _.0))
+ (+ (intc _.0) (intc _.1))
+ (sub1 (sub1 (intc _.0)))
+ (sub1 (+ (intc _.0) (intc _.1)))
+ (+ (sub1 (intc _.0)) (intc _.1))
+ (sub1 (sub1 (sub1 (intc _.0))))
+ (car (cons (intc _.0) (intc _.1)))
+ (sub1 (sub1 (+ (intc _.0) (intc _.1))))
+ (+ (intc _.0) (sub1 (intc _.1))))
 )
 
 (test-check 'type-habitation-2
   (run 5 (q) (!- q '(int -> . int)))
   '((lambda (_.0) (var _.0))
-     (if (boolc _.0)
-     (lambda (_.1) (var _.1))
-       (lambda (_.2) (var _.2)))
-     (lambda (_.0) (intc _.1))
-     (if (zero? (intc _.0))
-       (lambda (_.1) (var _.1))
-       (lambda (_.2) (var _.2)))
-     (lambda (_.0) (sub1 (var _.0))))
+ (car (cons (lambda (_.0) (var _.0)) (intc _.1)))
+ (car (cons (lambda (_.0) (var _.0)) (boolc _.1)))
+ (cdr (cons (intc _.0) (lambda (_.1) (var _.1))))
+ (car (cons (lambda (_.0) (var _.0)) (zero? (intc _.1)))))
   )
+
 
 ; Note the constants 'a rather than logical variables a:
 ; 'a is an eigne-value. We want to have the polymorphic type
 (test-check 'type-habitation-3
- (run 10 (q) (!- q `(--> (--> a a) (--> a a))))
+ (run 10 (q) (!- q `((a -> . a) -> . (a -> . a))))
  '((lambda (_.0) (var _.0))
- (if (boolc _.0)
-     (lambda (_.1) (var _.1))
-     (lambda (_.2) (var _.2)))
- (app (lambda (_.0) (var _.0)) (lambda (_.1) (var _.1)))
- (if (zero? (intc _.0))
-     (lambda (_.1) (var _.1))
-     (lambda (_.2) (var _.2)))
- (lambda (_.0) (if (boolc _.1) (var _.0) (var _.0)))
- (if (boolc _.0)
-     (if (boolc _.1)
-         (lambda (_.2) (var _.2))
-         (lambda (_.3) (var _.3)))
-     (lambda (_.4) (var _.4)))
- (lambda (_.0) (lambda (_.1) (var _.1)))
- (fix (lambda (_.0) (var _.0)))
- (if (if (boolc _.0) (boolc _.1) (boolc _.2))
-     (lambda (_.3) (var _.3))
-     (lambda (_.4) (var _.4)))
- (lambda (_.0) (if (zero? (intc _.1)) (var _.0) (var _.0))))
+ (car (cons (lambda (_.0) (var _.0)) (intc _.1)))
+ (car (cons (lambda (_.0) (var _.0)) (boolc _.1)))
+ (cdr (cons (intc _.0) (lambda (_.1) (var _.1))))
+ (car (cons (lambda (_.0) (var _.0)) (zero? (intc _.1))))
+ (car (cons (lambda (_.0) (var _.0)) (sub1 (intc _.1))))
+ (either
+   (_.0 (inl (intc _.1)))
+   (lambda (_.2) (var _.2))
+   (var _.0))
+ (car (cons (car (cons (lambda (_.0) (var _.0)) (intc _.1)))
+            (intc _.2)))
+ (car (cons (lambda (_.0) (var _.0))
+            (+ (intc _.1) (intc _.2))))
+ (car (car (cons (cons (lambda (_.0) (var _.0)) (intc _.1))
+                 (intc _.2)))))
 )
 
 (test-check 'type-habitation-4
   (run 10 (q) 
-    (fresh (_) (== q `(lambda . ,_)) (!- q `(--> (--> a a) (--> a a)))))
+    (fresh (_) (== q `(lambda . ,_)) (!- q `((a -> . a) -> . (a -> . a)))))
   '((lambda (_.0) (var _.0))
-    (lambda (_.0) (if (boolc _.1) (var _.0) (var _.0)))
-    (lambda (_.0) (lambda (_.1) (var _.1)))
-    (lambda (_.0) (if (zero? (intc _.1)) (var _.0) (var _.0)))
-    (lambda (_.0) (app (lambda (_.1) (var _.1)) (var _.0)))
-    (lambda (_.0)
-     (if (boolc _.1)
-       (if (boolc _.2) (var _.0) (var _.0))
-       (var _.0)))
+ (lambda (_.0) (car (cons (var _.0) (var _.0))))
+ (lambda (_.0) (cdr (cons (var _.0) (var _.0))))
+ (lambda (_.0) (car (cons (var _.0) (intc _.1))))
+ (lambda (_.0) (cdr (cons (intc _.1) (var _.0))))
+ (lambda (_.0) (lambda (_.1) (var _.1)))
  (lambda (_.0)
-   (lambda (_.1) (if (boolc _.2) (var _.1) (var _.1))))
- (lambda (_.0)
-   (if (if (boolc _.1) (boolc _.2) (boolc _.3))
-       (var _.0)
-       (var _.0)))
- (lambda (_.0) (let ([_.1 (var _.0)]) (var _.1)))
- (lambda (_.0)
-   (if (boolc _.1) (lambda (_.2) (var _.2)) (var _.0))))
+   (car (car (cons (cons (var _.0) (var _.0)) (var _.0)))))
+ (lambda (_.0) (car (cons (var _.0) (boolc _.1))))
+ (lambda (_.0) (if (boolc _.1) (var _.0) (var _.0)))
+ (lambda (_.0) (cdr (cons (boolc _.1) (var _.0)))))
   )
 
 ; If we wish to find only combinators, we can tell the system what
 ; kind of terms to use
 
-(define sc!-
-  (lambda (self)
-    (lambda (e t)
-      (conde
-	(((lambda-rel self) e t))
-	(((app-rel self) e t))
-	;(((fix-rel self) e t))
-	;(((polylet-rel self) e t))
-	))))
-	
-(define c!- (sc!- sc!-))
+(define-syntax make-!
+  (syntax-rules ()
+    ((_ rel ...)
+     ((lambda (x) (x x))
+      (lambda (self)
+	(lambda (e t)
+	  (conde
+	    (((rel self) e t)) ...
+	    )))))))
+
+(define c!- (make-! lambda-rel app-rel))
+
 
 (time
   (map unparse
     (run 10 (q) 
-      (fresh (_) (== q `(lambda . ,_)) (c!- q `(--> (--> a a) (--> a a)))))))
+      (fresh (_) (== q `(lambda . ,_))
+	(c!- q `((a -> . a) -> . (a -> . a)))))))
 
 (cout nl "Some examples from Djinn: inferring morphisms of the continuation
 monad" nl)
@@ -608,8 +598,8 @@ monad" nl)
 ;    returnC :: a -> C a
 ;    returnC x1 x2 = x2 x1
 
-(define (cont a) `(--> (--> ,a r) r))
-(display (map unparse (run 1 (q)  (c!- q `(--> a ,(cont 'a))))))
+(define (cont a) `((,a -> . r) -> . r))
+(display (map unparse (run 1 (q)  (c!- q `(a -> . ,(cont 'a))))))
 (newline)
 
 ;    Djinn> bindC ? C a -> (a -> C b) -> C b
@@ -630,7 +620,7 @@ monad" nl)
 	  (== e `(app ,rator ,rand))
 	  (fresh (_) (conde ((== rator `(var ,_))) 
 		            (else (== rator `(app . ,_)))))
-	  (!- rator `(--> ,t-rand ,t))
+	  (!- rator `(,t-rand -> . ,t))
 	  (!- rand t-rand))))))
 
 (cout nl "bind" nl)
@@ -639,7 +629,7 @@ monad" nl)
   (map unparse 
     (run 1 (q) 
      (fresh (x1 x2 _) (== q `(lambda (,x1) (lambda (,x2) . ,_)))
-      (c!- q `(--> ,(cont 'a) (--> (--> a ,(cont 'b)) ,(cont 'b))))))))
+      (c!- q `(,(cont 'a) -> . ((a -> . ,(cont 'b)) -> . ,(cont 'b))))))))
 nl)
 
 ;    Djinn> type C a = (a -> r) -> r
@@ -652,13 +642,13 @@ nl)
   (map unparse 
     (run 1 (q) 
      (fresh (x1 x2 _) (== q `(lambda (,x1) (lambda (,x2) . ,_)))
-      (c!- q `(--> (--> (--> a ,(cont 'b)) ,(cont 'a)) ,(cont 'a)))))))
+      (c!- q `(((a -> . ,(cont 'b)) -> . ,(cont 'a)) -> . ,(cont 'a)))))))
 nl)
 
 
 (cout nl "Inferring the expressions for shift and reset" nl)
 
-(define (cont a r) `(--> (--> ,a ,r) ,r))
+(define (cont a r) `((,a -> . ,r) -> . ,r))
 
 (cout nl "reset" nl)
 (cout
@@ -666,7 +656,7 @@ nl)
   (map unparse 
     (run 1 (q) 
      (fresh (x1 x2 _) (== q `(lambda (,x1) (lambda (,x2) . ,_)))
-      (c!- q `(--> ,(cont 'a 'a) ,(cont 'a 'r)))))))
+      (c!- q `(,(cont 'a 'a) -> . ,(cont 'a 'r)))))))
  nl)
 
 (cout nl "shift" nl)
@@ -675,7 +665,7 @@ nl)
   (map unparse 
     (run 1 (q) 
      (fresh (x1 x2 _) (== q `(lambda (,x1) (lambda (,x2) . ,_)))
-      (c!- q `(--> (--> (--> a ,(cont 'b 'r)) ,(cont 'b 'b)) 
-		  ,(cont 'a 'b)))))))
+      (c!- q `(((a -> . ,(cont 'b 'r)) -> . ,(cont 'b 'b)) 
+		-> . ,(cont 'a 'b)))))))
  nl)
 
