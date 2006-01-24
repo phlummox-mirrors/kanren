@@ -7,7 +7,7 @@
    (title "A declarative logic programming system")
    (description "An applicative logic programming system with a
 declarative set-theoretical semantics, and its applications")
-   (Date-Revision-yyyymmdd "20051205")
+   (Date-Revision-yyyymmdd "20060124")
    (Date-Creation-yyyymmdd "20040121")
    (keywords "Logic Programming, meta-logic programming, relations,
 iterative deepening, proof assistant, Scheme")
@@ -76,17 +76,32 @@ command-line interface provided by the host Scheme implementation.")
    (Section 3 "Sample" " applications")
 
    (dl
-     (dt (cvs-ref "examples/type-inference.scm"))
-     (dd "Polymorphic type inference, including polymorphic let")
+     (dt (cvs-ref "mini/type-inference.scm"))
+     (dd
+       "Hindley-Milner type inference " (em "relation") ", which
+relates a term in a lambda-calculus with fixpoint, polymorphic let,
+sums and products -- and its type. The relation can be used for type
+inference (determining the type for a term), type checking (making
+sure that a term is of the given type), and term 
+reconstruction (constructing a term that has the desired type).  We may
+also specify a part of the term and a part of the type, and ask the
+system to fill in
+the rest. In the latter applications, this code acts as a theorem
+prover in intuitionistic logic.")
 
-     (dt (cvs-ref "examples/zebra.scm"))
-     (dd "The classic Zebra puzzle")
+     (dt (cvs-ref "mini/logic.scm"))
+     (dd
+       "This file illustrates the use of the typechecking relation (see
+above) for proving theorems in intuitionistic and classical logics.")
 
      (dt (cvs-ref "mini/leanTAP.scm"))
      (dd "leanTAP theorem prover by Bernhard Beckert and Joachim
 Posegga.  The miniKanren implementation uses higher-order syntax (to
 avoid " (code "copy_term") ") and an advanced evaluator that removes
 the need for explicit iterative deepening.")
+
+     (dt (cvs-ref "examples/zebra.scm"))
+     (dd "The classic Zebra puzzle")
 
 
      (dt (cvs-ref "examples/mirror.scm"))

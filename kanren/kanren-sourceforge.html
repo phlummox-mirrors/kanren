@@ -9,7 +9,7 @@ declarative set-theoretical semantics, and its applications">
 <meta name="AuthorAddress" content="oleg-at-okmij.org">
 <meta name="keywords" content="Logic Programming, meta-logic programming, relations,
 iterative deepening, proof assistant, Scheme">
-<meta name="Date-Revision-yyyymmdd" content="20051205">
+<meta name="Date-Revision-yyyymmdd" content="20060124">
 <meta name="Date-Creation-yyyymmdd" content="20040121"></head><body bgcolor="#FFFFFF">
 
 <p>
@@ -64,13 +64,24 @@ command-line interface provided by the host Scheme implementation.</p>
 
 <dl>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/type-inference.scm">
-<code>examples/type-inference.scm</code></a></dt>
-<dd>Polymorphic type inference, including polymorphic let</dd>
+<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/mini/type-inference.scm">
+<code>mini/type-inference.scm</code></a></dt>
+<dd>Hindley-Milner type inference 
+<em>relation</em>, which
+relates a term in a lambda-calculus with fixpoint, polymorphic let,
+sums and products -- and its type. The relation can be used for type
+inference (determining the type for a term), type checking (making
+sure that a term is of the given type), and term 
+reconstruction (constructing a term that has the desired type).  We may
+also specify a part of the term and a part of the type, and ask the
+system to fill in
+the rest. In the latter applications, this code acts as a theorem
+prover in intuitionistic logic.</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/zebra.scm">
-<code>examples/zebra.scm</code></a></dt>
-<dd>The classic Zebra puzzle</dd>
+<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/mini/logic.scm">
+<code>mini/logic.scm</code></a></dt>
+<dd>This file illustrates the use of the typechecking relation (see
+above) for proving theorems in intuitionistic and classical logics.</dd>
 <dt>
 <a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/mini/leanTAP.scm">
 <code>mini/leanTAP.scm</code></a></dt>
@@ -79,6 +90,10 @@ Posegga.  The miniKanren implementation uses higher-order syntax (to
 avoid 
 <code>copy_term</code>) and an advanced evaluator that removes
 the need for explicit iterative deepening.</dd>
+<dt>
+<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/zebra.scm">
+<code>examples/zebra.scm</code></a></dt>
+<dd>The classic Zebra puzzle</dd>
 <dt>
 <a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/mirror.scm">
 <code>examples/mirror.scm</code></a></dt>
@@ -186,7 +201,7 @@ applications.</p>
 <br>
 <div>
 <hr></div>
-<h3>Last updated December 5, 2005</h3>
+<h3>Last updated January 24, 2006</h3>
 <div>
 <address>oleg-at-pobox.com or oleg-at-acm.org or oleg-at-computer.org
 <br>Your comments, problem reports, questions are very welcome!</address></div>
