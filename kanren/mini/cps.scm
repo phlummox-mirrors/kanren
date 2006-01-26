@@ -65,6 +65,65 @@
     ((== e1 #t) (== e2 e3))
     ((== e1 #f) (== e3 #f))))
 
+; mark-remove term result
+; where term is a general kappa-term with an additional extension:
+; (mark kappa-term).
+; The relation holds iff:
+;   term contains a single occurrence of the marked-subterm, and 
+;   result is the (mark term1)
+;   where term1 is the term with the mark wrapper removed
+;   term does not contain any marks, and result is '()
+
+(define (mark-remove term result)
+  (fresh (v e e2)
+    (conde
+      ((== term `(var ,v)) (== result '())) ; constants
+      ((== term 'call/cc)  (== result '()))
+      ((== term `(reset ,e)) (== result '()))
+      ((== term `(shift ,v ,e)) (== result '()))
+      ((== term `(mark ,e)) (== result term))
+      ((== term `(lambda (,v) ,e))
+       (fresh (term* e*)
+	 (mark-remove e e*)
+	 (conde
+	   ((== e* `(mark ,term*)) (== result `(mark (lambda (,v) ,term*))))
+	   ((== e* '()) (== result '())))))
+      ((== term `(kappa ,v ,e))
+       (fresh (term* e*)
+	 (mark-remove e e*)
+	 (conde
+	   ((== e* `(mark ,term*)) (== result `(mark (kappa ,v ,term*))))
+	   ((== e* '()) (== result '())))))
+      ((== term `(app ,e ,e2))
+       (fresh (re re2 term*)
+	 (mark-remove e re)
+	 (mark-remove e2 re2)
+	 (conde
+	   ((== re '()) (== re2 '()) (== result '()))
+	   ((== re '()) (== re2 `(mark ,term*))
+	    (== result `(mark (app ,e ,term*))))
+	   ((== re2 '()) (== re `(mark ,term*))
+	    (== result `(mark (app ,term* ,e2)))))))
+	)))
+
+
+(test-check 'mark-remove-1
+  (run 10 (q) (mark-remove '(mark (var x)) q))
+  '((mark (var x)))))
+
+(test-check 'mark-remove-2
+  (run 10 (q) (mark-remove '(lambda (x) (mark (var x))) q))
+  '((mark (lambda (x) (var x))))))
+
+(test-check 'mark-remove-3
+  (run 10 (q) (mark-remove '(lambda (x) (app call/cc (mark (var x)))) q))
+  '((mark (lambda (x) (app call/cc (var x))))))
+
+(test-check 'mark-remove-4
+  (run 10 (q) (mark-remove 
+		'(lambda (x) (app (mark (var x)) (mark (var x)))) q))
+  '()))
+
 (define (eval-kappa-linear term out)
   (eval-kappa-linear* term out #t))
 
@@ -85,18 +144,26 @@
       (eval-kappa-linear body e)
       (== out `(lambda (,var) ,e)))
     ((== rk #t)				; Replace kappa with lambda, dive in
-     (== term `(kappa ,var ,body))
+     (== term `(kappa #f ,body))
+     (fresh (newvar)
+       (eval-kappa-linear body e)
+       (== out `(lambda (,newvar) ,e))))
+    ((== rk #t)				; Replace kappa with lambda, dive in
+     (== term `(kappa (,var) ,body))
      (fresh (newvar)
        (== var `(var ,newvar))
        (eval-kappa-linear body e)
        (== out `(lambda (,newvar) ,e))))
     ((== term `(app ,e ,e2)) (== kft #f)
-     (fresh (e* e*kf e2*)
+     (fresh (e* e*kf e2* b*)
        (eval-kappa-linear* e e* #f)	; Search for a redex
        (kappa-free e* e*kf)
        (conde
-	 ((== e* `(kappa ,var ,body))   ; found
-	  (== var e2)
+	 ((== e* `(kappa (,var) ,body))   ; found
+	  (== var `(mark ,e2))
+	  (mark-remove body `(mark ,b*)); var must occur in body, exactly once
+	  (eval-kappa-linear* b* out rk))
+	 ((== e* `(kappa #f ,body))   ; found
 	  (eval-kappa-linear* body out rk))
 	 ((== e*kf #t)			; can't be a redex
 	  (eval-kappa-linear e2 e2*)
@@ -115,9 +182,16 @@
   (run 10 (q) (fresh (x) (eval-kappa-linear '(var x) q)))
   '((var x)))
 
-(run 10 (q) (fresh (x) (eval-kappa-linear `(app (kappa ,x ,x) (var x)) q)))
-(run 2 (q) (fresh (x) (eval-kappa-linear q '(var x))))
-(run 1 (q) (fresh (x) (eval-kappa-linear `(app . ,q) '(var x))))
+(test-check 'eval-11
+  (run 10 (q) (fresh (x) (eval-kappa-linear `(app (kappa (,x) ,x) (var x)) q)))
+  '((var x)))
+
+(test-check 'eval-12
+  (run 10 (q) (fresh (x) (eval-kappa-linear `(app (kappa #f (var x)) (var y)) q)))
+  '((var x)))
+
+(run 1 (q) (fresh (x) (eval-kappa-linear q '(var x))))
+(run 2 (q) (fresh (x) (eval-kappa-linear `(app . ,q) '(var x))))
 
 (test-check 'eval-2
   (run 10 (q) (fresh (x) (eval-kappa-linear `(kappa ,x ,x) q)))
