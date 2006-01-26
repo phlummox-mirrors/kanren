@@ -133,6 +133,16 @@
     (cons (lambda (_.1) (_.0 (inl _.1))) (lambda (_.2) (_.0 (inr _.2))))))
 )
 
+(test-check "DeMorgan-disj-inv"
+ (time 
+  (map unparse 
+    (run 1 (q) (c!- q '(((a -> . F) * (b -> . F)) -> .
+			 ((a + b) -> . F)
+			)))))
+  '((lambda (_.0)
+   (lambda (_.1)
+     (either (_.2 _.1) ((car _.0) _.2) ((cdr _.0) _.2)))))
+)
 
 ; It does not intuitionistically follow that
 ; 	NOT (A & B) -> (NOT A | NOT B)
@@ -151,6 +161,18 @@
 	(_.1 (inl (lambda (_.2) 
 		    (_.1 (inr (lambda (_.3) (_.0 (cons _.2 _.3)))))))))))
 )
+; Here's is the proof of the inverse implication
+(test-check "DeMorgan-conj-inv" 
+ (time 
+  (map unparse 
+    (run 1 (q) (c!- q `(,(neg (neg `(,(neg 'a) + ,(neg 'b))))
+			-> . ,(neg '(a * b)))))))
+  '((lambda (_.0)
+    (lambda (_.1)
+     (_.0 (lambda (_.2)
+            (either (_.3 _.2) (_.3 (car _.1)) (_.3 (cdr _.1))))))))
+)
+
 
 ; So, intuitionistically, 
 ;  NOTNOT (A | B) = NOT( NOT A & NOT B) = NOTNOT (NOTNOT A | NOTNOT B)
