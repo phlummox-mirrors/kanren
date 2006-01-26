@@ -3,7 +3,7 @@
 ; $Id$
 
 (load "book-si.scm")			; Our complete evaluator
-(define unify unify-check)		; If we don't want recursive types
+(define unify unify-check)		; We don't want cyclic terms
 
 ; The Unit testing framework
 (define-syntax test-check
@@ -24,7 +24,7 @@
 ; the syntax of the terms is as follows
 ;  Var   ::= symbol
 ;  Value ::= (var Var) | (lambda (Var) Exp) | call/cc
-;  Exp   ::= Value | (app Exp Exp) | (reset Exp) | (shift Exp)
+;  Exp   ::= Value | (app Exp Exp) | (reset Exp) | (shift Var Exp)
 
 
 
@@ -39,7 +39,7 @@
 ; Evaluator of kappa-terms. It is the full-beta evaluator. Also,
 ; all terms to evaluate must be LINEAR kappa-terms. That's why we
 ; can use logic variables for CVar. In a more general case, we ought
-; to use deBruin indices.
+; to use deBruijn indices.
 ; The evaluator is pure, and so it can do beta-expansion as well.
 ; The function is written without any regard to its terminating properties
 
@@ -49,7 +49,7 @@
       ((== term `(var ,v)) (== result #t))
       ((== term 'call/cc)  (== result #t))
       ((== term `(reset ,e)) (== result #t)) ; assume no kappas in reset...
-      ((== term `(shift ,e)) (== result #t)) ; it isn't in the CPS image...
+      ((== term `(shift ,v ,e)) (== result #t)) ; it isn't in the CPS image...
       ((== term `(lambda (,v) ,e)) (kappa-free e result))
       ((== term `(app ,e ,e2))
        (fresh (re re2)
@@ -66,39 +66,65 @@
     ((== e1 #f) (== e3 #f))))
 
 (define (eval-kappa-linear term out)
-  (fresh (var body e e2)
+  (eval-kappa-linear* term out #t))
+
+; The third argument is a boolean; when it is #t, we 
+; replace kappa with lambdas. The argument is #f when we are searching for
+; a redex.
+; When rk is #t, the result is kappa-free
+(define (eval-kappa-linear* term out rk)
+  (fresh (var body e e2 kft)
+   (kappa-free term kft)
    (conde
-    ((kappa-free term #t) (== term out)) ; nothing to do
-    ((== term `(kappa ,var ,body))	 ; Don't eval under kappa
-     (== out term))			 ; (so we never have a naked var)
-    ((== term `(app ,e ,e2))		
-     (eval-kappa-linear e `(kappa ,var ,body))  ; redex
-      (== var e2)
-      (eval-kappa-linear body out))
+    ((== kft #t) (== term out))		; nothing to do
+    ((== rk #f)
+     (== term `(kappa ,var ,body))	; Don't eval under kappa
+     (== out term))
     ((== term `(lambda (,var) ,body))	; Do eval under lambda
-      (kappa-free body #f)
+      (== kft #f)
       (eval-kappa-linear body e)
       (== out `(lambda (,var) ,e)))
-    ((== term `(app ,e ,e2))
-      (fresh (re re2)
-	(kappa-free e re) (kappa-free e2 re2) (land re re2 #f))
-      (fresh (e* e2*)
-	(eval-kappa-linear e e*)
-	(conde ((kappa-free e* #t)) ((kappa-free e* #f)
-	                              (fresh (e1 e2) (== e* `(app ,e1 ,e2)))))
-	(eval-kappa-linear e2 e2*)
-	(== `(app ,e* ,e2*) out))))))
+    ((== rk #t)				; Replace kappa with lambda, dive in
+     (== term `(kappa ,var ,body))
+     (fresh (newvar)
+       (== var `(var ,newvar))
+       (eval-kappa-linear body e)
+       (== out `(lambda (,newvar) ,e))))
+    ((== term `(app ,e ,e2)) (== kft #f)
+     (fresh (e* e*kf e2*)
+       (eval-kappa-linear* e e* #f)	; Search for a redex
+       (kappa-free e* e*kf)
+       (conde
+	 ((== e* `(kappa ,var ,body))   ; found
+	  (== var e2)
+	  (eval-kappa-linear* body out rk))
+	 ((== e*kf #t)			; can't be a redex
+	  (eval-kappa-linear e2 e2*)
+	  (== `(app ,e* ,e2*) out))
+	 ((== e*kf #f)
+	  (fresh (e11 e12 e**)
+	    (== e* `(app ,e11 ,e12))
+	    (eval-kappa-linear e e**)
+	    (eval-kappa-linear e2 e2*)
+	    (== `(app ,e** ,e2*) out)))
+	 ))))))
+
+#!eof
 
 (test-check 'eval-1
   (run 10 (q) (fresh (x) (eval-kappa-linear '(var x) q)))
   '((var x)))
 
+(run 10 (q) (fresh (x) (eval-kappa-linear `(app (kappa ,x ,x) (var x)) q)))
+(run 2 (q) (fresh (x) (eval-kappa-linear q '(var x))))
+(run 1 (q) (fresh (x) (eval-kappa-linear `(app . ,q) '(var x))))
+
 (test-check 'eval-2
   (run 10 (q) (fresh (x) (eval-kappa-linear `(kappa ,x ,x) q)))
-  '((kappa _.0 _.0)))
+  '((lambda (_.0) (var _.0))))
 
 (test-check 'eval-expansion
-  (run 5 (q) (fresh (x) (eval-kappa-linear q `(kappa ,x ,x))))
+  (run 5 (q) (fresh (x) (eval-kappa-linear q '(var x))))
   '((kappa _.0 _.0)
  (app (kappa _.0 (kappa _.1 _.1)) _.0)
  (app (app (kappa _.0 (kappa _.1 (kappa _.2 _.2))) _.0) _.1)
@@ -112,7 +138,7 @@
 (test-check 'eval-3
   (run 10 (q) (fresh (x y) 
 	       (eval-kappa-linear `(app (kappa ,x ,x) (kappa ,y ,y)) q)))
-  '((kappa _.0 _.0)))
+  '((lambda (_.0) (var _.0))))
 
 (test-check 'eval-4
   (run 10 (q) (fresh (x) 
@@ -122,7 +148,7 @@
 
 
 (test-check 'eval-5
-  (run 1 (q)
+  (run 10 (q)
     (fresh (x y z)
       (eval-kappa-linear
 	`(app
