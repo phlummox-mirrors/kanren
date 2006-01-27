@@ -24,32 +24,31 @@
 ; the syntax of the terms is as follows
 ;  Var   ::= symbol
 ;  Value ::= (var Var) | (lambda (Var) Exp) | call/cc
-;  Exp   ::= Value | (app Exp Exp) | (reset Exp) | (shift Var Exp)
-
+;  Exp   ::= Value | (app Exp Exp) | (reset Exp) | (shift Exp)
 
 
 
 ; the syntax of CPS terms is a bit different, to emphasize
 ; administrative lambda (which we call kappa) and full beta.
-; CVar   ::= Logic-Var
-; CValue ::= CVar | Exp | (kappa CVar CExp)
+; CVar   ::= symbol
+; CValue ::= (kv CVar) | Exp | (kappa CVar CExp)
 ; CExp   ::= CValue
 ; By the property of CPS, all kappa-abstractions are linear.
+; Because we will evaluate only terms in the image of the CPS transform
+; (which contain no shift, reset, call/cc), we elide the latter.
 
-; Evaluator of kappa-terms. It is the full-beta evaluator. Also,
-; all terms to evaluate must be LINEAR kappa-terms. That's why we
-; can use logic variables for CVar. In a more general case, we ought
-; to use deBruijn indices.
+; Evaluator of kappa-terms. It is the full-beta evaluator. 
+; We presume that the input terms are kappa-linear and all CVars are
+; unique. That's why we don't have to worry about the hygien
+; and we are guaranteed that within the environment, each variable
+; occurs only once. 
 ; The evaluator is pure, and so it can do beta-expansion as well.
-; The function is written without any regard to its terminating properties
 
 (define (kappa-free term result)
   (fresh (v e e2)
     (conde
       ((== term `(var ,v)) (== result #t))
-      ((== term 'call/cc)  (== result #t))
-      ((== term `(reset ,e)) (== result #t)) ; assume no kappas in reset...
-      ((== term `(shift ,v ,e)) (== result #t)) ; it isn't in the CPS image...
+      ((== term `(kv ,v))  (== result #f))
       ((== term `(lambda (,v) ,e)) (kappa-free e result))
       ((== term `(app ,e ,e2))
        (fresh (re re2)
@@ -65,211 +64,145 @@
     ((== e1 #t) (== e2 e3))
     ((== e1 #f) (== e3 #f))))
 
-; mark-remove term result
-; where term is a general kappa-term with an additional extension:
-; (mark kappa-term).
-; The relation holds iff:
-;   term contains a single occurrence of the marked-subterm, and 
-;   result is the (mark term1)
-;   where term1 is the term with the mark wrapper removed
-;   term does not contain any marks, and result is '()
 
-(define (mark-remove term result)
-  (fresh (v e e2)
+; pure lookup relation: find out the  association
+; for a given variable in an associative list
+; (lookup var lst out) holds if the pair (var . out) occurs in lst.
+
+(define (lookup var lst out)
+  (fresh (h t)
+    (== lst (cons h t))
     (conde
-      ((== term `(var ,v)) (== result '())) ; constants
-      ((== term 'call/cc)  (== result '()))
-      ((== term `(reset ,e)) (== result '()))
-      ((== term `(shift ,v ,e)) (== result '()))
-      ((== term `(mark ,e)) (== result term))
-      ((== term `(lambda (,v) ,e))
-       (fresh (term* e*)
-	 (mark-remove e e*)
-	 (conde
-	   ((== e* `(mark ,term*)) (== result `(mark (lambda (,v) ,term*))))
-	   ((== e* '()) (== result '())))))
-      ((== term `(kappa ,v ,e))
-       (fresh (term* e*)
-	 (mark-remove e e*)
-	 (conde
-	   ((== e* `(mark ,term*)) (== result `(mark (kappa ,v ,term*))))
-	   ((== e* '()) (== result '())))))
-      ((== term `(app ,e ,e2))
-       (fresh (re re2 term*)
-	 (mark-remove e re)
-	 (mark-remove e2 re2)
-	 (conde
-	   ((== re '()) (== re2 '()) (== result '()))
-	   ((== re '()) (== re2 `(mark ,term*))
-	    (== result `(mark (app ,e ,term*))))
-	   ((== re2 '()) (== re `(mark ,term*))
-	    (== result `(mark (app ,term* ,e2)))))))
-	)))
+      ((== h (cons var out)))
+      ((lookup var t out)))))
 
-
-(test-check 'mark-remove-1
-  (run 10 (q) (mark-remove '(mark (var x)) q))
-  '((mark (var x)))))
-
-(test-check 'mark-remove-2
-  (run 10 (q) (mark-remove '(lambda (x) (mark (var x))) q))
-  '((mark (lambda (x) (var x))))))
-
-(test-check 'mark-remove-3
-  (run 10 (q) (mark-remove '(lambda (x) (app call/cc (mark (var x)))) q))
-  '((mark (lambda (x) (app call/cc (var x))))))
-
-(test-check 'mark-remove-4
-  (run 10 (q) (mark-remove 
-		'(lambda (x) (app (mark (var x)) (mark (var x)))) q))
-  '()))
 
 (define (eval-kappa-linear term out)
-  (eval-kappa-linear* term out #t))
+  (eval-kappa-env term out '() '()))
 
-; The third argument is a boolean; when it is #t, we 
-; replace kappa with lambdas. The argument is #f when we are searching for
-; a redex.
-; When rk is #t, the result is kappa-free
-(define (eval-kappa-linear* term out rk)
-  (fresh (var body e e2 kft)
-   (kappa-free term kft)
+; See the algorithm in ...
+; It is extended here to handle `constants' and non-reducible lambdas
+; It is the general evaluator. The only requirement is that
+; the term must be closed with respect to kv/kappa.
+
+(define (eval-kappa-env term out env stack)
+  (fresh (var body e e2 kff)
+   (kappa-free term kff)
    (conde
-    ((== kft #t) (== term out))		; nothing to do
-    ((== rk #f)
-     (== term `(kappa ,var ,body))	; Don't eval under kappa
-     (== out term))
-    ((== term `(lambda (,var) ,body))	; Do eval under lambda
-      (== kft #f)
-      (eval-kappa-linear body e)
-      (== out `(lambda (,var) ,e)))
-    ((== rk #t)				; Replace kappa with lambda, dive in
-     (== term `(kappa #f ,body))
-     (fresh (newvar)
-       (eval-kappa-linear body e)
-       (== out `(lambda (,newvar) ,e))))
-    ((== rk #t)				; Replace kappa with lambda, dive in
-     (== term `(kappa (,var) ,body))
-     (fresh (newvar)
-       (== var `(var ,newvar))
-       (eval-kappa-linear body e)
-       (== out `(lambda (,newvar) ,e))))
-    ((== term `(app ,e ,e2)) (== kft #f)
-     (fresh (e* e*kf e2* b*)
-       (eval-kappa-linear* e e* #f)	; Search for a redex
-       (kappa-free e* e*kf)
-       (conde
-	 ((== e* `(kappa (,var) ,body))   ; found
-	  (== var `(mark ,e2))
-	  (mark-remove body `(mark ,b*)); var must occur in body, exactly once
-	  (eval-kappa-linear* b* out rk))
-	 ((== e* `(kappa #f ,body))   ; found
-	  (eval-kappa-linear* body out rk))
-	 ((== e*kf #t)			; can't be a redex
-	  (eval-kappa-linear e2 e2*)
-	  (== `(app ,e* ,e2*) out))
-	 ((== e*kf #f)
-	  (fresh (e11 e12 e**)
-	    (== e* `(app ,e11 ,e12))
-	    (eval-kappa-linear e e**)
-	    (eval-kappa-linear e2 e2*)
-	    (== `(app ,e** ,e2*) out)))
-	 ))))))
+     ((== kff #t) 		; non-reducible further, no redex
+       (eval-unroll term out stack))
+     ((== term `(lambda (,var) ,body))	; Do eval under lambda. No redex
+       (== kff #f)
+       (eval-kappa-env body e env '())
+       (eval-unroll `(lambda (,var) ,e) out stack))
+     ((== stack '())
+      (== term `(kappa ,var ,body))	; Do eval under naked kappa
+       (let ((newvar var)) ; (genvar var))) -- don't worry about hygiene...
+	 (fresh ()
+	 (eval-kappa-env body e (cons (list var '() `(kv ,newvar)) env) '())
+	 (== out `(kappa ,newvar ,e)))))
+     ((== term `(kappa ,var ,body))	; Redex; kappa with non-empty stack
+       (fresh (se newstack)
+	 (== stack (cons se newstack))
+	 (eval-kappa-env body out
+	   (cons (cons var se) env) newstack)))
+     ((== env '()) (== term `(kv ,var)) ; variable intr when diving under kappa
+       (eval-unroll term out stack))
+     ((== term `(kv ,var))		; variable lookup
+       (fresh (newenv newterm)
+	 (lookup var env (list newenv newterm))
+	 (eval-kappa-env newterm out newenv stack)))
+    ((== term `(app ,e ,e2))
+     (== kff #f)		; the #t case is covered already
+     (eval-kappa-env e out env (cons (list env e2) stack)))
+     )))
 
-#!eof
+; unroll the stack of applications. We know that there will be
+; no redex at the term
+(define (eval-unroll term out stack)
+  (conde
+    ((== stack '()) (== term out))
+    (else
+      (fresh (env newterm newstack e)
+	(== stack (cons (list env newterm) newstack))
+	(eval-kappa-env newterm e env '())
+	(eval-unroll `(app ,term ,e) out newstack)))))
+
 
 (test-check 'eval-1
   (run 10 (q) (fresh (x) (eval-kappa-linear '(var x) q)))
   '((var x)))
 
-(test-check 'eval-11
-  (run 10 (q) (fresh (x) (eval-kappa-linear `(app (kappa (,x) ,x) (var x)) q)))
-  '((var x)))
-
-(test-check 'eval-12
-  (run 10 (q) (fresh (x) (eval-kappa-linear `(app (kappa #f (var x)) (var y)) q)))
-  '((var x)))
-
-(run 1 (q) (fresh (x) (eval-kappa-linear q '(var x))))
-(run 2 (q) (fresh (x) (eval-kappa-linear `(app . ,q) '(var x))))
-
 (test-check 'eval-2
-  (run 10 (q) (fresh (x) (eval-kappa-linear `(kappa ,x ,x) q)))
-  '((lambda (_.0) (var _.0))))
+  (run 10 (q) (eval-kappa-linear '(kappa x (kv x)) q))
+  '((kappa x (kv x))))
 
 (test-check 'eval-expansion
-  (run 5 (q) (fresh (x) (eval-kappa-linear q '(var x))))
-  '((kappa _.0 _.0)
- (app (kappa _.0 (kappa _.1 _.1)) _.0)
- (app (app (kappa _.0 (kappa _.1 (kappa _.2 _.2))) _.0) _.1)
- (app (kappa _.0 (app (kappa _.1 (kappa _.2 _.2)) _.1)) _.0)
- (app (app (kappa
-             _.0
-             (kappa _.1 (app (kappa _.2 (kappa _.3 _.3)) _.2)))
-           _.0)
-      _.1)))
+  (run 3 (q) (fresh (x) (eval-kappa-linear q '(var x))))
+  '((var x)
+ (app (kappa _.0 (var x)) (var _.1))
+ (app (kappa _.0 (kv _.0)) (var x))))
 
 (test-check 'eval-3
-  (run 10 (q) (fresh (x y) 
-	       (eval-kappa-linear `(app (kappa ,x ,x) (kappa ,y ,y)) q)))
-  '((lambda (_.0) (var _.0))))
+  (run 10 (q) (eval-kappa-linear 
+		 `(app (kappa x (kv x)) (kappa y (kv y))) q))
+  '((kappa y (kv y))))
 
 (test-check 'eval-4
-  (run 10 (q) (fresh (x) 
-	       (eval-kappa-linear `(app (kappa ,x (app ,x (var x))) (var kk))
-		 q)))
+  (run 10 (q) (eval-kappa-linear `(app (kappa x (app (kv x) (var x))) 
+				     (var kk))
+		 q))
   '((app (var kk) (var x))))
 
 
 (test-check 'eval-5
   (run 10 (q)
-    (fresh (x y z)
       (eval-kappa-linear
 	`(app
 	   (kappa
-	     ,x
-	     (app ,x
-	       (app (kappa ,y (app ,y (var x))) (kappa ,z ,z))))
+	     x
+	     (app (kv x)
+	       (app (kappa y (app (kv y) (var x))) (kappa z (kv z)))))
 	   (var kk))
-	q)))
+	q))
   '((app (var kk) (var x))))
 
 
 ; Basic CPS Transform: Fischer
 
 (define (fischer-cps term cps)
-  (fresh (v k k1 e e* e2)
+  (fresh (v e e* e2)
     (conde
       ((== term `(var ,v))
-       (== cps  `(kappa ,k (app ,k ,term))))
+       (== cps  `(kappa k (app (kv k) ,term))))
       ((== term `(lambda (,v) ,e))
        (fischer-cps e e*)
        (== cps 
-	 `(kappa ,k (app ,k (lambda (,v) ,e*)))))
+	 `(kappa k (app (kv k) (lambda (,v) ,e*)))))
       ((== term `(app ,e ,e2))
-       (fresh (e2* f n)
+       (fresh (e2*)
        (fischer-cps e e*)
        (fischer-cps e2 e2*)
        (== cps 
-	 `(kappa ,k
-	    (app ,e* (kappa ,f (app ,e2* 
-				  (kappa ,n (app (app ,f ,n) ,k)))))))))
+	 `(kappa k
+	    (app ,e* (kappa f
+		       (app ,e2* 
+			 (kappa n (app (app (kv f) (kv n)) (kv k))))))))))
       ((== term 'call/cc)
-       (fresh (f v k2)
-	 (== cps 
-	   `(kappa ,k
-	      (app ,k
-		(kappa ,f
-		  (kappa ,k1
-		    (app
-		      (app ,f (kappa ,v (kappa ,k2 (app ,k1 ,v)))) ,k1))))))))
+	(== cps 
+	  '(kappa k
+	     (app (kv k)
+	       (kappa f
+		 (kappa k1
+		   (app
+		     (app (kv f) (kappa v (kappa k2 (app (kv k1) (kv v)))))
+		     (kv k1))))))))
       ((== term `(reset ,e))
-       (fresh (v)
-	 (fischer-cps e e*)
+	(fischer-cps e e*)
 	 (== cps
-	   `(kappa ,k
-	      (app ,k
-		(app ,e* (kappa ,v ,v)))))))
+	   `(kappa k
+	      (app (kv k)
+		(app ,e* (kappa v (kv v)))))))
 		       
       ((== term `(shift ,e))
        (fresh (v x k2)
@@ -284,8 +217,11 @@
 
 (test-check 'cps-simple-1
   (run 10 (q) (fischer-cps '(lambda (x) (var x)) q))
-  '((kappa _.0 (app _.0 (lambda (x) (kappa _.1 (app _.1 (var x))))))))
+  '((kappa
+   k
+   (app (kv k) (lambda (x) (kappa k (app (kv k) (var x))))))))
 
+#!eof
 
 ; CPS with some reductions: Sabry and Felleisen's F2 transform
 ; We use '(var KK) as the initial continuation
