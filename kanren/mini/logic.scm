@@ -265,3 +265,14 @@
 
 ; which proves TR( NOT A | A ). That is, we get the Law of Excluded Middle.
 
+; A simpler proof: rather than pushing all NOTs down, we can just
+; use the double-negated classical formula as it is, without futher
+; transformations. Glivenko theorem applies to arbitrary propositional
+; formulas.
+; Thanks to Eijiro Sumii for pointing this out.
+(test-check "LEM simpler"
+  (time 
+    (map unparse 
+      (run 1 (q) (c!- q (neg (neg `(a + ,(neg 'a))))))))
+  '((lambda (_.0) (_.0 (inr (lambda (_.1) (_.0 (inl _.1)))))))
+)
