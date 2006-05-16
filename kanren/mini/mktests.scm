@@ -3102,7 +3102,7 @@
     (logo '(0 1 1 1) '(0 1) '(1 1) r))
   (list `(0 1 1)))
 
-(cout "This next test takes several minutes to run!\n")
+(cout "This next test takes several minutes to run!" nl)
 
 (test-check "8.96"
   (run 8 (s)
