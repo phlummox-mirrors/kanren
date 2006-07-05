@@ -11,7 +11,7 @@
 ;    number = "3",
 ;    pages = "339-358",
 ;    year = "1995",
-;    url = "http://citeseer.ist.psu.edu/beckert95leantap.html" }
+;    url = "http://citeseer.ist.psu.edu/beckert95leantap.html"
 
 
 ;(load "scheduling.scm")
@@ -227,12 +227,15 @@
 ; where the only variable that can be bound during test are the ones that
 ; are explicitly enumerated here...
 
+
+
 (define (prove fml unexpl literals proof)
   (fresh (a b u var)
     ; just a trace comment...
 ;   (project (fml unexpl literals)
 ;     (begin (cout "prove: " (show-formula fml) 
-; 	     nl unexpl 
+; 	     nl unexpl
+;             nl
 ; 	     literals nl)
 ;       succeed))
   (condu
@@ -257,21 +260,21 @@
 		     (== literals (cons l lrest))
 		     (condu
 		       ((conde ((== fml `(not ,neg))) ((== `(not ,fml) neg)))
-			 (project (neg) 
-			   (begin
+                        (project (neg) 
+                          (begin
 			     (let* ((lit
 				     (if (and (pair? neg) (eq? 'not (car neg)))
-				       (cadr neg) neg))
-				     (hd (if (pair? lit) (car lit) lit)))
-			       (if (not (memq hd '(sk f g h i j k l p q r)))
-				 (error "bad lit" hd)))
+                                         (cadr neg) neg))
+                                    (hd (if (pair? lit) (car lit) lit)))
+			       (if (not (memq hd '(sk f g h i j k l p q r s ff fp gf gp = t i n)))
+                                   (error "bad lit" hd)))
 			     succeed))
-			 (conde		; the first choice point
+                        (conde		; the first choice point
 			   ((==-check neg l) (== proof (list l)))
 			   (else (close-branch lrest proof)))))))))
 	(conde				; the second choice point
 	  ((close-branch literals proof) (project () 
-					   (begin ;(cout nl "closed" nl)
+					   (begin  ;(cout nl "closed" nl)
 					   succeed)))
 	  (else
 	    (fresh (n)			; or choose another formula
@@ -331,14 +334,16 @@
 				     (if (and (pair? neg) (eq? 'not (car neg)))
 				       (cadr neg) neg))
 				     (hd (if (pair? lit) (car lit) lit)))
-			       (if (not (memq hd '(sk f g h i j k l p q r)))
+			       (if (not (memq hd '(sk f g h i j k l p q r s ff fp gf gp = t i n)))
 				 (error "bad lit" hd)))
 			     succeed))
 			 (conde		; the first choice point
 			   ((==-check neg l) (== proof (list l)))
 			   (else (close-branch lrest proof)))))))))
 	(conde				; the second choice point
-	  ((close-branch literals proof))
+	  ((close-branch literals proof) (project () 
+					   (begin  ;(cout nl "closed" nl)
+					   succeed)))
 	  (else
 	    (fresh (n)			; or choose another formula
 	      (== unexpl (cons n u))
@@ -539,3 +544,4 @@
 	        ,(A y (=> (and (g ,y) (h ,x ,y)) (j ,x ,y)))))
    )
   `,(E x (and (f ,x) (not ,(E y (and (g ,y) (h ,x ,y))))))))
+
