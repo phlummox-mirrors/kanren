@@ -224,12 +224,15 @@
 
 (define-syntax allw
   (syntax-rules ()
-    ((_ g0 g^)
-     (lambdag@ (s)
-       (let ((g1 g0) (g2 g^))
-         (amb
-           (lambdai@ () ((all g1 g2) s))
-           (lambdai@ () ((all g2 g1) s))))))))
+    ((_) succeed)
+    ((_ g) g)
+    ((_ g^ g g* ...)
+     (allw (lambdag@ (s)
+             (let ((g1 g^) (g2 g))
+               (amb
+                 (lambdai@ () ((all g1 g2) s))
+                 (lambdai@ () ((all g2 g1) s)))))
+       g* ...))))
 
 (define amb
   (lambda (i j)
@@ -263,7 +266,6 @@
          (lambdai@ () ((all g0 g ...) s))
          (lambdaf@ () ((conde c ...) s)))))))
 
-;;; maybe should wrap 'lambdai@' around (g a) in second clause
 (define bind
   (lambda (s-inf g)
     (case-inf s-inf
@@ -289,37 +291,39 @@
        (let ((x (walk* x s)) ...)
          ((all g^ g ...) s))))))
 
-(define-syntax chop1
-  (syntax-rules ()
-    ((chop1 r s) (succeed s))))
+(define-syntax conda
+  (syntax-rules (else)
+    ((_) fail)
+    ((_ (else g ...)) (all g ...))
+    ((_ (g0 g ...) c ...) (ifa g0 (all g ...) (conda c ...)))))
 
 (define-syntax condu
-  (syntax-rules ()
-    ((_ c ...) (c1 chop1 c ...))))
-
-(define-syntax chopo
-  (syntax-rules ()
-    ((chopo r s) r)))
-
-(define-syntax conda
-  (syntax-rules ()
-    ((_ c ...) (c1 chopo c ...))))
-
-; for committed choice, wait until lambdai@ is completed
-(define-syntax c1
   (syntax-rules (else)
-    ((_ chop) fail)
-    ((_ chop (else g ...)) (all g ...))
-    ((_ chop (g0 g ...) c ...)
-     (let ((g^ g0))
-       (lambdag@ (s)
-         (let loop ((r (g^ s)))
-           (case-inf r
-             (lambdai@ () ((c1 chop c ...) s))   ; g0 failed
-             ((s) ((all g ...) s)) ; g0 is deterministic
-             ((s f)                ; at least one answer from g0
-              (bind (chop r s) (lambdag@ (s) ((all g ...) s))))
-             ((i) (lambdai@ () (loop (i))))))))))) ; need atleast one asnwer...
+    ((_) fail)
+    ((_ (else g ...)) (all g ...))
+    ((_ (g0 g ...) c ...) (ifu g0 (all g ...) (condu c ...)))))
+
+(define-syntax ifa
+  (syntax-rules ()
+    ((_ g0 g1 g2)
+     (lambdag@ (s)
+       (let loop ((s-inf (g0 s)))
+         (case-inf s-inf
+           (g2 s)
+           ((s) (g1 s))
+           ((s f) (bind s-inf g1))
+           ((i) (lambdai@ () (loop (i))))))))))
+
+(define-syntax ifu
+  (syntax-rules ()
+    ((_ g0 g1 g2)
+     (lambdag@ (s)
+       (let loop ((s-inf (g0 s)))
+         (case-inf s-inf
+           (g2 s)
+           ((s) (g1 s))
+           ((s f) (g1 s))
+           ((i) (lambdai@ () (loop (i))))))))))
 
 ;;; For backward compatibility.
 ; Just the lambda...
