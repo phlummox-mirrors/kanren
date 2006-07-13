@@ -236,9 +236,10 @@ PLT Scheme/DrScheme v209 and v299.400.")
 documentation, a tutorial, validation tests, as well as several sample
 applications.")
   (p "You can "
-     (a (@ (href "http://cvs.sourceforge.net/viewcvs.py/kanren"))
+     (a (@ (href "http://kanren.cvs.sourceforge.net/kanren"))
 	"browse the files in the CVS tree")
      " from any web browser.")
+
 
 
 ;    (dl
