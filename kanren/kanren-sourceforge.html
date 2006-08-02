@@ -64,7 +64,7 @@ command-line interface provided by the host Scheme implementation.</p>
 
 <dl>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/mini/type-inference.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/mini/type-inference.scm">
 <code>mini/type-inference.scm</code></a></dt>
 <dd>Hindley-Milner type inference 
 <em>relation</em>, which
@@ -78,12 +78,12 @@ system to fill in
 the rest. In the latter applications, this code acts as a theorem
 prover in intuitionistic logic.</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/mini/logic.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/mini/logic.scm">
 <code>mini/logic.scm</code></a></dt>
 <dd>This file illustrates the use of the typechecking relation (see
 above) for proving theorems in intuitionistic and classical logics.</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/mini/leanTAP.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/mini/leanTAP.scm">
 <code>mini/leanTAP.scm</code></a></dt>
 <dd>leanTAP theorem prover by Bernhard Beckert and Joachim
 Posegga.  The miniKanren implementation uses higher-order syntax (to
@@ -91,11 +91,11 @@ avoid
 <code>copy_term</code>) and an advanced evaluator that removes
 the need for explicit iterative deepening.</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/zebra.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/examples/zebra.scm">
 <code>examples/zebra.scm</code></a></dt>
 <dd>The classic Zebra puzzle</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/mirror.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/examples/mirror.scm">
 <code>examples/mirror.scm</code></a></dt>
 <dd>Structural induction proof.  We write an outline of an
 inductive proof that mirroring a binary tree twice is the identity
@@ -104,26 +104,26 @@ conclusion of the proof indeed follows from the given axioms. KANREN
 is used as a meta-logic system to implement a backwards-chaining proof
 verifier.</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/mirror-equ.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/examples/mirror-equ.scm">
 <code>examples/mirror-equ.scm</code></a></dt>
 <dd>Structural induction proof in equational theory. We can
 truly write the equivalence axioms, including the symmetry axiom
 
 <code>(myeq a b) |- (myeq b a)</code>. Try to do that in Prolog!</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/typeclasses.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/examples/typeclasses.scm">
 <code>examples/typeclasses.scm</code></a></dt>
 <dd>Functional dependency satisfaction in Haskell typeclasses
 and deriving counter-examples.  Overloading resolution for
 Haskell typeclasses in open and closed worlds.  Our method can
 typecheck more programs than it is currently possible in Haskell.</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/deduction.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/examples/deduction.scm">
 <code>examples/deduction.scm</code></a></dt>
 <dd>Proving the Deduction Theorem for Hilbert Propositional Calculus
  by induction. The example also demonstrates generating inductive hypotheses.</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/examples/pure-bin-arithm.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/examples/pure-bin-arithm.scm">
 <code>examples/pure-bin-arithm.scm</code></a></dt>
 <dd>Pure, declarative, and constructive binary arithmetics:
 Addition, multiplication, division with the remainder as sound and
@@ -143,7 +143,7 @@ x y z)</code> computes
 <em>all</em> factorizations of 
 <code>z</code>.</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/benchmarks/">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/benchmarks/">
 <code>benchmarks/</code></a></dt>
 <dd>Standard Prolog benchmarks: nrev, query, qsort, queens, etc. --
 re-written for KANREN.</dd></dl><br>&nbsp;<a name="mini">&nbsp;</a>
@@ -155,19 +155,19 @@ to make miniKANREN easier to explain. Many tutorials below are specifically
 miniKANREN tutorials. Incidentally, miniKANREN is quite efficient.</p>
 <dl>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/mini/mk.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/mini/mk.scm">
 <code>mini/mk.scm</code></a></dt>
 <dd>The complete implementation (used in the book).</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/mini/mkextraforms.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/mini/mkextraforms.scm">
 <code>mini/mkextraforms.scm</code></a></dt>
 <dd>Extra forms appearing in the framenotes of the book.</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/mini/mkprelude.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/mini/mkprelude.scm">
 <code>mini/mkprelude.scm</code></a></dt>
 <dd>Useful definitions from the book.</dd>
 <dt>
-<a href="http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/mini/mktests.scm">
+<a href="http://kanren.cvs.sourceforge.net/kanren/kanren/mini/mktests.scm">
 <code>mini/mktests.scm</code></a></dt>
 <dd>All the examples used in the book.</dd></dl><br>&nbsp;<a name="Documentation">&nbsp;</a>
 <h3>Documentation and tutorials</h3>

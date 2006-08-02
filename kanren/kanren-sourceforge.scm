@@ -328,7 +328,7 @@ applications.")
 	 *macro*
 	 . ,(lambda (tag path)
 	      `(a (@ (href 
-		       "http://cvs.sourceforge.net/viewcvs.py/kanren/kanren/"
+		       "http://kanren.cvs.sourceforge.net/kanren/kanren/"
 		       ,path))
 		 (code ,path))))
 
