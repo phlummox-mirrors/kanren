@@ -7,7 +7,7 @@
    (title "A declarative logic programming system")
    (description "An applicative logic programming system with a
 declarative set-theoretical semantics, and its applications")
-   (Date-Revision-yyyymmdd "20060124")
+   (Date-Revision-yyyymmdd "20090310")
    (Date-Creation-yyyymmdd "20040121")
    (keywords "Logic Programming, meta-logic programming, relations,
 iterative deepening, proof assistant, Scheme")
@@ -29,12 +29,22 @@ iterative deepening, proof assistant, Scheme")
      )
 
 
+; add
+; sokuza-kanren
+; miniKanren.plt
+;  on http://planet.plt-scheme.org/
+; http://scheme2006.cs.uchicago.edu/12-byrd.pdf as documentation
+; http://www.call-with-current-continuation.org/eggs/kanren.html
+
+
    (page-title)
 
-   (a (@ (href "http://sourceforge.net")) " "
-      (img (@ (src "http://sourceforge.net/sflogo.php?group_id=99654")
-	      (width "88") (height "31") (border "0")
-	      (alt "SourceForge Logo"))))
+   (a (@ (href "http://sourceforge.net/projects/kanren")) " "
+      (img (@ (src 
+	    "http://sflogo.sourceforge.net/sflogo.php?group_id=99654&type=9")
+	      (width "80") (height "15") (border "0")
+	      (alt "Get A declarative logic programming system at
+   SourceForge.net. Fast, secure and Free Open Source software downloads"))))
 
    (p (em "KANREN") " is a declarative logic programming system with
 first-class relations, embedded in a pure functional subset of Scheme.

@@ -817,7 +817,7 @@
 	  (++o nw1 '(1) nw)
 	  (divo nw bw ql1 _)		; low boundary on q:
 	  (++o ql '(1) ql1)		; |n| = |b|(ql+1) + c
-	  (any (== q ql) (<ol ql q))	; Tighten the estimate for q
+	  (any (=ol q ql) (<ol ql q))	; Tighten the estimate for q
 	  (repeated-mul b ql bql)	; bql = b^ql
 	  (divo nw bw1 qh _)		; upper boundary on q-1
 	  (++o ql qdh qh)
