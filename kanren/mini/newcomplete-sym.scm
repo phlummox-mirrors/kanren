@@ -257,7 +257,7 @@
   (let inner ((hj (force-c (car jqueue))) (jqueue (cdr jqueue)))
     (define (suspend jqueue)
       (map-cont (car jqueue) (f s) (inner (f s) (cdr jqueue))))
-    (cout nl "inner: " hj nl jqueue nl)
+    ;(cout nl "inner: " hj nl jqueue nl)
     (case-inf hj
       (mzero)			; first failure finishes it
       ((s)			; one conjunct is finished deterministically
@@ -277,7 +277,7 @@
 ; pass it to the continuation
 (define (restart s cont)
   (let ((merged-s (merge-subst s (vector-ref cont 0))))
-    (cout "restart: merged " merged-s nl)
+    ;(cout "restart: merged " merged-s nl)
     (if merged-s ((vector-ref cont 1) merged-s) (mzero))))
 
 ; Merge (unify) two substitutions.
@@ -297,6 +297,20 @@
   (if (> (size-s s0) (size-s s1))
     (merge s1 s0)
     (merge s0 s1)))
+
+; Find the common part of two substitutions extracted from the continuations
+; Yet another very inefficient algorithm, albeit correct
+(define (meet c0 c1)
+  (define (check s-short s-long)
+    (cond
+      ((null? s-short) s-short)
+      ((memq (car s-short) s-long) => (lambda (x) x))
+      (else (check (cdr s-short) s-long))))
+  (let ((s0 (vector-ref c0 0)) (s1 (vector-ref c1 0)))
+    (if (> (size-s s0) (size-s s1))
+      (check s1 s0)
+      (check s0 s1))))
+
 
       
 ;; (define anyo
@@ -356,11 +370,13 @@
         f
         ((s) (choice s f))
         ((s f^) (choice s 
-		  (map-cont f (f s) (loop (f s) f^ #t))))
+		  (lambdac@ (meet f f^) (s)
+		    (loop (restart s f) (lambdac@ s (s) (restart s f^)) #t))))
         ((i) 
-	  (if b
-	    (map-cont i (i s) (loop (i s) f #f))
-	    (map-cont f (f s) (loop (f s) i #t))))))))
+	  (lambdac@ (meet i f) (s)
+	    (if b
+	      (loop (restart s i) (lambdac@ s (s) (restart s f)) #f)
+	      (loop (restart s f) (lambdac@ s (s) (restart s i)) #t))))))))
                             
 (define-syntax project
   (syntax-rules ()
@@ -421,4 +437,9 @@
 (define-syntax condw
   (syntax-rules ()
     ((_ args ...) (conde args ...))))
+
+; Making the symmetric conjunction the default
+(define-syntax all
+  (syntax-rules ()
+    ((_ args ...) (allw args ...))))
 
