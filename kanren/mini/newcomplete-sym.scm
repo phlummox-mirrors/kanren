@@ -139,12 +139,16 @@
     ((_ () e) (lambda () e))))
 
 ; We define the stream of values, our monad, as follows
-; data Stream a = Fail | Unit a | Incomplete (Cont a) |
-;               | Choice a (Cont a)
-; type Cont a = (a,a -> Stream a)
+;; data Stream = Fail | One Subst | Choice Subst Susp
+;;             | Inc Susp		-- incomplete answer
+;; type Goal = Subst -> Stream
+;; type Susp = [Cont]  -- non-empty list of continuations
+;; type Cont = (Subst, Goal)
+
 ; Thus continuation (Cont a) is a pair whose first component is a partial
 ; answer (substitution computed so far).
-; In Scheme, we represent (Cont a) as a two-component vector.
+; For representation purposes, we represent Susp as a vector
+; whose one component is a list of Cont, the list of pairs.
 
 (define-syntax mzero
   (syntax-rules ()
@@ -158,19 +162,16 @@
   (syntax-rules ()
     ((_ a f) (cons a f))))
 
-(define-syntax lambdac@
-  (syntax-rules ()
-    ((_ s0 (s) e) (vector s0 (lambda (s) e)))))
+(define susp vector)
 
-(define-syntax map-cont			; see its use in bind, for example
-  (syntax-rules ()
-    ((_ cont (f s) e)
-      (let* ((c cont) (f (vector-ref c 1)))
-	(lambdac@ (vector-ref c 0) (s) e)))))
+; suspension with only one continuation
+(define (susp-1 s g) (vector (list (cons s g))))
 
+; extract the list of Cont from Susp
+(define (susp-c susp) (vector-ref susp 0))
 
 (define (force-c cont) 			; continue the cont
-  ((vector-ref cont 1) (vector-ref cont 0)))
+  ((cdr cont) (car cont)))
 
 ; deconstructor of stream
 
@@ -210,16 +211,20 @@
     ((_ (x) g^ g ...)
      (let ((x (var 'x)))
        (map-inf (lambda (s) (reify x s))
-         (lambdac@ empty-s (s) ((all g^ g ...) s)))))))
+	 (susp-1 empty-s (all g^ g ...)))))))
+
 
 (define map-inf
   (lambda (p f)
     (lambdae@ ()
-      (case-inf (force-c f)
-        #f
-        ((s) (cons (p s) (lambdae@ () #f)))
-        ((s f) (cons (p s) (map-inf p f)))
-        ((i) ((map-inf p i)))))))
+      (let loop ((ks (susp-c f)))
+	(if (null? ks) #f
+	  (let* ((k1 (car ks)) (ks (cdr ks)))
+	    (case-inf (force-c k1)
+	      (loop ks)
+	      ((s) (cons (p s) (lambdae@ () (loop ks))))
+	      ((s f) (cons (p s) (lambdae@ () (loop (append (susp-c f) ks)))))
+	      ((i) (loop (append ks (susp-c i)))))))))))
 
 (define succeed (lambdag@ (s) (unit s)))
 
@@ -239,78 +244,6 @@
     ((_ g^ g g* ...)
      (all (let ((g0 g^)) (lambdag@ (s) (bind (g0 s) g))) g* ...))))
 
-; symmetric all
-(define-syntax allw
-  (syntax-rules ()
-    ((_) succeed)
-    ((_ g) g)
-    ((_ g ...)
-      (lambdag@ (s)
-	(par-and 
-	  (list
-	    (lambdac@ s (s) (g s)) ...))))))
-
-; Compute parallel conjunction
-; The argument is the list of (Cont Subst)
-; It should contain at least two elements
-(define (par-and jqueue)
-  (let inner ((hj (force-c (car jqueue))) (jqueue (cdr jqueue)))
-    (define (suspend jqueue)
-      (map-cont (car jqueue) (f s) (inner (f s) (cdr jqueue))))
-    ;(cout nl "inner: " hj nl jqueue nl)
-    (case-inf hj
-      (mzero)			; first failure finishes it
-      ((s)			; one conjunct is finished deterministically
-	(cond
-	  ((null? jqueue) (unit s))
-	  ((null? (cdr jqueue)) (restart s (car jqueue)))
-	  (else
-	    (inner (restart s (car jqueue)) (cdr jqueue)))))
-      ((s f)			; A conjunct is finished with choice
-	(mplus 
-	  (inner (unit s) jqueue)
-	  (suspend (append jqueue (list f)))))
-      ((i) (suspend (append jqueue (list i)))))))
-
-; Given a substitution s and a continuation (which too contains the
-; partial substitution) reconcile the two substitutions and
-; pass it to the continuation
-(define (restart s cont)
-  (let ((merged-s (merge-subst s (vector-ref cont 0))))
-    ;(cout "restart: merged " merged-s nl)
-    (if merged-s ((vector-ref cont 1) merged-s) (mzero))))
-
-; Merge (unify) two substitutions.
-; Currently we do it in a grossly inefficient (but obviously correct)
-; way: unifying each binding of one substitution with respect to the other.
-(define (merge-subst s0 s1)
-  (define (merge s-short s-long)
-    (cond
-      ((null? s-short) s-long)
-      (else
-	(let ((bi (car s-short)) (s-short (cdr s-short)))
-	  (cond
-	    ((memq bi s-long) s-long) ; encountered common prefix of two subst
-	    ((unify (lhs bi) (rhs bi) s-long) =>
-	      (lambda (s) (merge s-short s)))
-	    (else #f))))))
-  (if (> (size-s s0) (size-s s1))
-    (merge s1 s0)
-    (merge s0 s1)))
-
-; Find the common part of two substitutions extracted from the continuations
-; Yet another very inefficient algorithm, albeit correct
-(define (meet c0 c1)
-  (define (check s-short s-long)
-    (cond
-      ((null? s-short) s-short)
-      ((memq (car s-short) s-long) => (lambda (x) x))
-      (else (check (cdr s-short) s-long))))
-  (let ((s0 (vector-ref c0 0)) (s1 (vector-ref c1 0)))
-    (if (> (size-s s0) (size-s s1))
-      (check s1 s0)
-      (check s0 s1))))
-
 
       
 ;; (define anyo
@@ -322,16 +255,14 @@
 ;; (define nevero (anyo fail))
 ;; (define alwayso (anyo succeed))
 
+;; (run 1 (q) alwayso)
+;; ; (_.0)
 ;; (run 1 (q) alwayso fail)
-;; ; diverges
+;; ; ()
 
 ;; (run 1 (q) fail alwayso)
 ;; ; ()
 
-;; (run 1 (q) (allw fail alwayso))
-;; ; ()
-
-;; (run 1 (q) (allw alwayso fail))
 
 (define ==
   (lambda (v w)
@@ -350,33 +281,55 @@
     ((_ (g0 g ...) c ...)
      (lambdag@ (s)
        (mplus
-         (lambdac@ s (s) ((all g0 g ...) s))
-         (lambdac@ s (s) ((conde c ...) s)))))))
+         ((all g0 g ...) s)
+	 (list (cons s (conde c ...))))))))
 
+; See Symm.hs
 (define bind
-  (lambda (s-inf g)
+  (lambda (s-inf g2)
     (case-inf s-inf
       (mzero)
-      ((s) (g s))
-      ((s f) (mplus (g s) 
-	       (map-cont f (f s) (bind (f s) g))))
-      ((i) (map-cont i (f s) (bind (f s) g))))))
+      ((s) (susp-1 s g2))
+      ((s k1) (mplus (g2 s) (bind* k1 g2)))
+      ((k1) (susp (bind* k1 g2))))))
 
-;;; This seems a lot simpler, but may have type problems
+; This corresponds to the symmetric conjunction 
+(define (bind* k1 g2)
+  (map (lambda (cont) (cons (car cont) (all g2 (cdr cont))))
+    (susp-c k1)))
+
+
+; See mplus' and mplus'' in Symm.hs
 (define mplus
-  (lambda (s-inf f)
-    (let loop ((s-inf s-inf) (f f) (b #t))
-      (case-inf s-inf
-        f
-        ((s) (choice s f))
-        ((s f^) (choice s 
-		  (lambdac@ (meet f f^) (s)
-		    (loop (restart s f) (lambdac@ s (s) (restart s f^)) #t))))
-        ((i) 
-	  (lambdac@ (meet i f) (s)
-	    (if b
-	      (loop (restart s i) (lambdac@ s (s) (restart s f)) #f)
-	      (loop (restart s f) (lambdac@ s (s) (restart s i)) #t))))))))
+  (lambda (s-inf ks)
+    (case-inf s-inf
+      (susp ks)
+      ((s) (choice s (susp ks)))
+      ((s k1) (choice s (merge ks (susp-c k1))))
+      ((k1) (susp (merge ks (susp-c k1)))))))
+
+;; (define mplus
+;;   (lambda (s-inf ks)
+;;     (display "mplus") (newline)
+;;     (let loop ((s-inf s-inf) (ks ks) (b #t))
+;;       (display "s-inf") (write s-inf) (newline)
+;;       (case-inf s-inf
+;;         (susp ks)
+;;         ((s) (choice s (susp ks)))
+;;         ((s k1) (choice s (merge ks (susp-c k1))))
+;;         ((k1)
+;; 	  (if b
+;; 	    (let ((cont2 (car ks)) (k2 (cdr ks)))
+;; 	      (loop (force-c cont2) (merge (susp-c k1) k2) #f))
+;; 	    (susp (merge (susp-c k1) ks))))))))
+
+(define (merge k1 k2)
+  ;(display "merge") (newline)
+  (cond
+    ((null? k1) k2)
+    ((null? k2) k1)
+    (else (cons (car k1) (cons (car k2) (merge (cdr k1) (cdr k2)))))))
+
                             
 (define-syntax project
   (syntax-rules ()
@@ -385,39 +338,39 @@
        (let ((x (walk* x s)) ...)
          ((all g^ g ...) s))))))
 
-(define-syntax conda
-  (syntax-rules (else)
-    ((_) fail)
-    ((_ (else g ...)) (all g ...))
-    ((_ (g0 g ...) c ...) (ifa g0 (all g ...) (conda c ...)))))
+;; (define-syntax conda
+;;   (syntax-rules (else)
+;;     ((_) fail)
+;;     ((_ (else g ...)) (all g ...))
+;;     ((_ (g0 g ...) c ...) (ifa g0 (all g ...) (conda c ...)))))
 
-(define-syntax condu
-  (syntax-rules (else)
-    ((_) fail)
-    ((_ (else g ...)) (all g ...))
-    ((_ (g0 g ...) c ...) (ifu g0 (all g ...) (condu c ...)))))
+;; (define-syntax condu
+;;   (syntax-rules (else)
+;;     ((_) fail)
+;;     ((_ (else g ...)) (all g ...))
+;;     ((_ (g0 g ...) c ...) (ifu g0 (all g ...) (condu c ...)))))
 
-(define-syntax ifa
-  (syntax-rules ()
-    ((_ g0 g1 g2)
-     (lambdag@ (s)
-       (let loop ((s-inf (g0 s)))
-         (case-inf s-inf
-           (g2 s)
-           ((s) (g1 s))
-           ((s f) (bind s-inf g1))
-           ((i) (map-cont i (i s) (loop (i s))))))))))
+;; (define-syntax ifa
+;;   (syntax-rules ()
+;;     ((_ g0 g1 g2)
+;;      (lambdag@ (s)
+;;        (let loop ((s-inf (g0 s)))
+;;          (case-inf s-inf
+;;            (g2 s)
+;;            ((s) (g1 s))
+;;            ((s f) (bind s-inf g1))
+;;            ((i) (map-cont i (i s) (loop (i s))))))))))
 
-(define-syntax ifu
-  (syntax-rules ()
-    ((_ g0 g1 g2)
-     (lambdag@ (s)
-       (let loop ((s-inf (g0 s)))
-         (case-inf s-inf
-           (g2 s)
-           ((s) (g1 s))
-           ((s f) (g1 s))
-           ((i) (map-cont i (i s) (loop (i s))))))))))
+;; (define-syntax ifu
+;;   (syntax-rules ()
+;;     ((_ g0 g1 g2)
+;;      (lambdag@ (s)
+;;        (let loop ((s-inf (g0 s)))
+;;          (case-inf s-inf
+;;            (g2 s)
+;;            ((s) (g1 s))
+;;            ((s f) (g1 s))
+;;            ((i) (map-cont i (i s) (loop (i s))))))))))
 
 
 ;;; For backward compatibility.
@@ -437,9 +390,4 @@
 (define-syntax condw
   (syntax-rules ()
     ((_ args ...) (conde args ...))))
-
-; Making the symmetric conjunction the default
-(define-syntax all
-  (syntax-rules ()
-    ((_ args ...) (allw args ...))))
 
