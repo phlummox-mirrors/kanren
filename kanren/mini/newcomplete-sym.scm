@@ -241,9 +241,11 @@
   (syntax-rules ()
     ((_) succeed)
     ((_ g) g)
+    ((_ g1 g2) (conj g1 g2))
     ((_ g^ g g* ...)
      (all (let ((g0 g^)) (lambdag@ (s) (bind (g0 s) g))) g* ...))))
 
+(define (conj g1 g2) (lambdag@ (s) (bind (g1 s) g2)))
 
       
 ;; (define anyo
@@ -295,7 +297,7 @@
 
 ; This corresponds to the symmetric conjunction 
 (define (bind* k1 g2)
-  (map (lambda (cont) (cons (car cont) (all g2 (cdr cont))))
+  (map (lambda (cont) (cons (car cont) (conj g2 (cdr cont))))
     (susp-c k1)))
 
 
@@ -305,8 +307,9 @@
     (case-inf s-inf
       (susp ks)
       ((s) (choice s (susp ks)))
-      ((s k1) (choice s (merge ks (susp-c k1))))
+      ((s k1) (choice s (susp (merge ks (susp-c k1)))))
       ((k1) (susp (merge ks (susp-c k1)))))))
+
 
 ;; (define mplus
 ;;   (lambda (s-inf ks)

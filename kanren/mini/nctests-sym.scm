@@ -2656,7 +2656,7 @@
       (== `(,n ,m) t)))
   `(((1) (1))))
 
-; XXX takes a while, but it does succeed
+; XXX takes a while, but it does succeed (takes 50356 ms though)
 '(test-check "8.24"
   (run* (p)
     (*o '(1 1 1) '(1 1 1 1 1 1) p))
