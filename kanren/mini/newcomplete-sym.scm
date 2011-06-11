@@ -237,17 +237,41 @@
        (let ((x (var 'x)) ...)
          ((all g^ g ...) s))))))
 
+;; This associates to the left
+;; (define-syntax all
+;;   (syntax-rules ()
+;;     ((_) succeed)
+;;     ((_ g) g)
+;;     ((_ g1 g2) (conj g1 g2))
+;;     ((_ g^ g g* ...)
+;;      (all (let ((g0 g^)) (lambdag@ (s) (bind (g0 s) g))) g* ...))))
+
+; We associate conjunctions to the right
 (define-syntax all
   (syntax-rules ()
     ((_) succeed)
     ((_ g) g)
-    ((_ g1 g2) (conj g1 g2))
-    ((_ g^ g g* ...)
-     (all (let ((g0 g^)) (lambdag@ (s) (bind (g0 s) g))) g* ...))))
+    ((_ g1 g2) (conj g1 (downgrade g2)))
+    ((_ g^ g* ...)
+     (let ((g0 g^)) (lambdag@ (s) (bind (g0 s) (downgrade (all g* ...))))))))
 
 (define (conj g1 g2) (lambdag@ (s) (bind (g1 s) g2)))
+(define (susp-g g) (lambdag@ (s) (susp-1 s g)))
 
-      
+(define (downgrade g)
+  (lambdag@ (s)
+    (case-inf (g s)
+      (mzero)
+      ((s) (unit s))
+      ((s k) (choice s k))
+      ((k)
+	(susp
+	  (map (lambda (cont)
+		 (cons (car cont)
+		   (susp-g (downgrade (cdr cont)))))
+	    (susp-c k)))))))
+
+
 ;; (define anyo
 ;;   (lambda (g)
 ;;     (conde
@@ -292,12 +316,17 @@
     (case-inf s-inf
       (mzero)
       ((s) (susp-1 s g2))
-      ((s k1) (mplus (g2 s) (bind* k1 g2)))
-      ((k1) (susp (bind* k1 g2))))))
+      ((s k1) (mplus (g2 s) (bind-asymm* k1 g2)))
+      ((k1) (susp (bind-symm* k1 g2))))))
 
 ; This corresponds to the symmetric conjunction 
-(define (bind* k1 g2)
+(define (bind-symm* k1 g2)
   (map (lambda (cont) (cons (car cont) (conj g2 (cdr cont))))
+    (susp-c k1)))
+
+; This corresponds to the usual, non-symmetric conjunction
+(define (bind-asymm* k1 g2)
+  (map (lambda (cont) (cons (car cont) (conj (cdr cont) g2)))
     (susp-c k1)))
 
 
@@ -307,8 +336,22 @@
     (case-inf s-inf
       (susp ks)
       ((s) (choice s (susp ks)))
-      ((s k1) (choice s (susp (merge ks (susp-c k1)))))
-      ((k1) (susp (merge ks (susp-c k1)))))))
+      ((s k1) (choice s (susp (merge-ks ks (susp-c k1)))))
+      ((k1) (susp (merge-ks ks (susp-c k1)))))))
+
+'(define mplus
+  (lambda (s-inf ks)
+    (case-inf s-inf
+      (susp ks)
+      ((s) (choice s (susp ks)))
+      ((s k1) (choice s (susp (merge-ks ks (susp-c k1)))))
+      ((k1) 
+	(let ((k (car ks)) (ks (cdr ks)) (k1 (susp-c k1)))
+	  (case-inf (force-c k)
+	    (susp (merge-ks k1 ks))
+	    ((s) (choice s (susp (merge-ks k1 ks))))
+	    ((s k2) (choice s (susp (merge-ks k1 (merge-ks (susp-c k2) ks)))))
+	    ((k2) (susp (merge-ks k1 (merge-ks (susp-c k2) ks))))))))))
 
 
 ;; (define mplus
@@ -319,19 +362,21 @@
 ;;       (case-inf s-inf
 ;;         (susp ks)
 ;;         ((s) (choice s (susp ks)))
-;;         ((s k1) (choice s (merge ks (susp-c k1))))
+;;         ((s k1) (choice s (merge-ks ks (susp-c k1))))
 ;;         ((k1)
 ;; 	  (if b
 ;; 	    (let ((cont2 (car ks)) (k2 (cdr ks)))
-;; 	      (loop (force-c cont2) (merge (susp-c k1) k2) #f))
-;; 	    (susp (merge (susp-c k1) ks))))))))
+;; 	      (loop (force-c cont2) (merge-ks (susp-c k1) k2) #f))
+;; 	    (susp (merge-ks (susp-c k1) ks))))))))
 
-(define (merge k1 k2)
-  ;(display "merge") (newline)
+'(define (merge-ks k1 k2)
+  ;(display "merge-ks") (newline)
   (cond
     ((null? k1) k2)
     ((null? k2) k1)
-    (else (cons (car k1) (cons (car k2) (merge (cdr k1) (cdr k2)))))))
+    (else (cons (car k1) (cons (car k2) (merge-ks (cdr k1) (cdr k2)))))))
+
+(define (merge-ks k1 k2) (append k1 k2))
 
                             
 (define-syntax project
